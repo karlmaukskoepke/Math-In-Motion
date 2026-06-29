@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Motion Math — Quick Start</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="cv.js"></script>
+  <script src="aruco.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --surface2:  #22263a;
+      --accent:    #00e5ff;
+      --accent2:   #ff4081;
+      --accent3:   #69f0ae;
+      --accent4:   #ffd740;
+      --text:      #e8eaf6;
+      --muted:     #7986cb;
+      --border:    #2e3356;
+      --slope-pos: #69f0ae;
+      --slope-neg: #ff4081;
+      --slope-zero:#ffd740;
+      --left-w:    280px;
+      --right-w:   200px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; }
+
+    #app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+    /* ── HEADER ── */
+    #header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 14px; background: var(--surface);
+      border-bottom: 2px solid var(--accent); flex-shrink: 0; z-index: 10;
+    }
+    #header h1 { font-family: 'Space Mono', monospace; font-size: 0.82rem; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; flex: 1; }
+    .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex-shrink: 0; transition: background 0.3s; }
+    .status-dot.active    { background: var(--accent3); box-shadow: 0 0 8px var(--accent3); }
+    .status-dot.recording { background: var(--accent2); box-shadow: 0 0 8px var(--accent2); animation: blink 0.8s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    .hdr-btn {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 7px; padding: 5px 12px; font-size: 0.72rem; font-family: 'Space Mono', monospace;
+      cursor: pointer; display: flex; align-items: center; gap: 5px;
+      transition: all 0.15s; flex-shrink: 0; letter-spacing: 0.5px;
+    }
+    .hdr-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .hdr-btn.back  { color: var(--muted); }
+
+    /* ── CONTENT ── */
+    #content { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── LEFT: VIDEO ── */
+    #videoCol {
+      width: var(--left-w); flex-shrink: 0;
+      display: flex; flex-direction: column; gap: 6px; padding: 8px;
+    }
+    #videoWrapper {
+      position: relative; background: #000; border-radius: 10px;
+      overflow: hidden; border: 3px solid var(--border); flex: 1;
+      transition: border-color 0.25s, box-shadow 0.25s;
+    }
+    #videoWrapper.slope-pos  { border-color: var(--slope-pos); box-shadow: 0 0 16px rgba(105,240,174,0.3); }
+    #videoWrapper.slope-neg  { border-color: var(--slope-neg); box-shadow: 0 0 16px rgba(255,64,129,0.3); }
+    #videoWrapper.slope-zero { border-color: var(--slope-zero); }
+    #video   { width: 100%; height: 100%; object-fit: cover; display: block; }
+    #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+    #distBadge {
+      position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.85); border: 1px solid var(--accent); border-radius: 20px;
+      padding: 4px 14px; font-family: 'Space Mono', monospace; font-size: 0.85rem;
+      color: var(--accent); white-space: nowrap; pointer-events: none;
+    }
+    #camPlaceholder {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 10px;
+      color: var(--muted); font-family: 'Space Mono', monospace; font-size: 0.7rem; text-align: center; padding: 12px;
+    }
+    .cam-icon { font-size: 2.5rem; opacity: 0.3; }
+
+    /* countdown */
+    #countdownOverlay {
+      position: absolute; inset: 0; display: none;
+      align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.55); z-index: 20; border-radius: 8px;
+    }
+    #countdownOverlay.visible { display: flex; }
+    #countdownNum {
+      font-family: 'Space Mono', monospace; font-size: 6rem; font-weight: 700;
+      color: #fff; text-shadow: 0 0 40px var(--accent); line-height: 1;
+      animation: pop 1s ease-out infinite;
+    }
+    #countdownNum.go { font-size: 4rem; color: var(--accent3); animation: popgo 0.8s ease-out forwards; }
+    @keyframes pop   { 0%{transform:scale(1.3);opacity:1} 70%{transform:scale(1);opacity:1} 100%{transform:scale(0.92);opacity:0.5} }
+    @keyframes popgo { 0%{transform:scale(1.5);opacity:0.2} 30%{transform:scale(1);opacity:1} 100%{transform:scale(1);opacity:1} }
+
+    /* ── CONTROLS BELOW VIDEO ── */
+    #controls {
+      display: flex; gap: 6px; flex-shrink: 0;
+    }
+
+    .ctrl-btn {
+      flex: 1; padding: 9px 6px; border-radius: 8px; border: 1px solid var(--border);
+      font-family: 'Space Mono', monospace; font-size: 0.7rem; font-weight: 700;
+      letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+      transition: all 0.15s;
+    }
+    #cameraBtn  { background: rgba(0,229,255,0.1);  color: var(--accent);  border-color: rgba(0,229,255,0.3); }
+    #cameraBtn:hover  { background: rgba(0,229,255,0.2); }
+    #cameraBtn:disabled { opacity: 0.4; cursor: default; }
+    #startBtn   { background: rgba(105,240,174,0.1); color: var(--accent3); border-color: rgba(105,240,174,0.3); }
+    #startBtn:hover:not(:disabled)   { background: rgba(105,240,174,0.2); }
+    #startBtn:disabled { opacity: 0.4; cursor: default; }
+    #clearBtn   { background: rgba(255,64,129,0.08); color: var(--accent2); border-color: rgba(255,64,129,0.25); }
+    #clearBtn:hover { background: rgba(255,64,129,0.16); }
+
+    /* ── CHART AREA ── */
+    #chartArea {
+      flex: 1; display: flex; flex-direction: column; padding: 8px; overflow: hidden; position: relative;
+    }
+    #chartWrap { flex: 1; position: relative; }
+
+    /* ── RIGHT: GAUGES ── */
+    #rightCol {
+      width: var(--right-w); flex-shrink: 0;
+      display: flex; flex-direction: column; gap: 10px; padding: 8px;
+    }
+
+    .gauge-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px;
+    }
+
+    .gauge-label {
+      font-family: 'Space Mono', monospace; font-size: 0.6rem;
+      color: var(--muted); letter-spacing: 2px; text-transform: uppercase;
+    }
+
+    #distReadout {
+      font-family: 'Space Mono', monospace; font-size: 2.4rem; font-weight: 700;
+      color: var(--accent); line-height: 1;
+    }
+    #distUnit { font-family: 'Space Mono', monospace; font-size: 0.7rem; color: var(--muted); }
+
+    #arrowCanvas { width: 120px; height: 120px; }
+
+    #slopeReadout {
+      font-family: 'Space Mono', monospace; font-size: 1.5rem; font-weight: 700; line-height: 1;
+    }
+    #slopeReadout.pos  { color: var(--slope-pos); }
+    #slopeReadout.neg  { color: var(--slope-neg); }
+    #slopeReadout.zero { color: var(--slope-zero); }
+
+    #slopeDirLabel {
+      font-family: 'Space Mono', monospace; font-size: 0.62rem;
+      color: var(--muted); text-align: center; letter-spacing: 0.5px;
+    }
+
+    /* ── TRACKING MODE INDICATOR ── */
+    #trackingMode {
+      font-family: 'Space Mono', monospace; font-size: 0.6rem;
+      color: var(--muted); letter-spacing: 1px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; padding: 4px 10px; text-align: center;
+      display: flex; align-items: center; gap: 6px; justify-content: center;
+    }
+    .mode-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+    .mode-dot.ball  { background: var(--accent3); }
+    .mode-dot.aruco { background: var(--accent4); }
+
+    /* ── NO SESSION BANNER ── */
+    #noSetupBanner {
+      display: none; position: absolute; inset: 0; z-index: 100;
+      background: rgba(15,17,23,0.95); align-items: center; justify-content: center;
+      flex-direction: column; gap: 16px; text-align: center; padding: 24px;
+    }
+    #noSetupBanner.visible { display: flex; }
+    #noSetupBanner h2 { font-family: 'Space Mono', monospace; font-size: 1rem; color: var(--accent); }
+    #noSetupBanner p  { font-size: 0.85rem; color: var(--muted); max-width: 280px; line-height: 1.6; }
+    #noSetupBanner a  {
+      font-family: 'Space Mono', monospace; font-size: 0.75rem; color: var(--bg);
+      background: var(--accent); border-radius: 8px; padding: 10px 24px;
+      text-decoration: none; letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <div id="header">
+    <a class="hdr-btn back" href="index.html">← Home</a>
+    <h1>Quick Start</h1>
+    <div class="status-dot" id="statusDot"></div>
+    <a class="hdr-btn" href="setup.html?from=quickstart.html&change=1">⚙ Setup</a>
+  </div>
+
+  <!-- CONTENT -->
+  <div id="content">
+
+    <!-- VIDEO COLUMN -->
+    <div id="videoCol">
+      <div id="videoWrapper">
+        <video id="video" playsinline style="display:none"></video>
+        <canvas id="overlay"></canvas>
+        <div id="distBadge">-- ft</div>
+        <div id="camPlaceholder">
+          <div class="cam-icon">📷</div>
+          <div>Press Camera On<br>to begin</div>
+        </div>
+        <div id="countdownOverlay">
+          <div id="countdownNum">3</div>
+        </div>
+      </div>
+
+      <div id="controls">
+        <button class="ctrl-btn" id="cameraBtn">Camera On</button>
+        <button class="ctrl-btn" id="startBtn" disabled>▶ Start</button>
+        <button class="ctrl-btn" id="clearBtn">✕ Clear</button>
+      </div>
+
+      <div id="trackingMode">
+        <div class="mode-dot" id="modeDot"></div>
+        <span id="modeLabel">No setup</span>
+      </div>
+    </div>
+
+    <!-- CHART -->
+    <div id="chartArea">
+      <div id="chartWrap">
+        <canvas id="chart"></canvas>
+      </div>
+      <!-- No-setup overlay -->
+      <div id="noSetupBanner" class="visible">
+        <h2>Setup required</h2>
+        <p>Choose your tracking method before starting — colored ball or ArUco marker.</p>
+        <a href="setup.html?from=quickstart.html">Go to Setup →</a>
+      </div>
+    </div>
+
+    <!-- GAUGES -->
+    <div id="rightCol">
+      <div class="gauge-card">
+        <div class="gauge-label">Distance</div>
+        <div id="distReadout">--</div>
+        <div id="distUnit">feet</div>
+      </div>
+
+      <div class="gauge-card">
+        <div class="gauge-label">Slope</div>
+        <canvas id="arrowCanvas" width="120" height="120"></canvas>
+        <div id="slopeReadout" class="zero">0.0</div>
+        <div id="slopeDirLabel">—</div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /app -->
+
+<script>
+// ════════════════════════════════════════════════
+// SESSION: read tracking choice from setup page
+// ════════════════════════════════════════════════
+const tracking = (() => {
+  try { return JSON.parse(sessionStorage.getItem('mm_tracking')); } catch(e) { return null; }
+})();
+
+const noSetupBanner  = document.getElementById('noSetupBanner');
+const modeDot        = document.getElementById('modeDot');
+const modeLabel      = document.getElementById('modeLabel');
+
+if (tracking) {
+  noSetupBanner.classList.remove('visible');
+  if (tracking.topMode === 'ball') {
+    modeDot.className  = 'mode-dot ball';
+    const names = { rhino: 'Rhino Skin', tennis: 'Tennis Ball', custom: 'Custom Ball' };
+    modeLabel.textContent = `Ball — ${names[tracking.ballType] || tracking.ballType}`;
+  } else {
+    modeDot.className  = 'mode-dot aruco';
+    modeLabel.textContent = tracking.arucoType === 'twolaptop' ? 'ArUco — Two Laptops' : 'ArUco — Printed';
+  }
+}
+
+// ════════════════════════════════════════════════
+// ELEMENTS
+// ════════════════════════════════════════════════
+const video          = document.getElementById('video');
+const overlay        = document.getElementById('overlay');
+const ctx            = overlay.getContext('2d', { willReadFrequently: true });
+const distBadge      = document.getElementById('distBadge');
+const videoWrapper   = document.getElementById('videoWrapper');
+const camPlaceholder = document.getElementById('camPlaceholder');
+const statusDot      = document.getElementById('statusDot');
+const cameraBtn      = document.getElementById('cameraBtn');
+const startBtn       = document.getElementById('startBtn');
+const clearBtn       = document.getElementById('clearBtn');
+const distReadout    = document.getElementById('distReadout');
+const arrowCanvas    = document.getElementById('arrowCanvas');
+const arrowCtx       = arrowCanvas.getContext('2d');
+const slopeReadout   = document.getElementById('slopeReadout');
+const slopeDirLabel  = document.getElementById('slopeDirLabel');
+const countdownOverlay = document.getElementById('countdownOverlay');
+const countdownNum     = document.getElementById('countdownNum');
+
+// ════════════════════════════════════════════════
+// CONSTANTS
+// ════════════════════════════════════════════════
+const DURATION    = 5;     // fixed 5-second recording
+const MARKER_SIZE = 14.0;  // cm — printable ArUco PDF
+const BALL_DIAM   = tracking ? (tracking.ballDiam || 15.2) : 15.2; // cm
+let   focalLength = 863;
+
+// ════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════
+let recording       = false;
+let countingDown    = false;
+let data            = [];   // [[t, distFt], ...]
+let startTime       = null;
+let lastRecordTime  = 0;
+let smoothBuffer    = [];
+let slopeBuffer     = [];
+let currentSlope    = 0;
+let arrowAngleDeg   = 0;
+let detector        = null;
+let lastKnownPxW    = null;
+let ballColor       = null;  // { r, g, b, h }
+let ballPickMode    = false;
+let countdownTimer  = null;
+
+const ballModeOn = tracking && tracking.topMode === 'ball';
+const arucoMode  = !ballModeOn;
+
+// ════════════════════════════════════════════════
+// CHART — bold, minimal, high-contrast
+// ════════════════════════════════════════════════
+
+// Plugin: draw coordinate labels at each whole second + y-intercept
+const coordLabelPlugin = {
+  id: 'coordLabels',
+  afterDraw(ch) {
+    if (!data.length) return;
+    const xScale = ch.scales.x;
+    const yScale = ch.scales.y;
+    const c2     = ch.ctx;
+    c2.save();
+    c2.font = 'bold 11px "Space Mono", monospace';
+    c2.textAlign = 'center';
+
+    // Sample data at 0, 1, 2, 3, 4, 5 seconds
+    const times = [0, 1, 2, 3, 4, 5];
+    times.forEach(t => {
+      const pt = interpolateAt(t);
+      if (pt === null) return;
+      const xPx = xScale.getPixelForValue(t);
+      const yPx = yScale.getPixelForValue(pt);
+      if (xPx < xScale.left || xPx > xScale.right) return;
+
+      // Dot
+      c2.beginPath();
+      c2.arc(xPx, yPx, 5, 0, Math.PI * 2);
+      c2.fillStyle = '#ffffff';
+      c2.fill();
+      c2.strokeStyle = '#00e5ff';
+      c2.lineWidth = 2;
+      c2.stroke();
+
+      // Label
+      const label = `(${t}, ${pt.toFixed(1)})`;
+      const labelY = yPx - 14;
+      c2.fillStyle = 'rgba(15,17,23,0.85)';
+      const w = c2.measureText(label).width;
+      c2.fillRect(xPx - w/2 - 4, labelY - 12, w + 8, 16);
+      c2.fillStyle = '#ffffff';
+      c2.fillText(label, xPx, labelY);
+    });
+
+    c2.restore();
+  }
+};
+
+// Plugin: recording endpoint marker
+const recordingMarkerPlugin = {
+  id: 'recordingMarker',
+  afterDraw(ch) {
+    const xScale = ch.scales.x;
+    const yScale = ch.scales.y;
+    if (!xScale || !yScale) return;
+    const xPx = xScale.getPixelForValue(DURATION);
+    if (xPx < xScale.left || xPx > xScale.right) return;
+    const c2 = ch.ctx;
+    c2.save();
+    c2.strokeStyle = 'rgba(255,215,64,0.45)';
+    c2.lineWidth = 2;
+    c2.setLineDash([5, 4]);
+    c2.beginPath();
+    c2.moveTo(xPx, yScale.top);
+    c2.lineTo(xPx, yScale.bottom);
+    c2.stroke();
+    c2.setLineDash([]);
+    c2.fillStyle = '#ffd740';
+    c2.font = 'bold 11px "Space Mono", monospace';
+    c2.textAlign = 'center';
+    c2.fillText(`${DURATION}s`, xPx, yScale.top - 5);
+    c2.restore();
+  }
+};
+
+Chart.register(coordLabelPlugin, recordingMarkerPlugin);
+
+const chart = new Chart(document.getElementById('chart'), {
+  type: 'line',
+  data: {
+    datasets: [{
+      label: 'Motion', data: [],
+      borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
+      borderWidth: 3, pointRadius: 0, fill: true, tension: 0.3
+    }]
+  },
+  options: {
+    animation: false, responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: 'rgba(10,12,20,0.97)',
+        borderColor: '#00e5ff', borderWidth: 1,
+        titleColor: '#00e5ff', bodyColor: '#fff',
+        titleFont: { family: 'Space Mono', size: 13, weight: 'bold' },
+        bodyFont:  { family: 'Space Mono', size: 13, weight: 'bold' },
+        padding: 12,
+        callbacks: {
+          title: items => `t = ${parseFloat(items[0].parsed.x).toFixed(1)} sec`,
+          label: item  => ` dist: ${item.parsed.y.toFixed(1)} ft`
+        }
+      }
+    },
+    scales: {
+      x: {
+        type: 'linear',
+        min: 0, max: DURATION,
+        title: { display: true, text: 'Time (s)', color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
+        ticks: {
+          color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
+          stepSize: 1,
+          callback: v => Number.isInteger(v) ? String(v) : null
+        },
+        grid: {
+          color: c => Number.isInteger(c.tick.value) ? 'rgba(160,180,255,0.55)' : 'rgba(100,120,200,0.25)',
+          lineWidth: c => Number.isInteger(c.tick.value) ? 2 : 1
+        }
+      },
+      y: {
+        min: 0, max: 12,
+        title: { display: true, text: 'Distance (ft)', color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
+        ticks: {
+          color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
+          stepSize: 1,
+          callback: v => Number.isInteger(v) ? String(v) : null
+        },
+        grid: {
+          color: 'rgba(160,180,255,0.45)',
+          lineWidth: c => Number.isInteger(c.tick.value) ? 2 : 0.8
+        }
+      }
+    }
+  }
+});
+
+function interpolateAt(t) {
+  if (!data.length) return null;
+  if (t < data[0][0] || t > data[data.length-1][0]) return null;
+  for (let i = 0; i < data.length - 1; i++) {
+    if (data[i][0] <= t && data[i+1][0] >= t) {
+      const dt = data[i+1][0] - data[i][0];
+      if (dt < 0.001) return data[i][1];
+      return data[i][1] + (data[i+1][1] - data[i][1]) * (t - data[i][0]) / dt;
+    }
+  }
+  return null;
+}
+
+// ════════════════════════════════════════════════
+// SLOPE ARROW GAUGE (same as full lab)
+// ════════════════════════════════════════════════
+function slopeToColor(slope) {
+  const abs = Math.abs(slope);
+  const norm = Math.min(abs / 4, 1);
+  const alpha = 0.08 + norm * 0.77;
+  if (abs < 0.05) return { solid: `rgba(255,215,64,${alpha})`, pure: '#ffd740', name: 'zero' };
+  if (slope > 0)  return { solid: `rgba(105,240,174,${alpha})`, pure: '#69f0ae', name: 'pos' };
+  return              { solid: `rgba(255,64,129,${alpha})`,  pure: '#ff4081', name: 'neg' };
+}
+
+function drawArrow(angleDeg, slope) {
+  const w = arrowCanvas.width, h = arrowCanvas.height;
+  const cx = w/2, cy = h/2, r = Math.min(w,h)*0.42;
+  arrowCtx.clearRect(0, 0, w, h);
+  const col = slopeToColor(slope);
+
+  arrowCtx.beginPath();
+  arrowCtx.arc(cx, cy, r+6, 0, Math.PI*2);
+  arrowCtx.fillStyle = col.solid; arrowCtx.fill();
+  arrowCtx.strokeStyle = col.pure+'88'; arrowCtx.lineWidth = 2; arrowCtx.stroke();
+
+  [-90,-67.5,-45,-22.5,0,22.5,45,67.5,90].forEach(deg => {
+    const rad = deg*Math.PI/180, isMajor = deg%45===0;
+    const inner = r-(isMajor?7:4), outer = r+1;
+    arrowCtx.beginPath();
+    arrowCtx.moveTo(cx+Math.cos(rad)*inner, cy+Math.sin(rad)*inner);
+    arrowCtx.lineTo(cx+Math.cos(rad)*outer, cy+Math.sin(rad)*outer);
+    arrowCtx.strokeStyle = isMajor?'#4a5280':'#2e3356';
+    arrowCtx.lineWidth = isMajor?2:1; arrowCtx.stroke();
+  });
+
+  const rad   = angleDeg*Math.PI/180;
+  const tipX  = cx+Math.cos(rad)*(r-8), tipY  = cy+Math.sin(rad)*(r-8);
+  const tailX = cx-Math.cos(rad)*(r-18), tailY = cy-Math.sin(rad)*(r-18);
+  arrowCtx.beginPath(); arrowCtx.moveTo(tailX,tailY); arrowCtx.lineTo(tipX,tipY);
+  arrowCtx.strokeStyle = col.pure; arrowCtx.lineWidth = 5; arrowCtx.lineCap='round'; arrowCtx.stroke();
+  const hl=14, ha=0.42;
+  arrowCtx.beginPath();
+  arrowCtx.moveTo(tipX,tipY);
+  arrowCtx.lineTo(tipX-hl*Math.cos(rad-ha), tipY-hl*Math.sin(rad-ha));
+  arrowCtx.moveTo(tipX,tipY);
+  arrowCtx.lineTo(tipX-hl*Math.cos(rad+ha), tipY-hl*Math.sin(rad+ha));
+  arrowCtx.strokeStyle=col.pure; arrowCtx.lineWidth=4; arrowCtx.stroke();
+  arrowCtx.beginPath(); arrowCtx.arc(cx,cy,5,0,Math.PI*2);
+  arrowCtx.fillStyle=col.pure; arrowCtx.fill();
+}
+drawArrow(0, 0);
+
+function updateGauges(distFt, slope) {
+  distReadout.textContent = distFt.toFixed(1);
+  const clamped = Math.max(-4, Math.min(4, slope));
+  const target  = -clamped * 20;
+  arrowAngleDeg += (target - arrowAngleDeg) * 0.22;
+  drawArrow(arrowAngleDeg, slope);
+  const sign = slope >= 0 ? '+' : '';
+  slopeReadout.textContent = sign + slope.toFixed(1);
+  const col = slopeToColor(slope);
+  slopeReadout.className = col.name;
+  slopeDirLabel.textContent = Math.abs(slope) < 0.05 ? 'constant' : slope > 0 ? 'moving away' : 'moving closer';
+  videoWrapper.classList.remove('slope-pos','slope-neg','slope-zero');
+  videoWrapper.classList.add('slope-' + col.name);
+}
+
+// ════════════════════════════════════════════════
+// SMOOTHING + SLOPE
+// ════════════════════════════════════════════════
+function smooth(val) {
+  smoothBuffer.push(val);
+  if (smoothBuffer.length > 15) smoothBuffer.shift();
+  return smoothBuffer.reduce((a,b)=>a+b) / smoothBuffer.length;
+}
+
+function calcSlope(t, distFt) {
+  slopeBuffer.push({t, d: distFt});
+  slopeBuffer = slopeBuffer.filter(p => t - p.t <= 0.5);
+  if (slopeBuffer.length < 2) return currentSlope;
+  const oldest = slopeBuffer[0], newest = slopeBuffer[slopeBuffer.length-1];
+  const dt = newest.t - oldest.t;
+  if (dt < 0.05) return currentSlope;
+  currentSlope = (newest.d - oldest.d) / dt;
+  return currentSlope;
+}
+
+// ════════════════════════════════════════════════
+// COLOR HELPERS (ball tracking)
+// ════════════════════════════════════════════════
+function rgbToHsv(r,g,b) {
+  r/=255; g/=255; b/=255;
+  const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min;
+  let h=0;
+  if (d>0) {
+    if      (max===r) h=60*(((g-b)/d)%6);
+    else if (max===g) h=60*(((b-r)/d)+2);
+    else              h=60*(((r-g)/d)+4);
+    if (h<0) h+=360;
+  }
+  return { h, s: max===0?0:d/max, v: max };
+}
+
+// ════════════════════════════════════════════════
+// PROCESS VIDEO
+// ════════════════════════════════════════════════
+function processVideo() {
+  if (!video.videoWidth) { requestAnimationFrame(processVideo); return; }
+  const vw=video.videoWidth, vh=video.videoHeight;
+  const dw=videoWrapper.clientWidth, dh=videoWrapper.clientHeight;
+  const vAsp=vw/vh, dAsp=dw/dh;
+  let cropX=0,cropY=0,cropW=vw,cropH=vh;
+  if (vAsp>dAsp) { cropH=vh; cropW=Math.round(vh*dAsp); cropX=Math.round((vw-cropW)/2); }
+  else           { cropW=vw; cropH=Math.round(vw/dAsp); cropY=Math.round((vh-cropH)/2); }
+
+  const off=document.createElement('canvas'); off.width=vw; off.height=vh;
+  const offCtx=off.getContext('2d',{willReadFrequently:true});
+  offCtx.drawImage(video,0,0,vw,vh);
+  overlay.width=dw; overlay.height=dh;
+  ctx.clearRect(0,0,dw,dh);
+
+  function toDisplay(nx,ny) {
+    return { x:((nx-cropX)/cropW)*dw, y:((ny-cropY)/cropH)*dh };
+  }
+
+  if (ballModeOn && ballColor) {
+    const imageData=offCtx.getImageData(0,0,vw,vh), pixels=imageData.data;
+    const targetHue=ballColor.h, HUE_TOL=22, SAT_MIN=0.25, VAL_MIN=0.08, STEP=4;
+    const matchPts=[];
+    for (let py=STEP;py<vh-STEP;py+=STEP) {
+      for (let px=STEP;px<vw-STEP;px+=STEP) {
+        const idx=(py*vw+px)*4;
+        const {h,s,v}=rgbToHsv(pixels[idx],pixels[idx+1],pixels[idx+2]);
+        if (s<SAT_MIN||v<VAL_MIN) continue;
+        let hd=Math.abs(h-targetHue); if(hd>180)hd=360-hd;
+        if (hd<=HUE_TOL) matchPts.push({x:px,y:py});
+      }
+    }
+    const CELL=Math.round(Math.min(vw,vh)*0.12);
+    const gw=Math.ceil(vw/CELL), gh=Math.ceil(vh/CELL);
+    const grid=new Int16Array(gw*gh);
+    let bestCount=0, bestCx=0, bestCy=0;
+    for (const pt of matchPts) {
+      const gx=Math.floor(pt.x/CELL), gy=Math.floor(pt.y/CELL);
+      for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++) {
+        const nx=gx+dx, ny=gy+dy;
+        if(nx>=0&&nx<gw&&ny>=0&&ny<gh) grid[ny*gw+nx]++;
+      }
+    }
+    for (let gy=0;gy<gh;gy++) for(let gx=0;gx<gw;gx++) {
+      const cnt=grid[gy*gw+gx];
+      if(cnt>bestCount){bestCount=cnt;bestCx=(gx+0.5)*CELL;bestCy=(gy+0.5)*CELL;}
+    }
+    const REFINE_R=CELL*2.5;
+    let minX=vw,maxX=0,minY=vh,maxY=0,clusterCount=0;
+    for(const pt of matchPts){
+      const dx=pt.x-bestCx,dy=pt.y-bestCy;
+      if(dx*dx+dy*dy<=REFINE_R*REFINE_R){
+        if(pt.x<minX)minX=pt.x; if(pt.x>maxX)maxX=pt.x;
+        if(pt.y<minY)minY=pt.y; if(pt.y>maxY)maxY=pt.y;
+        clusterCount++;
+      }
+    }
+    const MIN_CLUSTER=Math.max(8,Math.round((REFINE_R/STEP)*0.15));
+    if(clusterCount>=MIN_CLUSTER&&(maxX-minX)>4){
+      const diamPx=((maxX-minX)+(maxY-minY))/2;
+      const cxN=(minX+maxX)/2, cyN=(minY+maxY)/2;
+      lastKnownPxW=diamPx;
+      const distCm=smooth((BALL_DIAM*focalLength)/diamPx);
+      const distFt=distCm/30.48;
+      const dispC=toDisplay(cxN,cyN);
+      const dispR=Math.max(8,(diamPx/cropW)*dw/2);
+      ctx.strokeStyle='#ffd740'; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(dispC.x,dispC.y,dispR,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle='rgba(255,215,64,0.12)'; ctx.fill();
+      ctx.beginPath(); ctx.arc(dispC.x,dispC.y,5,0,Math.PI*2);
+      ctx.fillStyle='#ffd740'; ctx.fill();
+      distBadge.innerText=distFt.toFixed(2)+' ft';
+      const now=(Date.now()-startTime)/1000;
+      updateGauges(distFt, calcSlope(now,distFt));
+      if(recording) recordPoint(distFt);
+    } else {
+      distBadge.innerText='No ball found';
+      videoWrapper.classList.remove('slope-pos','slope-neg','slope-zero');
+    }
+    requestAnimationFrame(processVideo); return;
+  }
+
+  if (ballModeOn && !ballColor) {
+    // Ball mode but color not yet picked — show pick prompt
+    distBadge.innerText='Tap ball to pick color';
+    requestAnimationFrame(processVideo); return;
+  }
+
+  // ── ARUCO MODE ──
+  const imageData=offCtx.getImageData(0,0,vw,vh);
+  const markers=detector.detect(imageData);
+  if(markers.length>0){
+    const corners=markers[0].corners;
+    const dc=corners.map(c=>toDisplay(c.x,c.y));
+    ctx.strokeStyle='#00e5ff'; ctx.lineWidth=3;
+    ctx.beginPath(); dc.forEach((c,i)=>i===0?ctx.moveTo(c.x,c.y):ctx.lineTo(c.x,c.y));
+    ctx.closePath(); ctx.stroke();
+    ctx.fillStyle='#ff4081';
+    dc.forEach(c=>{ctx.beginPath();ctx.arc(c.x,c.y,6,0,Math.PI*2);ctx.fill();});
+    const widthPx=Math.hypot(corners[0].x-corners[1].x,corners[0].y-corners[1].y);
+    lastKnownPxW=widthPx;
+    const distCm=smooth((MARKER_SIZE*focalLength)/widthPx);
+    const distFt=distCm/30.48;
+    distBadge.innerText=distFt.toFixed(2)+' ft';
+    const now=(Date.now()-startTime)/1000;
+    updateGauges(distFt, calcSlope(now,distFt));
+    if(recording) recordPoint(distFt);
+  } else {
+    distBadge.innerText='No marker';
+    videoWrapper.classList.remove('slope-pos','slope-neg','slope-zero');
+  }
+  requestAnimationFrame(processVideo);
+}
+
+function recordPoint(distFt) {
+  const t=(Date.now()-startTime)/1000;
+  if(t>=DURATION){ stopRecording(); return; }
+  if(t-lastRecordTime>=0.05){
+    lastRecordTime=t;
+    const tv=parseFloat(t.toFixed(2)), dv=parseFloat(distFt.toFixed(3));
+    data.push([tv,dv]);
+    chart.data.datasets[0].data.push({x:tv,y:dv});
+    chart.update('none');
+  }
+}
+
+// ════════════════════════════════════════════════
+// BALL COLOR PICK (tap on video)
+// ════════════════════════════════════════════════
+overlay.addEventListener('click', (e) => {
+  if (!ballModeOn || !video.videoWidth) return;
+  const rect=videoWrapper.getBoundingClientRect();
+  const cx=(e.clientX-rect.left)/rect.width;
+  const cy=(e.clientY-rect.top)/rect.height;
+  const vw=video.videoWidth, vh=video.videoHeight;
+  const dw=videoWrapper.clientWidth, dh=videoWrapper.clientHeight;
+  const vAsp=vw/vh, dAsp=dw/dh;
+  let cropX=0,cropY=0,cropW=vw,cropH=vh;
+  if(vAsp>dAsp){cropH=vh;cropW=Math.round(vh*dAsp);cropX=Math.round((vw-cropW)/2);}
+  else{cropW=vw;cropH=Math.round(vw/dAsp);cropY=Math.round((vh-cropH)/2);}
+  const nx=Math.round(cropX+cx*cropW), ny=Math.round(cropY+cy*cropH);
+  const tmp=document.createElement('canvas'); tmp.width=vw; tmp.height=vh;
+  const tCtx=tmp.getContext('2d'); tCtx.drawImage(video,0,0,vw,vh);
+  const patch=tCtx.getImageData(Math.max(0,nx-4),Math.max(0,ny-4),9,9).data;
+  let r=0,g=0,b=0,n=0;
+  for(let i=0;i<patch.length;i+=4){r+=patch[i];g+=patch[i+1];b+=patch[i+2];n++;}
+  r=Math.round(r/n); g=Math.round(g/n); b=Math.round(b/n);
+  const hsv=rgbToHsv(r,g,b);
+  ballColor={r,g,b,h:hsv.h};
+  distBadge.innerText=`Picked H:${Math.round(hsv.h)}°`;
+});
+
+// ════════════════════════════════════════════════
+// CAMERA
+// ════════════════════════════════════════════════
+cameraBtn.onclick = () => {
+  if(arucoMode){
+    if(typeof AR==='undefined'){alert('ArUco library failed to load. Refresh.');return;}
+    if(!detector) detector=new AR.Detector();
+  }
+  navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720}}})
+    .then(stream=>{
+      video.srcObject=stream; video.style.display='block';
+      camPlaceholder.style.display='none';
+      video.onloadedmetadata=()=>{
+        video.play();
+        statusDot.classList.add('active');
+        startBtn.disabled=false;
+        startTime=Date.now();
+        requestAnimationFrame(processVideo);
+      };
+      cameraBtn.disabled=true; cameraBtn.textContent='Camera On';
+    })
+    .catch(err=>alert('Camera access denied: '+err.message));
+};
+
+// ════════════════════════════════════════════════
+// RECORDING
+// ════════════════════════════════════════════════
+function playChime(isGo){
+  try{
+    const ac=new(window.AudioContext||window.webkitAudioContext)();
+    const osc=ac.createOscillator(),gain=ac.createGain();
+    osc.connect(gain);gain.connect(ac.destination);
+    osc.frequency.value=isGo?880:440;osc.type='sine';
+    gain.gain.setValueAtTime(0.4,ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+(isGo?0.6:0.25));
+    osc.start(ac.currentTime);osc.stop(ac.currentTime+(isGo?0.6:0.25));
+  }catch(e){}
+}
+
+startBtn.onclick = () => {
+  if(countingDown||recording) return;
+  countingDown=true; startBtn.disabled=true;
+  let remaining=3;
+  countdownOverlay.classList.add('visible');
+  countdownNum.classList.remove('go');
+  countdownNum.textContent=remaining;
+  playChime(false);
+  countdownTimer=setInterval(()=>{
+    remaining--;
+    if(remaining>0){
+      countdownNum.classList.remove('go');
+      countdownNum.textContent=remaining;
+      playChime(false);
+    } else {
+      countdownNum.classList.add('go');
+      countdownNum.textContent='GO!';
+      playChime(true);
+      clearInterval(countdownTimer);
+      setTimeout(()=>{
+        countdownOverlay.classList.remove('visible');
+        countdownNum.classList.remove('go');
+        countingDown=false; startBtn.disabled=false;
+        beginRecording();
+      },800);
+    }
+  },1000);
+};
+
+function beginRecording(){
+  data=[]; recording=true;
+  startTime=Date.now(); lastRecordTime=0;
+  smoothBuffer=[]; slopeBuffer=[];
+  statusDot.classList.remove('active');
+  statusDot.classList.add('recording');
+  // Ghost previous run (faint)
+  const prev=chart.data.datasets[0];
+  if(prev&&prev.data&&prev.data.length>0){
+    chart.data.datasets.push({
+      label:'Prev',data:prev.data.slice(),
+      borderColor:'rgba(0,229,255,0.15)',backgroundColor:'transparent',
+      borderWidth:1,pointRadius:0,fill:false,tension:0.3
+    });
+  }
+  chart.data.datasets[0]={
+    label:'Motion',data:[],
+    borderColor:'#00e5ff',backgroundColor:'rgba(0,229,255,0.08)',
+    borderWidth:3,pointRadius:0,fill:true,tension:0.3
+  };
+  chart.update();
+}
+
+function stopRecording(){
+  recording=false;
+  statusDot.classList.remove('recording');
+  statusDot.classList.add('active');
+  chart.update();
+}
+
+clearBtn.onclick=()=>{
+  if(countingDown){clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
+  recording=false; startBtn.disabled=false; data=[];
+  chart.data.datasets=[{
+    label:'Motion',data:[],
+    borderColor:'#00e5ff',backgroundColor:'rgba(0,229,255,0.08)',
+    borderWidth:3,pointRadius:0,fill:true,tension:0.3
+  }];
+  chart.update();
+  smoothBuffer=[]; lastRecordTime=0; slopeBuffer=[];
+  statusDot.classList.remove('recording');
+  distReadout.textContent='--';
+  drawArrow(0,0);
+  slopeReadout.textContent='0.0'; slopeReadout.className='zero';
+  slopeDirLabel.textContent='—';
+};
+</script>
+</body>
+</html>
