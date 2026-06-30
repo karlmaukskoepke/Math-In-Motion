@@ -331,9 +331,15 @@ let currentSlope    = 0;
 let arrowAngleDeg   = 0;
 let detector        = null;
 let lastKnownPxW    = null;
-let ballColor       = null;  // { r, g, b, h }
+let ballColor       = null;  // { r, g, b, h, s, v } — initial pick, used as fallback seed
 let ballPickMode    = false;
 let countdownTimer  = null;
+
+// ── Adaptive tracking state ──
+let lastCentroid    = null;  // {x, y} in source-frame px, null = not currently tracked
+let lastRadius      = null;  // px radius of last detected ball, used to size search window
+let colorRange      = null;  // {hueMin, hueMax, satMin, valMin} — rebuilt from in-circle samples each frame
+let framesSinceLost = 0;     // consecutive frames with no detection (triggers full-frame fallback)
 
 const ballModeOn = tracking && tracking.topMode === 'ball';
 const arucoMode  = !ballModeOn;
@@ -611,25 +617,72 @@ function processVideo() {
 
   if (ballModeOn && ballColor) {
     const imageData=offCtx.getImageData(0,0,vw,vh), pixels=imageData.data;
-    const targetHue=ballColor.h, STEP=4;
-    // Adaptive tolerance: low-saturation balls (brown, beige, pastel rubber)
-    // have noisier, less stable hue under shadow — widen the hue window and
-    // loosen sat/val floors so the match doesn't collapse the moment the
-    // ball dims. Highly saturated balls (neon foam) stay tight & precise.
-    const pickedSat = ballColor.s ?? 0.5, pickedVal = ballColor.v ?? 0.5;
-    const HUE_TOL  = pickedSat < 0.35 ? 34 : pickedSat < 0.6 ? 26 : 20;
-    const SAT_MIN  = Math.max(0.08, pickedSat * 0.35);
-    const VAL_MIN  = Math.max(0.05, pickedVal * 0.18);
-    const matchPts=[];
-    for (let py=STEP;py<vh-STEP;py+=STEP) {
-      for (let px=STEP;px<vw-STEP;px+=STEP) {
-        const idx=(py*vw+px)*4;
-        const {h,s,v}=rgbToHsv(pixels[idx],pixels[idx+1],pixels[idx+2]);
-        if (s<SAT_MIN||v<VAL_MIN) continue;
-        let hd=Math.abs(h-targetHue); if(hd>180)hd=360-hd;
-        if (hd<=HUE_TOL) matchPts.push({x:px,y:py});
-      }
+    const STEP=4;
+
+    // ── COLOR RANGE: seeded from the initial pick, then continuously
+    // rebuilt each frame from pixels sampled *inside* the last detected
+    // circle. This is what lets tracking adapt as the ball moves through
+    // shifting light/shadow — we're not locked to one initial sample.
+    if (!colorRange) {
+      const pickedSat = ballColor.s ?? 0.5, pickedVal = ballColor.v ?? 0.5;
+      colorRange = {
+        hueMin: ballColor.h - (pickedSat<0.35?34:pickedSat<0.6?26:20),
+        hueMax: ballColor.h + (pickedSat<0.35?34:pickedSat<0.6?26:20),
+        satMin: Math.max(0.08, pickedSat*0.35),
+        valMin: Math.max(0.05, pickedVal*0.18)
+      };
     }
+
+    function hueInRange(h) {
+      // handle wraparound (e.g. red near 0/360)
+      let lo=colorRange.hueMin, hi=colorRange.hueMax;
+      if (lo<0)   return (h>=lo+360 || h<=hi);
+      if (hi>360) return (h<=hi-360 || h>=lo);
+      return h>=lo && h<=hi;
+    }
+
+    function sampleHSVAt(px, py) {
+      const idx=(py*vw+px)*4;
+      return rgbToHsv(pixels[idx],pixels[idx+1],pixels[idx+2]);
+    }
+
+    // ── SEARCH REGION: if we know where the ball was last frame, search
+    // a window centered there first (cheaper + rejects far-away false
+    // positives). Window grows a bit each frame we're "lost" so we can
+    // re-acquire without scanning the whole frame every single time.
+    let searchX0=STEP, searchY0=STEP, searchX1=vw-STEP, searchY1=vh-STEP;
+    let localizedPass = false;
+    if (lastCentroid && lastRadius && framesSinceLost < 6) {
+      const margin = lastRadius * (2.5 + framesSinceLost*0.8);
+      searchX0 = Math.max(STEP, Math.round(lastCentroid.x - margin));
+      searchX1 = Math.min(vw-STEP, Math.round(lastCentroid.x + margin));
+      searchY0 = Math.max(STEP, Math.round(lastCentroid.y - margin));
+      searchY1 = Math.min(vh-STEP, Math.round(lastCentroid.y + margin));
+      localizedPass = true;
+    }
+
+    function scanRegion(x0,y0,x1,y1) {
+      const pts=[];
+      for (let py=y0; py<y1; py+=STEP) {
+        for (let px=x0; px<x1; px+=STEP) {
+          const {h,s,v}=sampleHSVAt(px,py);
+          if (s<colorRange.satMin||v<colorRange.valMin) continue;
+          if (hueInRange(h)) pts.push({x:px,y:py});
+        }
+      }
+      return pts;
+    }
+
+    let matchPts = scanRegion(searchX0,searchY0,searchX1,searchY1);
+
+    // Fallback: localized search came up empty — try the whole frame once
+    // before declaring the ball lost. This is the re-acquire safety net.
+    let usedFallback = false;
+    if (localizedPass && matchPts.length < 6) {
+      matchPts = scanRegion(STEP, STEP, vw-STEP, vh-STEP);
+      usedFallback = true;
+    }
+
     const CELL=Math.round(Math.min(vw,vh)*0.12);
     const gw=Math.ceil(vw/CELL), gh=Math.ceil(vh/CELL);
     const grid=new Int16Array(gw*gh);
@@ -665,10 +718,55 @@ function processVideo() {
     const expectedCirclePts = Math.PI*Math.pow(Math.min(boxW,boxH)/2/STEP,2);
     const fillRatio = expectedCirclePts>0 ? clusterCount/expectedCirclePts : 0;
     const looksRound = aspect>0.55 && fillRatio>0.35;
+
     if(clusterCount>=MIN_CLUSTER&&boxW>4&&looksRound){
       const diamPx=((maxX-minX)+(maxY-minY))/2;
+      const radiusPx=diamPx/2;
       const cxN=(minX+maxX)/2, cyN=(minY+maxY)/2;
       lastKnownPxW=diamPx;
+
+      // ── CONTINUOUS RESAMPLE: pull a handful of points from *inside*
+      // the circle we just found and use their min/max sat & val to
+      // re-tune colorRange for next frame. Hue is nudged toward the
+      // average of these in-circle samples (weighted gently — don't
+      // let one noisy frame swing it too far). This is what keeps the
+      // ball "in focus" as it moves through changing light.
+      const innerR = radiusPx*0.6; // stay inside the edge to avoid background bleed
+      const samples=[];
+      const sampleN=10;
+      for (let i=0;i<sampleN;i++) {
+        const ang=(i/sampleN)*Math.PI*2;
+        const rr=innerR*(0.3+0.6*((i%3)/2)); // mix of near-center and mid-radius points
+        const sx=Math.round(cxN+Math.cos(ang)*rr), sy=Math.round(cyN+Math.sin(ang)*rr);
+        if (sx>0&&sx<vw&&sy>0&&sy<vh) samples.push(sampleHSVAt(sx,sy));
+      }
+      if (samples.length>=4) {
+        let hueSum=0, hueN=0, satMin=1, valMin=1;
+        for (const s of samples) {
+          if (s.s<0.04) continue; // skip near-gray specular highlights, they're not color signal
+          hueSum+=s.h; hueN++;
+          satMin=Math.min(satMin,s.s);
+          valMin=Math.min(valMin,s.v);
+        }
+        if (hueN>=3) {
+          const avgHue=hueSum/hueN;
+          const span=(colorRange.hueMax-colorRange.hueMin)/2;
+          // gently re-center hue window on the live average (20% pull/frame)
+          const newCenter = colorRange.hueMin+span + (avgHue-(colorRange.hueMin+span))*0.2;
+          colorRange.hueMin=newCenter-span;
+          colorRange.hueMax=newCenter+span;
+          // loosen floors toward the darkest/least-saturated in-circle sample seen,
+          // so shadow-side pixels of the ball stay inside the acceptance window
+          colorRange.satMin=Math.max(0.04, Math.min(colorRange.satMin, satMin*0.85));
+          colorRange.valMin=Math.max(0.03, Math.min(colorRange.valMin, valMin*0.85));
+        }
+      }
+
+      // update centroid prior for next frame's localized search
+      lastCentroid={x:cxN,y:cyN};
+      lastRadius=radiusPx;
+      framesSinceLost=0;
+
       const distCm=smooth((BALL_DIAM*focalLength)/diamPx);
       const distFt=distCm/30.48;
       const dispC=toDisplay(cxN,cyN);
@@ -683,7 +781,9 @@ function processVideo() {
       updateGauges(distFt, calcSlope(now,distFt));
       if(recording) recordPoint(distFt);
     } else {
-      distBadge.innerText='No ball found';
+      framesSinceLost++;
+      if (framesSinceLost>=6) { lastCentroid=null; lastRadius=null; }
+      distBadge.innerText = usedFallback ? 'No ball found' : 'Searching…';
       videoWrapper.classList.remove('slope-pos','slope-neg','slope-zero');
     }
     requestAnimationFrame(processVideo); return;
