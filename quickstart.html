@@ -611,136 +611,99 @@ function processVideo() {
 
   if (ballModeOn && ballColor) {
     const imageData=offCtx.getImageData(0,0,vw,vh), pixels=imageData.data;
-    const targetHue=ballColor.h, STEP=4;
-    // Adaptive tolerance: low-saturation balls (brown, beige, pastel rubber)
-    // have noisier, less stable hue under shadow — widen the hue window and
-    // loosen sat/val floors so the match doesn't collapse the moment the
-    // ball dims. Highly saturated balls (neon foam) stay tight & precise.
-    const pickedSat = ballColor.s ?? 0.5, pickedVal = ballColor.v ?? 0.5;
-    const HUE_TOL  = pickedSat < 0.35 ? 34 : pickedSat < 0.6 ? 26 : 20;
-    // Prefer the real observed range from the wide ring sample taken at
-    // pick-time (captures this ball's actual shadow/highlight variation).
-    // Fall back to the formula only if ring sampling wasn't available.
-    const SAT_MIN  = ballColor.satMin ?? Math.max(0.08, pickedSat * 0.35);
-    const VAL_MIN  = ballColor.valMin ?? Math.max(0.05, pickedVal * 0.18);
-    const matchPts=[];
-    for (let py=STEP;py<vh-STEP;py+=STEP) {
-      for (let px=STEP;px<vw-STEP;px+=STEP) {
+    const targetHue=ballColor.h;
+    const pickedSat=ballColor.s??0.5, pickedVal=ballColor.v??0.5;
+    const HUE_TOL = pickedSat<0.35 ? 34 : pickedSat<0.6 ? 26 : 20;
+    const SAT_MIN = ballColor.satMin ?? Math.max(0.08, pickedSat*0.35);
+    const VAL_MIN = ballColor.valMin ?? Math.max(0.05, pickedVal*0.18);
+
+    // ── BUILD BINARY MASK ───────────────────────────────────────────
+    // Create a CV.Image where matched pixels = 1, everything else = 0.
+    // This is the input format CV.findContours expects: a grayscale
+    // binary image where non-zero pixels form the regions to trace.
+    // We do this at half resolution (STEP=2) for speed — full 1280×720
+    // at every pixel would be too slow for 30fps.
+    const STEP = 2;
+    const mw = Math.floor(vw/STEP), mh = Math.floor(vh/STEP);
+    const maskData = new Uint8Array(mw*mh);
+    for (let my=0; my<mh; my++) {
+      for (let mx=0; mx<mw; mx++) {
+        const px=mx*STEP, py=my*STEP;
         const idx=(py*vw+px)*4;
         const {h,s,v}=rgbToHsv(pixels[idx],pixels[idx+1],pixels[idx+2]);
         if (s<SAT_MIN||v<VAL_MIN) continue;
-        let hd=Math.abs(h-targetHue); if(hd>180)hd=360-hd;
-        if (hd<=HUE_TOL) matchPts.push({x:px,y:py});
+        let hd=Math.abs(h-targetHue); if(hd>180) hd=360-hd;
+        if (hd<=HUE_TOL) maskData[my*mw+mx]=1;
       }
     }
-    const CELL=Math.round(Math.min(vw,vh)*0.12);
-    const gw=Math.ceil(vw/CELL), gh=Math.ceil(vh/CELL);
-    const grid=new Int16Array(gw*gh);
-    let bestCount=0, bestCx=0, bestCy=0;
-    for (const pt of matchPts) {
-      const gx=Math.floor(pt.x/CELL), gy=Math.floor(pt.y/CELL);
-      for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++) {
-        const nx=gx+dx, ny=gy+dy;
-        if(nx>=0&&nx<gw&&ny>=0&&ny<gh) grid[ny*gw+nx]++;
-      }
-    }
-    for (let gy=0;gy<gh;gy++) for(let gx=0;gx<gw;gx++) {
-      const cnt=grid[gy*gw+gx];
-      if(cnt>bestCount){bestCount=cnt;bestCx=(gx+0.5)*CELL;bestCy=(gy+0.5)*CELL;}
-    }
-    const REFINE_R=CELL*2.5;
-    // Gather matched points near the rough cluster centroid — same as
-    // before, this is just "points plausibly belonging to the ball."
-    const nearPts=[];
-    for(const pt of matchPts){
-      const dx=pt.x-bestCx,dy=pt.y-bestCy;
-      if(dx*dx+dy*dy<=REFINE_R*REFINE_R) nearPts.push(pt);
-    }
+    const maskImg = {width:mw, height:mh, data:maskData};
 
-    // ── CIRCLE FIT ──────────────────────────────────────────────────
-    // A ball's silhouette is one of the only near-perfectly-circular
-    // shapes likely to appear in frame — faces, shadows, and background
-    // clutter are not. Rather than trust the bounding box of whichever
-    // color-matched pixels happened to pass the filter (which skews
-    // toward whichever side is best-lit), we search for the circle that
-    // best explains the matched points as lying on its boundary/interior.
+    // ── FIND CONTOURS ────────────────────────────────────────────────
+    // CV.findContours traces the boundary of every connected non-zero
+    // region in the mask. Each contour is an array of {x,y} points
+    // along that region's edge — exactly the "circle of edges" your
+    // eye sees when looking at the ball's silhouette.
+    const binary = [];
+    const contours = CV.findContours(maskImg, binary);
+
+    // ── CIRCULARITY FILTER ───────────────────────────────────────────
+    // For each contour, compute:
+    //   area     = shoelace formula (signed area of polygon)
+    //   perim    = CV.perimeter (sum of edge lengths)
+    //   circ     = 4π × area / perim²  →  1.0 = perfect circle
     //
-    // Approach: use the matched points' own centroid + spread to propose
-    // a handful of candidate (cx, cy, r) circles, then score each by how
-    // densely matched points populate its ring/interior versus how many
-    // "should" be there for a true filled or outlined circle. This is a
-    // lightweight, localized alternative to a full Hough transform —
-    // appropriate since color-matching has already narrowed the search
-    // to a small region instead of the whole frame.
-    function fitCircle(pts) {
-      if (pts.length < 6) return null;
-      // initial centroid guess
-      let sx=0, sy=0;
-      for (const p of pts) { sx+=p.x; sy+=p.y; }
-      const cx0=sx/pts.length, cy0=sy/pts.length;
+    // A ball's silhouette will score ~0.7-0.95 depending on how much
+    // of its edge is visible. Background blobs, rectangular patches,
+    // and irregular shapes score much lower. This is the signal your
+    // eye uses when it immediately sees "that's a circle."
+    //
+    // Physical size constraint: at 0.5-5m distance with focal=863,
+    // ball diameter ranges from ~26px to ~262px at source resolution,
+    // so radius in mask coords (at STEP=2) is roughly 7-66px.
+    const MIN_R = 6, MAX_R = 80, MIN_CIRC = 0.55;
 
-      // candidate radius range: derive from how far points spread from
-      // the centroid guess, since the true radius should be close to
-      // the typical (not max — outliers skew this) distance from center
-      const dists = pts.map(p => Math.hypot(p.x-cx0, p.y-cy0)).sort((a,b)=>a-b);
-      const medianDist = dists[Math.floor(dists.length/2)];
-      if (medianDist < 2) return null;
-
-      let best = null;
-      // search a small grid of center offsets + radii around the initial
-      // guess, since the color centroid can be off-center if shadow
-      // suppressed matches on one side
-      const centerSteps = [-0.3,-0.15,0,0.15,0.3];
-      const radiusFactors = [0.7,0.8,0.9,1.0,1.1,1.2,1.35];
-      for (const dxF of centerSteps) {
-        for (const dyF of centerSteps) {
-          const tcx = cx0 + dxF*medianDist;
-          const tcy = cy0 + dyF*medianDist;
-          for (const rF of radiusFactors) {
-            const r = medianDist*rF;
-            if (r<3) continue;
-            // Score by CONSISTENCY rather than raw fill: what fraction of
-            // matched points fall inside this circle (inliers) vs outside
-            // it (outliers). A genuinely circular object — even shadowed
-            // or partially occluded — has nearly all its matched points
-            // fall inside the true circle. A non-circular shape (a face,
-            // with ears/jaw/hairline breaking the silhouette) inevitably
-            // has a meaningful fraction of points no single circle can
-            // contain, which is specifically what gets penalized here.
-            // (Validated against synthetic ball/face/occlusion test data
-            // before tuning these weights.)
-            let inside=0, outside=0;
-            for (const p of pts) {
-              const d = Math.hypot(p.x-tcx, p.y-tcy);
-              if (d <= r*1.0) inside++; else outside++;
-            }
-            const consistency = inside/pts.length;
-            const outlierFrac = outside/pts.length;
-            const score = consistency - outlierFrac*1.2;
-            if (!best || score>best.score) best = {cx:tcx, cy:tcy, r, score};
-          }
-        }
+    function contourArea(pts) {
+      // Shoelace formula for polygon area
+      let area=0, n=pts.length;
+      for (let i=0,j=n-1; i<n; j=i++) {
+        area += (pts[j].x+pts[i].x)*(pts[j].y-pts[i].y);
       }
-      return best;
+      return Math.abs(area)/2;
     }
 
-    const fit = fitCircle(nearPts);
-    const clusterCount = nearPts.length;
-    const MIN_CLUSTER=Math.max(8,Math.round((REFINE_R/STEP)*0.15));
-    // Require both enough raw matched points AND a confident circle fit.
-    // Score = inlier consistency minus outlier penalty (see fitCircle).
-    // 0.55 was set by testing synthetic ball vs. face point clouds: a
-    // real ball (even ~50% shadow-occluded) scores ~0.6-0.95, while a
-    // face-shaped blob tops out around ~0.6-0.66.
-    const looksRound = fit && fit.score >= 0.55;
-    if(clusterCount>=MIN_CLUSTER&&looksRound){
-      const diamPx=fit.r*2;
-      const cxN=fit.cx, cyN=fit.cy;
+    function contourBoundingCircle(pts) {
+      // Quick bounding circle via centroid + max distance
+      let sx=0,sy=0;
+      for(const p of pts){sx+=p.x;sy+=p.y;}
+      const cx=sx/pts.length, cy=sy/pts.length;
+      let r=0;
+      for(const p of pts) r=Math.max(r,Math.hypot(p.x-cx,p.y-cy));
+      return {cx,cy,r};
+    }
+
+    let bestContour=null, bestCirc=0;
+    for (const contour of contours) {
+      if (contour.length < 5) continue;
+      const area  = contourArea(contour);
+      const perim = CV.perimeter(contour);
+      if (perim < 1) continue;
+      const circ = (4*Math.PI*area)/(perim*perim);
+      const {cx,cy,r} = contourBoundingCircle(contour);
+      if (r<MIN_R||r>MAX_R) continue;
+      if (circ<MIN_CIRC) continue;
+      if (circ>bestCirc) { bestCirc=circ; bestContour=contour; }
+    }
+
+    if (bestContour) {
+      const {cx:mcx,cy:mcy,r:mr} = contourBoundingCircle(bestContour);
+      // Scale mask coords back to source-frame coords
+      const cxN=mcx*STEP, cyN=mcy*STEP, rPx=mr*STEP;
+      const diamPx=rPx*2;
       lastKnownPxW=diamPx;
       const distCm=smooth((BALL_DIAM*focalLength)/diamPx);
       const distFt=distCm/30.48;
       const dispC=toDisplay(cxN,cyN);
-      const dispR=Math.max(8,(diamPx/cropW)*dw/2);
+      const dispR=Math.max(8,(rPx/cropW)*dw);
       ctx.strokeStyle='#ffd740'; ctx.lineWidth=3;
       ctx.beginPath(); ctx.arc(dispC.x,dispC.y,dispR,0,Math.PI*2); ctx.stroke();
       ctx.fillStyle='rgba(255,215,64,0.12)'; ctx.fill();
@@ -748,7 +711,7 @@ function processVideo() {
       ctx.fillStyle='#ffd740'; ctx.fill();
       distBadge.innerText=distFt.toFixed(2)+' ft';
       const now=(Date.now()-startTime)/1000;
-      updateGauges(distFt, calcSlope(now,distFt));
+      updateGauges(distFt,calcSlope(now,distFt));
       if(recording) recordPoint(distFt);
     } else {
       distBadge.innerText='No ball found';
