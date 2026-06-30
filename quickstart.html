@@ -611,7 +611,15 @@ function processVideo() {
 
   if (ballModeOn && ballColor) {
     const imageData=offCtx.getImageData(0,0,vw,vh), pixels=imageData.data;
-    const targetHue=ballColor.h, HUE_TOL=22, SAT_MIN=0.25, VAL_MIN=0.08, STEP=4;
+    const targetHue=ballColor.h, STEP=4;
+    // Adaptive tolerance: low-saturation balls (brown, beige, pastel rubber)
+    // have noisier, less stable hue under shadow — widen the hue window and
+    // loosen sat/val floors so the match doesn't collapse the moment the
+    // ball dims. Highly saturated balls (neon foam) stay tight & precise.
+    const pickedSat = ballColor.s ?? 0.5, pickedVal = ballColor.v ?? 0.5;
+    const HUE_TOL  = pickedSat < 0.35 ? 34 : pickedSat < 0.6 ? 26 : 20;
+    const SAT_MIN  = Math.max(0.08, pickedSat * 0.35);
+    const VAL_MIN  = Math.max(0.05, pickedVal * 0.18);
     const matchPts=[];
     for (let py=STEP;py<vh-STEP;py+=STEP) {
       for (let px=STEP;px<vw-STEP;px+=STEP) {
@@ -648,7 +656,16 @@ function processVideo() {
       }
     }
     const MIN_CLUSTER=Math.max(8,Math.round((REFINE_R/STEP)*0.15));
-    if(clusterCount>=MIN_CLUSTER&&(maxX-minX)>4){
+    const boxW=maxX-minX, boxH=maxY-minY;
+    // Circularity check: a real ball's bounding box should be roughly
+    // square (aspect close to 1) and roughly full (pixel count should
+    // approach the area of an inscribed circle, not a thin streak or
+    // scattered false-positive patch like wood grain or skin).
+    const aspect = boxH>0 ? Math.min(boxW,boxH)/Math.max(boxW,boxH) : 0;
+    const expectedCirclePts = Math.PI*Math.pow(Math.min(boxW,boxH)/2/STEP,2);
+    const fillRatio = expectedCirclePts>0 ? clusterCount/expectedCirclePts : 0;
+    const looksRound = aspect>0.55 && fillRatio>0.35;
+    if(clusterCount>=MIN_CLUSTER&&boxW>4&&looksRound){
       const diamPx=((maxX-minX)+(maxY-minY))/2;
       const cxN=(minX+maxX)/2, cyN=(minY+maxY)/2;
       lastKnownPxW=diamPx;
@@ -738,8 +755,8 @@ overlay.addEventListener('click', (e) => {
   for(let i=0;i<patch.length;i+=4){r+=patch[i];g+=patch[i+1];b+=patch[i+2];n++;}
   r=Math.round(r/n); g=Math.round(g/n); b=Math.round(b/n);
   const hsv=rgbToHsv(r,g,b);
-  ballColor={r,g,b,h:hsv.h};
-  distBadge.innerText=`Picked H:${Math.round(hsv.h)}°`;
+  ballColor={r,g,b,h:hsv.h,s:hsv.s,v:hsv.v};
+  distBadge.innerText=`Picked H:${Math.round(hsv.h)}° S:${Math.round(hsv.s*100)}%`;
 });
 
 // ════════════════════════════════════════════════
