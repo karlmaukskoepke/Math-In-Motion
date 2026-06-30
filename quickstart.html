@@ -618,8 +618,11 @@ function processVideo() {
     // ball dims. Highly saturated balls (neon foam) stay tight & precise.
     const pickedSat = ballColor.s ?? 0.5, pickedVal = ballColor.v ?? 0.5;
     const HUE_TOL  = pickedSat < 0.35 ? 34 : pickedSat < 0.6 ? 26 : 20;
-    const SAT_MIN  = Math.max(0.08, pickedSat * 0.35);
-    const VAL_MIN  = Math.max(0.05, pickedVal * 0.18);
+    // Prefer the real observed range from the wide ring sample taken at
+    // pick-time (captures this ball's actual shadow/highlight variation).
+    // Fall back to the formula only if ring sampling wasn't available.
+    const SAT_MIN  = ballColor.satMin ?? Math.max(0.08, pickedSat * 0.35);
+    const VAL_MIN  = ballColor.valMin ?? Math.max(0.05, pickedVal * 0.18);
     const matchPts=[];
     for (let py=STEP;py<vh-STEP;py+=STEP) {
       for (let px=STEP;px<vw-STEP;px+=STEP) {
@@ -750,13 +753,74 @@ overlay.addEventListener('click', (e) => {
   const nx=Math.round(cropX+cx*cropW), ny=Math.round(cropY+cy*cropH);
   const tmp=document.createElement('canvas'); tmp.width=vw; tmp.height=vh;
   const tCtx=tmp.getContext('2d'); tCtx.drawImage(video,0,0,vw,vh);
-  const patch=tCtx.getImageData(Math.max(0,nx-4),Math.max(0,ny-4),9,9).data;
-  let r=0,g=0,b=0,n=0;
-  for(let i=0;i<patch.length;i+=4){r+=patch[i];g+=patch[i+1];b+=patch[i+2];n++;}
-  r=Math.round(r/n); g=Math.round(g/n); b=Math.round(b/n);
-  const hsv=rgbToHsv(r,g,b);
-  ballColor={r,g,b,h:hsv.h,s:hsv.s,v:hsv.v};
-  distBadge.innerText=`Picked H:${Math.round(hsv.h)}° S:${Math.round(hsv.s*100)}%`;
+
+  // ── STAGE 1: tight center patch — this gives us the seed hue, same as
+  // before. The tap point is assumed to land near the ball's middle.
+  const centerPatch=tCtx.getImageData(Math.max(0,nx-4),Math.max(0,ny-4),9,9).data;
+  let cr=0,cg=0,cb=0,cn=0;
+  for(let i=0;i<centerPatch.length;i+=4){cr+=centerPatch[i];cg+=centerPatch[i+1];cb+=centerPatch[i+2];cn++;}
+  cr=Math.round(cr/cn); cg=Math.round(cg/cn); cb=Math.round(cb/cn);
+  const centerHsv=rgbToHsv(cr,cg,cb);
+
+  // ── STAGE 2: wide ring sample around the tap point. A 9px center patch
+  // only captures one lighting condition; balls are bright in the middle
+  // and darken/desaturate toward the edge. Sampling a much wider ring
+  // around the tap point — and keeping only points that still plausibly
+  // belong to the ball (similar hue to center) — lets us learn the ball's
+  // *real* sat/val range in one shot, instead of guessing a formula.
+  const RING_RADIUS=50, RING_SAMPLES=24, HUE_GATE=18;
+  const boxSize=RING_RADIUS*2+10;
+  const bx0=Math.max(0,nx-boxSize/2), by0=Math.max(0,ny-boxSize/2);
+  const boxW=Math.min(vw-bx0,boxSize), boxH=Math.min(vh-by0,boxSize);
+  let ringImg;
+  try { ringImg = tCtx.getImageData(Math.round(bx0),Math.round(by0),Math.round(boxW),Math.round(boxH)); }
+  catch(e) { ringImg = null; }
+
+  let satMin=centerHsv.s, satMax=centerHsv.s, valMin=centerHsv.v, valMax=centerHsv.v;
+  let keptCount=0;
+
+  if (ringImg) {
+    const rd=ringImg.data, rw=ringImg.width, rh=ringImg.height;
+    for (let i=0;i<RING_SAMPLES;i++) {
+      const ang=(i/RING_SAMPLES)*Math.PI*2;
+      // sample at a few radii, not just the outer ring, so we catch the
+      // gradient from center to edge rather than only the extreme edge
+      for (const frac of [0.4, 0.7, 1.0]) {
+        const sx=Math.round((nx-bx0)+Math.cos(ang)*RING_RADIUS*frac);
+        const sy=Math.round((ny-by0)+Math.sin(ang)*RING_RADIUS*frac);
+        if (sx<0||sx>=rw||sy<0||sy>=rh) continue;
+        const idx=(sy*rw+sx)*4;
+        const hsv=rgbToHsv(rd[idx],rd[idx+1],rd[idx+2]);
+        let hd=Math.abs(hsv.h-centerHsv.h); if(hd>180) hd=360-hd;
+        if (hd>HUE_GATE) continue; // strayed off the ball onto background/skin
+        satMin=Math.min(satMin,hsv.s); satMax=Math.max(satMax,hsv.s);
+        valMin=Math.min(valMin,hsv.v); valMax=Math.max(valMax,hsv.v);
+        keptCount++;
+      }
+    }
+  }
+
+  // Safety floor: if too few ring points survived the hue gate (tiny ball,
+  // cluttered background), fall back to the old formula-based estimate
+  // rather than trusting a near-empty sample.
+  if (keptCount < 6) {
+    satMin = Math.max(0.08, centerHsv.s*0.5);
+    valMin = Math.max(0.05, centerHsv.v*0.5);
+  } else {
+    // Wider margin below the observed minimum than above — the pick-time
+    // sample happens in whatever light is available right now, which may
+    // be brighter than the shadow the ball will pass through later during
+    // actual use. Err generous on the low end.
+    satMin = Math.max(0.05, satMin*0.55);
+    valMin = Math.max(0.04, valMin*0.45);
+  }
+
+  ballColor = {
+    r:cr, g:cg, b:cb,
+    h:centerHsv.h, s:centerHsv.s, v:centerHsv.v,
+    satMin, valMin
+  };
+  distBadge.innerText = `Picked H:${Math.round(centerHsv.h)}° · range from ${keptCount} samples`;
 });
 
 // ════════════════════════════════════════════════
