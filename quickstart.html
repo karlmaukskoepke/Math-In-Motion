@@ -687,7 +687,16 @@ function processVideo() {
 
     // For each candidate, gather nearby points, run a quick coarse fit,
     // and keep the candidate with the best circle score
-    const REFINE_R = CELL * 1.5;
+    // FIX (2026-07-01): REFINE_R was tied to CELL (min(vw,vh)*0.08*1.5,
+    // ~86px @720p) — a ball's true on-screen radius at close range exceeds
+    // that, so the outer ring of the ball was never gathered into the
+    // point cloud, and the circle fit could never converge on a radius
+    // bigger than the cap. Baseline data confirmed radius plateauing at
+    // ~78-92px across all three test balls even in the closest frames.
+    // Decoupled from CELL and widened to 35% of the frame's short
+    // dimension (~252px @720p) so close-range balls have room to fit.
+    // CELL itself (grid voting resolution) is untouched.
+    const REFINE_R = Math.min(vw, vh) * 0.35;
 
     // ── CIRCLE FIT ─────────────────────────────────────────────────
     // Scores a set of points against a candidate circle using inlier
