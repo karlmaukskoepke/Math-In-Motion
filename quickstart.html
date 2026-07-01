@@ -331,9 +331,12 @@ let currentSlope    = 0;
 let arrowAngleDeg   = 0;
 let detector        = null;
 let lastKnownPxW    = null;
-let ballColor       = null;  // { r, g, b, h, s, v }
 let ballPickMode    = false;
 let countdownTimer  = null;
+
+// Persistent CV image buffers — allocated once when camera starts
+// rather than every frame to avoid GC pressure at 30fps
+let cvGrey = null, cvThres = null, cvBlur = null;
 
 const ballModeOn = tracking && tracking.topMode === 'ball';
 const arucoMode  = !ballModeOn;
@@ -574,19 +577,6 @@ function calcSlope(t, distFt) {
 // ════════════════════════════════════════════════
 // COLOR HELPERS (ball tracking)
 // ════════════════════════════════════════════════
-function rgbToHsv(r,g,b) {
-  r/=255; g/=255; b/=255;
-  const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min;
-  let h=0;
-  if (d>0) {
-    if      (max===r) h=60*(((g-b)/d)%6);
-    else if (max===g) h=60*(((b-r)/d)+2);
-    else              h=60*(((r-g)/d)+4);
-    if (h<0) h+=360;
-  }
-  return { h, s: max===0?0:d/max, v: max };
-}
-
 // ════════════════════════════════════════════════
 // PROCESS VIDEO
 // ════════════════════════════════════════════════
@@ -609,95 +599,94 @@ function processVideo() {
     return { x:((nx-cropX)/cropW)*dw, y:((ny-cropY)/cropH)*dh };
   }
 
-  if (ballModeOn && ballColor) {
-    const imageData=offCtx.getImageData(0,0,vw,vh), pixels=imageData.data;
-    const targetHue=ballColor.h;
-    const pickedSat=ballColor.s??0.5, pickedVal=ballColor.v??0.5;
-    const HUE_TOL = pickedSat<0.35 ? 34 : pickedSat<0.6 ? 26 : 20;
-    const SAT_MIN = ballColor.satMin ?? Math.max(0.08, pickedSat*0.35);
-    const VAL_MIN = ballColor.valMin ?? Math.max(0.05, pickedVal*0.18);
+  if (ballModeOn) {
+    // ── GREYSCALE EDGE PIPELINE ─────────────────────────────────────
+    // No color calibration needed. We find the ball purely by shape:
+    // a sphere always projects as a perfect circle from any angle, and
+    // its silhouette edge is always high-contrast. Other round-ish
+    // objects (doorknobs, clocks) are ellipses (fail residual test)
+    // or partial arcs (fail coverage test). We use both to discriminate.
+    const rawData=offCtx.getImageData(0,0,vw,vh);
+    const cvRaw={width:vw,height:vh,data:rawData.data};
 
-    // ── BUILD BINARY MASK ───────────────────────────────────────────
-    // Create a CV.Image where matched pixels = 1, everything else = 0.
-    // This is the input format CV.findContours expects: a grayscale
-    // binary image where non-zero pixels form the regions to trace.
-    // We do this at half resolution (STEP=2) for speed — full 1280×720
-    // at every pixel would be too slow for 30fps.
-    const STEP = 2;
-    const mw = Math.floor(vw/STEP), mh = Math.floor(vh/STEP);
-    const maskData = new Uint8Array(mw*mh);
-    for (let my=0; my<mh; my++) {
-      for (let mx=0; mx<mw; mx++) {
-        const px=mx*STEP, py=my*STEP;
-        const idx=(py*vw+px)*4;
-        const {h,s,v}=rgbToHsv(pixels[idx],pixels[idx+1],pixels[idx+2]);
-        if (s<SAT_MIN||v<VAL_MIN) continue;
-        let hd=Math.abs(h-targetHue); if(hd>180) hd=360-hd;
-        if (hd<=HUE_TOL) maskData[my*mw+mx]=1;
+    // Greyscale → gentle blur → adaptive threshold to find edges
+    // Same pipeline the ArUco detector already uses
+    CV.grayscale(cvRaw, cvGrey);
+    CV.gaussianBlur(cvGrey, cvBlur, cvBlur, 3);
+    CV.adaptiveThreshold(cvBlur, cvThres, 2, 7);
+
+    const binary=[];
+    const contours=CV.findContours(cvThres, binary);
+
+    // ── TAUBIN CIRCLE FIT ───────────────────────────────────────────
+    // Algebraically stable circle fit through contour edge points.
+    function taubinFit(pts){
+      const n=pts.length; if(n<5) return null;
+      let mx=0,my=0;
+      for(const p of pts){mx+=p.x;my+=p.y;} mx/=n;my/=n;
+      let Suu=0,Svv=0,Suv=0,Suuu=0,Svvv=0,Suuv=0,Suvv=0;
+      for(const p of pts){
+        const u=p.x-mx,v=p.y-my;
+        Suu+=u*u;Svv+=v*v;Suv+=u*v;
+        Suuu+=u*u*u;Svvv+=v*v*v;Suuv+=u*u*v;Suvv+=u*v*v;
       }
-    }
-    const maskImg = {width:mw, height:mh, data:maskData};
-
-    // ── FIND CONTOURS ────────────────────────────────────────────────
-    // CV.findContours traces the boundary of every connected non-zero
-    // region in the mask. Each contour is an array of {x,y} points
-    // along that region's edge — exactly the "circle of edges" your
-    // eye sees when looking at the ball's silhouette.
-    const binary = [];
-    const contours = CV.findContours(maskImg, binary);
-
-    // ── CIRCULARITY FILTER ───────────────────────────────────────────
-    // For each contour, compute:
-    //   area     = shoelace formula (signed area of polygon)
-    //   perim    = CV.perimeter (sum of edge lengths)
-    //   circ     = 4π × area / perim²  →  1.0 = perfect circle
-    //
-    // A ball's silhouette will score ~0.7-0.95 depending on how much
-    // of its edge is visible. Background blobs, rectangular patches,
-    // and irregular shapes score much lower. This is the signal your
-    // eye uses when it immediately sees "that's a circle."
-    //
-    // Physical size constraint: at 0.5-5m distance with focal=863,
-    // ball diameter ranges from ~26px to ~262px at source resolution,
-    // so radius in mask coords (at STEP=2) is roughly 7-66px.
-    const MIN_R = 6, MAX_R = 80, MIN_CIRC = 0.55;
-
-    function contourArea(pts) {
-      // Shoelace formula for polygon area
-      let area=0, n=pts.length;
-      for (let i=0,j=n-1; i<n; j=i++) {
-        area += (pts[j].x+pts[i].x)*(pts[j].y-pts[i].y);
-      }
-      return Math.abs(area)/2;
-    }
-
-    function contourBoundingCircle(pts) {
-      // Quick bounding circle via centroid + max distance
-      let sx=0,sy=0;
-      for(const p of pts){sx+=p.x;sy+=p.y;}
-      const cx=sx/pts.length, cy=sy/pts.length;
+      const b1=0.5*(Suuu+Suvv),b2=0.5*(Svvv+Suuv);
+      const det=Suu*Svv-Suv*Suv;
+      if(Math.abs(det)<1e-10) return null;
+      const uc=(b1*Svv-b2*Suv)/det,vc=(b2*Suu-b1*Suv)/det;
+      const cx=uc+mx,cy=vc+my;
       let r=0;
-      for(const p of pts) r=Math.max(r,Math.hypot(p.x-cx,p.y-cy));
-      return {cx,cy,r};
+      for(const p of pts) r+=Math.hypot(p.x-cx,p.y-cy);
+      return {cx,cy,r:r/n};
     }
 
-    let bestContour=null, bestCirc=0;
-    for (const contour of contours) {
-      if (contour.length < 5) continue;
-      const area  = contourArea(contour);
-      const perim = CV.perimeter(contour);
-      if (perim < 1) continue;
-      const circ = (4*Math.PI*area)/(perim*perim);
-      const {cx,cy,r} = contourBoundingCircle(contour);
-      if (r<MIN_R||r>MAX_R) continue;
-      if (circ<MIN_CIRC) continue;
-      if (circ>bestCirc) { bestCirc=circ; bestContour=contour; }
+    // Normalised RMS residual: how tightly do points lie on the circle?
+    // ~0 = perfect circle. Ellipses score ~0.08+. Arcs score ~0 but
+    // fail the coverage test below.
+    function fitResidual(pts,fit){
+      let sum=0;
+      for(const p of pts){const d=Math.hypot(p.x-fit.cx,p.y-fit.cy)-fit.r;sum+=d*d;}
+      return Math.sqrt(sum/pts.length)/fit.r;
     }
 
-    if (bestContour) {
-      const {cx:mcx,cy:mcy,r:mr} = contourBoundingCircle(bestContour);
-      // Scale mask coords back to source-frame coords
-      const cxN=mcx*STEP, cyN=mcy*STEP, rPx=mr*STEP;
+    // Angular coverage: what fraction of the circle circumference has
+    // contour points? A full sphere edge ≈ 1.0. A 180° doorknob arc
+    // ≈ 0.5. Shadow can reduce this to ~0.65 for a real ball.
+    function angularCoverage(pts,fit,sectors=16){
+      const b=new Uint8Array(sectors);
+      for(const p of pts){
+        const a=Math.atan2(p.y-fit.cy,p.x-fit.cx);
+        b[Math.floor(((a+Math.PI)/(2*Math.PI))*sectors)%sectors]=1;
+      }
+      return b.reduce((a,v)=>a+v,0)/sectors;
+    }
+
+    // Size constraint from known physical diameter + focal length
+    const R_MIN=Math.max(8,  (BALL_DIAM*focalLength)/(600*2));
+    const R_MAX=Math.min(180,(BALL_DIAM*focalLength)/(40*2));
+    const MAX_RES=0.055, MIN_COV=0.68;
+
+    let bestFit=null, bestScore=0;
+    for(const contour of contours){
+      // Subsample for speed — Taubin doesn't need every pixel
+      let pts=contour;
+      if(pts.length>60){
+        const step=Math.ceil(pts.length/60);
+        pts=contour.filter((_,i)=>i%step===0);
+      }
+      if(pts.length<8) continue;
+      const fit=taubinFit(pts);
+      if(!fit||fit.r<R_MIN||fit.r>R_MAX) continue;
+      const res=fitResidual(pts,fit);
+      if(res>MAX_RES) continue;
+      const cov=angularCoverage(pts,fit);
+      if(cov<MIN_COV) continue;
+      const score=cov*0.7+(1-res/MAX_RES)*0.3;
+      if(score>bestScore){bestScore=score;bestFit=fit;}
+    }
+
+    if(bestFit){
+      const {cx:cxN,cy:cyN,r:rPx}=bestFit;
       const diamPx=rPx*2;
       lastKnownPxW=diamPx;
       const distCm=smooth((BALL_DIAM*focalLength)/diamPx);
@@ -717,12 +706,6 @@ function processVideo() {
       distBadge.innerText='No ball found';
       videoWrapper.classList.remove('slope-pos','slope-neg','slope-zero');
     }
-    requestAnimationFrame(processVideo); return;
-  }
-
-  if (ballModeOn && !ballColor) {
-    // Ball mode but color not yet picked — show pick prompt
-    distBadge.innerText='Tap ball to pick color';
     requestAnimationFrame(processVideo); return;
   }
 
@@ -767,90 +750,6 @@ function recordPoint(distFt) {
 // ════════════════════════════════════════════════
 // BALL COLOR PICK (tap on video)
 // ════════════════════════════════════════════════
-overlay.addEventListener('click', (e) => {
-  if (!ballModeOn || !video.videoWidth) return;
-  const rect=videoWrapper.getBoundingClientRect();
-  const cx=(e.clientX-rect.left)/rect.width;
-  const cy=(e.clientY-rect.top)/rect.height;
-  const vw=video.videoWidth, vh=video.videoHeight;
-  const dw=videoWrapper.clientWidth, dh=videoWrapper.clientHeight;
-  const vAsp=vw/vh, dAsp=dw/dh;
-  let cropX=0,cropY=0,cropW=vw,cropH=vh;
-  if(vAsp>dAsp){cropH=vh;cropW=Math.round(vh*dAsp);cropX=Math.round((vw-cropW)/2);}
-  else{cropW=vw;cropH=Math.round(vw/dAsp);cropY=Math.round((vh-cropH)/2);}
-  const nx=Math.round(cropX+cx*cropW), ny=Math.round(cropY+cy*cropH);
-  const tmp=document.createElement('canvas'); tmp.width=vw; tmp.height=vh;
-  const tCtx=tmp.getContext('2d'); tCtx.drawImage(video,0,0,vw,vh);
-
-  // ── STAGE 1: tight center patch — this gives us the seed hue, same as
-  // before. The tap point is assumed to land near the ball's middle.
-  const centerPatch=tCtx.getImageData(Math.max(0,nx-4),Math.max(0,ny-4),9,9).data;
-  let cr=0,cg=0,cb=0,cn=0;
-  for(let i=0;i<centerPatch.length;i+=4){cr+=centerPatch[i];cg+=centerPatch[i+1];cb+=centerPatch[i+2];cn++;}
-  cr=Math.round(cr/cn); cg=Math.round(cg/cn); cb=Math.round(cb/cn);
-  const centerHsv=rgbToHsv(cr,cg,cb);
-
-  // ── STAGE 2: wide ring sample around the tap point. A 9px center patch
-  // only captures one lighting condition; balls are bright in the middle
-  // and darken/desaturate toward the edge. Sampling a much wider ring
-  // around the tap point — and keeping only points that still plausibly
-  // belong to the ball (similar hue to center) — lets us learn the ball's
-  // *real* sat/val range in one shot, instead of guessing a formula.
-  const RING_RADIUS=50, RING_SAMPLES=24, HUE_GATE=18;
-  const boxSize=RING_RADIUS*2+10;
-  const bx0=Math.max(0,nx-boxSize/2), by0=Math.max(0,ny-boxSize/2);
-  const boxW=Math.min(vw-bx0,boxSize), boxH=Math.min(vh-by0,boxSize);
-  let ringImg;
-  try { ringImg = tCtx.getImageData(Math.round(bx0),Math.round(by0),Math.round(boxW),Math.round(boxH)); }
-  catch(e) { ringImg = null; }
-
-  let satMin=centerHsv.s, satMax=centerHsv.s, valMin=centerHsv.v, valMax=centerHsv.v;
-  let keptCount=0;
-
-  if (ringImg) {
-    const rd=ringImg.data, rw=ringImg.width, rh=ringImg.height;
-    for (let i=0;i<RING_SAMPLES;i++) {
-      const ang=(i/RING_SAMPLES)*Math.PI*2;
-      // sample at a few radii, not just the outer ring, so we catch the
-      // gradient from center to edge rather than only the extreme edge
-      for (const frac of [0.4, 0.7, 1.0]) {
-        const sx=Math.round((nx-bx0)+Math.cos(ang)*RING_RADIUS*frac);
-        const sy=Math.round((ny-by0)+Math.sin(ang)*RING_RADIUS*frac);
-        if (sx<0||sx>=rw||sy<0||sy>=rh) continue;
-        const idx=(sy*rw+sx)*4;
-        const hsv=rgbToHsv(rd[idx],rd[idx+1],rd[idx+2]);
-        let hd=Math.abs(hsv.h-centerHsv.h); if(hd>180) hd=360-hd;
-        if (hd>HUE_GATE) continue; // strayed off the ball onto background/skin
-        satMin=Math.min(satMin,hsv.s); satMax=Math.max(satMax,hsv.s);
-        valMin=Math.min(valMin,hsv.v); valMax=Math.max(valMax,hsv.v);
-        keptCount++;
-      }
-    }
-  }
-
-  // Safety floor: if too few ring points survived the hue gate (tiny ball,
-  // cluttered background), fall back to the old formula-based estimate
-  // rather than trusting a near-empty sample.
-  if (keptCount < 6) {
-    satMin = Math.max(0.08, centerHsv.s*0.5);
-    valMin = Math.max(0.05, centerHsv.v*0.5);
-  } else {
-    // Wider margin below the observed minimum than above — the pick-time
-    // sample happens in whatever light is available right now, which may
-    // be brighter than the shadow the ball will pass through later during
-    // actual use. Err generous on the low end.
-    satMin = Math.max(0.05, satMin*0.55);
-    valMin = Math.max(0.04, valMin*0.45);
-  }
-
-  ballColor = {
-    r:cr, g:cg, b:cb,
-    h:centerHsv.h, s:centerHsv.s, v:centerHsv.v,
-    satMin, valMin
-  };
-  distBadge.innerText = `Picked H:${Math.round(centerHsv.h)}° · range from ${keptCount} samples`;
-});
-
 // ════════════════════════════════════════════════
 // CAMERA
 // ════════════════════════════════════════════════
@@ -865,6 +764,12 @@ cameraBtn.onclick = () => {
       camPlaceholder.style.display='none';
       video.onloadedmetadata=()=>{
         video.play();
+        // Allocate greyscale pipeline buffers at actual camera resolution
+        // so we don't reallocate every frame
+        const vw=video.videoWidth, vh=video.videoHeight;
+        cvGrey  = new CV.Image(vw, vh);
+        cvBlur  = new CV.Image(vw, vh);
+        cvThres = new CV.Image(vw, vh);
         statusDot.classList.add('active');
         startBtn.disabled=false;
         startTime=Date.now();
