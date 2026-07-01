@@ -226,6 +226,12 @@
         <button class="ctrl-btn" id="clearBtn">✕ Clear</button>
       </div>
 
+      <!-- TEMP: remove after size-history filter is validated -->
+      <div id="logControls" style="display:flex; gap:6px;">
+        <button class="ctrl-btn" id="logBtn" style="flex:1;">● Log: OFF</button>
+        <button class="ctrl-btn" id="downloadLogBtn" style="flex:1;" disabled>⬇ CSV</button>
+      </div>
+
       <div id="trackingMode">
         <div class="mode-dot" id="modeDot"></div>
         <span id="modeLabel">No setup</span>
@@ -308,6 +314,8 @@ const slopeReadout   = document.getElementById('slopeReadout');
 const slopeDirLabel  = document.getElementById('slopeDirLabel');
 const countdownOverlay = document.getElementById('countdownOverlay');
 const countdownNum     = document.getElementById('countdownNum');
+const logBtn           = document.getElementById('logBtn');
+const downloadLogBtn   = document.getElementById('downloadLogBtn');
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -334,6 +342,11 @@ let lastKnownPxW    = null;
 let ballColor       = null;  // { r, g, b, h, s, v }
 let ballPickMode    = false;
 let countdownTimer  = null;
+// TEMP: logging state — remove after size-history filter is validated
+let logging         = false;
+let logRows         = [];
+let logStartTime    = null;
+let mediaStreamTrack = null;
 
 const ballModeOn = tracking && tracking.topMode === 'ball';
 const arucoMode  = !ballModeOn;
@@ -759,7 +772,48 @@ function processVideo() {
     // Threshold of 0.55 separates real balls (~0.6-0.95) from
     // face/blob shapes (~0.57-0.68) per synthetic validation tests.
     const looksRound = fit && fit.score >= 0.55;
-    if(clusterCount>=MIN_CLUSTER&&looksRound){
+    const found = clusterCount>=MIN_CLUSTER && looksRound;
+
+    // ── TEMP: BASELINE LOGGING — remove after size-history filter is validated ──
+    if (logging) {
+      // Frame-wide brightness: sparse grid, independent of hue match — proxy
+      // for auto-exposure shifts (actual exposure/focus values aren't
+      // reliably exposed by browsers, especially on Chromebook webcams).
+      let fbSum=0, fbN=0;
+      for (let py=0; py<vh; py+=20) {
+        for (let px=0; px<vw; px+=20) {
+          const idx=(py*vw+px)*4;
+          fbSum += rgbToHsv(pixels[idx],pixels[idx+1],pixels[idx+2]).v;
+          fbN++;
+        }
+      }
+      // Ball-region brightness: avg V of the points actually in the
+      // selected cluster — this is what SAT_MIN/VAL_MIN respond to.
+      let bbSum=0, bbN=0;
+      for (const p of cleanPts) {
+        const idx=(p.y*vw+p.x)*4;
+        bbSum += rgbToHsv(pixels[idx],pixels[idx+1],pixels[idx+2]).v;
+        bbN++;
+      }
+      let camSettings = {};
+      try { camSettings = mediaStreamTrack ? mediaStreamTrack.getSettings() : {}; } catch(e) {}
+      logRows.push({
+        t: ((Date.now()-logStartTime)/1000).toFixed(2),
+        found: found ? 1 : 0,
+        radius_px: fit ? fit.r.toFixed(1) : '',
+        cluster_count: clusterCount,
+        density: bestDensity.toFixed(3),
+        fit_score: fit ? fit.score.toFixed(3) : '',
+        distance_ft: '',
+        frame_brightness_v: fbN ? (fbSum/fbN).toFixed(3) : '',
+        ball_brightness_v: bbN ? (bbSum/bbN).toFixed(3) : '',
+        exposure_time: camSettings.exposureTime ?? '',
+        focus_distance: camSettings.focusDistance ?? ''
+      });
+      downloadLogBtn.disabled = false;
+    }
+
+    if(found){
       const diamPx=fit.r*2;
       const cxN=fit.cx, cyN=fit.cy;
       lastKnownPxW=diamPx;
@@ -776,6 +830,7 @@ function processVideo() {
       const now=(Date.now()-startTime)/1000;
       updateGauges(distFt, calcSlope(now,distFt));
       if(recording) recordPoint(distFt);
+      if (logging && logRows.length) logRows[logRows.length-1].distance_ft = distFt.toFixed(3);
     } else {
       distBadge.innerText='No ball found';
       videoWrapper.classList.remove('slope-pos','slope-neg','slope-zero');
@@ -926,6 +981,7 @@ cameraBtn.onclick = () => {
     .then(stream=>{
       video.srcObject=stream; video.style.display='block';
       camPlaceholder.style.display='none';
+      mediaStreamTrack = stream.getVideoTracks()[0];
       video.onloadedmetadata=()=>{
         video.play();
         statusDot.classList.add('active');
@@ -1011,6 +1067,43 @@ function stopRecording(){
   statusDot.classList.add('active');
   chart.update();
 }
+
+// ════════════════════════════════════════════════
+// TEMP: BASELINE LOGGING — remove after filter validated
+// ════════════════════════════════════════════════
+logBtn.onclick = () => {
+  logging = !logging;
+  if (logging) {
+    logRows = [];
+    logStartTime = Date.now();
+    logBtn.textContent = '● Log: ON';
+    logBtn.style.color = '#ff4081';
+    logBtn.style.borderColor = 'rgba(255,64,129,0.5)';
+    downloadLogBtn.disabled = true;
+  } else {
+    logBtn.textContent = '● Log: OFF';
+    logBtn.style.color = '';
+    logBtn.style.borderColor = '';
+  }
+};
+
+downloadLogBtn.onclick = () => {
+  if (!logRows.length) return;
+  const headers = ['t','found','radius_px','cluster_count','density','fit_score','distance_ft','frame_brightness_v','ball_brightness_v','exposure_time','focus_distance'];
+  const lines = [headers.join(',')];
+  for (const row of logRows) {
+    lines.push(headers.map(h => (row[h] !== undefined && row[h] !== null) ? row[h] : '').join(','));
+  }
+  const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ball-tracking-log-${Date.now()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
 
 clearBtn.onclick=()=>{
   if(countingDown){clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
