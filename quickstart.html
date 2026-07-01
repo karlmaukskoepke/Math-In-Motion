@@ -667,6 +667,7 @@ function processVideo() {
     const MAX_RES=0.055, MIN_COV=0.68;
 
     let bestFit=null, bestScore=0;
+    let debugTotal=0, debugSized=0, debugRes=0, debugCov=0;
     for(const contour of contours){
       // Subsample for speed — Taubin doesn't need every pixel
       let pts=contour;
@@ -675,10 +676,13 @@ function processVideo() {
         pts=contour.filter((_,i)=>i%step===0);
       }
       if(pts.length<8) continue;
+      debugTotal++;
       const fit=taubinFit(pts);
       if(!fit||fit.r<R_MIN||fit.r>R_MAX) continue;
+      debugSized++;
       const res=fitResidual(pts,fit);
-      if(res>MAX_RES) continue;
+      if(res>MAX_RES) { debugRes++; continue; }
+      debugCov++;
       const cov=angularCoverage(pts,fit);
       if(cov<MIN_COV) continue;
       const score=cov*0.7+(1-res/MAX_RES)*0.3;
@@ -703,7 +707,9 @@ function processVideo() {
       updateGauges(distFt,calcSlope(now,distFt));
       if(recording) recordPoint(distFt);
     } else {
-      distBadge.innerText='No ball found';
+      // Debug: show where contours are dropping out
+      // total=passed size filter, sized=in R range, res=passed residual, cov=passed residual waiting for coverage
+      distBadge.innerText=`tot:${debugTotal} sz:${debugSized} r:${debugRes} c:${debugCov}`;
       videoWrapper.classList.remove('slope-pos','slope-neg','slope-zero');
     }
     requestAnimationFrame(processVideo); return;
