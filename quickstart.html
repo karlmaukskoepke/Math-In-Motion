@@ -685,18 +685,34 @@ function processVideo() {
       }
     }
 
-    // For each candidate, gather nearby points, run a quick coarse fit,
-    // and keep the candidate with the best circle score
-    // FIX (2026-07-01): REFINE_R was tied to CELL (min(vw,vh)*0.08*1.5,
-    // ~86px @720p) — a ball's true on-screen radius at close range exceeds
-    // that, so the outer ring of the ball was never gathered into the
-    // point cloud, and the circle fit could never converge on a radius
-    // bigger than the cap. Baseline data confirmed radius plateauing at
-    // ~78-92px across all three test balls even in the closest frames.
-    // Decoupled from CELL and widened to 35% of the frame's short
-    // dimension (~252px @720p) so close-range balls have room to fit.
-    // CELL itself (grid voting resolution) is untouched.
-    const REFINE_R = Math.min(vw, vh) * 0.35;
+    // FIX (2026-07-01, v2): Fixed REFINE_R couldn't serve both close and
+    // far balls — sized big enough for a close-up ball, it also gathered
+    // background clutter around small far-away candidates, degrading the
+    // circle fit itself (confirmed in log data: fit_score crashed 0.68→0.51
+    // over ~5 frames right as the ball moved to distance).
+    // ADAPTIVE FIX: two-pass gather per candidate, re-derived fresh from
+    // THIS frame's own points only — no memory of last frame's position
+    // or size, so a bad frame can't compound (same feedback-loop risk we
+    // avoided before, just at the search-radius level instead of position).
+    //   Pass 1 (probe): narrow radius, same as the original pre-fix formula.
+    //   If a meaningful share of probe points crowd the outer edge, that's
+    //   the signature of clipping — the ball extends past the probe.
+    //   Pass 2 (widen): only THEN re-gather with the larger radius.
+    // A small, far-away candidate never triggers pass 2, so distance
+    // behavior is restored to baseline; a close-up candidate does, so it
+    // still gets room to fit correctly.
+    const PROBE_R = CELL * 1.5;               // ~86px @720p — pre-fix baseline
+    const WIDE_R  = Math.min(vw, vh) * 0.35;  // ~252px @720p — only if needed
+    const EDGE_FRAC_THRESHOLD = 0.15;         // >15% of probe points near the rim → widen
+
+    function gatherNear(cx, cy, r) {
+      const near=[];
+      for (const pt of matchPts) {
+        const dx=pt.x-cx, dy=pt.y-cy;
+        if (dx*dx+dy*dy<=r*r) near.push(pt);
+      }
+      return near;
+    }
 
     // ── CIRCLE FIT ─────────────────────────────────────────────────
     // Scores a set of points against a candidate circle using inlier
@@ -735,7 +751,7 @@ function processVideo() {
       return best;
     }
 
-    let bestNearPts=[], bestCoarseFit=null;
+    let bestNearPts=[], bestCoarseFit=null, bestUsedR=PROBE_R;
     // Score each candidate cluster by FILL DENSITY: matched pixels per
     // unit area within the cluster radius. A real ball is a solid, dense
     // block of color. Background texture matches are scattered and holey
@@ -744,18 +760,31 @@ function processVideo() {
     // ball density ~0.9-1.0 vs background density ~0.35-0.57.
     let bestDensity = 0;
     for (const cand of candidates) {
-      const near=[];
-      for(const pt of matchPts){
-        const dx=pt.x-cand.cx, dy=pt.y-cand.cy;
-        if(dx*dx+dy*dy<=REFINE_R*REFINE_R) near.push(pt);
+      let near = gatherNear(cand.cx, cand.cy, PROBE_R);
+      let usedR = PROBE_R;
+      if (near.length >= 6) {
+        const edgeR = PROBE_R * 0.8;
+        let edgeCount = 0;
+        for (const p of near) {
+          const d = Math.hypot(p.x-cand.cx, p.y-cand.cy);
+          if (d >= edgeR) edgeCount++;
+        }
+        if ((edgeCount/near.length) > EDGE_FRAC_THRESHOLD) {
+          // probe points crowd the rim — ball likely extends past it,
+          // re-gather this candidate only with the wider radius
+          near = gatherNear(cand.cx, cand.cy, WIDE_R);
+          usedR = WIDE_R;
+        }
       }
       if (near.length < 6) continue;
-      // Fill density = matched points / expected points if perfectly filled
-      const expectedFull = Math.PI * Math.pow(REFINE_R/STEP, 2);
+      // Fill density = matched points / expected points if perfectly filled,
+      // scaled to whichever radius was actually used for this candidate
+      const expectedFull = Math.PI * Math.pow(usedR/STEP, 2);
       const density = near.length / Math.max(expectedFull, 1);
       if (density > bestDensity) {
         bestDensity = density;
         bestNearPts = near;
+        bestUsedR = usedR;
         // Quick coarse fit so we have a starting point for pruning
         bestCoarseFit = fitCircle(near);
       }
