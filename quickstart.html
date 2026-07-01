@@ -664,7 +664,7 @@ function processVideo() {
     // Size constraint from known physical diameter + focal length
     const R_MIN=Math.max(8,  (BALL_DIAM*focalLength)/(600*2));
     const R_MAX=Math.min(180,(BALL_DIAM*focalLength)/(40*2));
-    const MAX_RES=0.055, MIN_COV=0.68;
+    const MAX_RES=0.04, MIN_COV=0.40;
 
     let bestFit=null, bestScore=0;
     let debugTotal=0, debugSized=0, debugRes=0, debugCov=0;
