@@ -26,8 +26,7 @@
       --slope-pos: #69f0ae;
       --slope-neg: #ff4081;
       --slope-zero:#ffd740;
-      --left-w:    280px;
-      --right-w:   200px;
+      --left-w:    420px;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -69,9 +68,6 @@
       overflow: hidden; border: 3px solid var(--border); flex: 1;
       transition: border-color 0.25s, box-shadow 0.25s;
     }
-    #videoWrapper.slope-pos  { border-color: var(--slope-pos); box-shadow: 0 0 16px rgba(105,240,174,0.3); }
-    #videoWrapper.slope-neg  { border-color: var(--slope-neg); box-shadow: 0 0 16px rgba(255,64,129,0.3); }
-    #videoWrapper.slope-zero { border-color: var(--slope-zero); }
     #video   { width: 100%; height: 100%; object-fit: cover; display: block; }
     #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
     #distBadge {
@@ -109,8 +105,8 @@
     }
 
     .ctrl-btn {
-      flex: 1; padding: 9px 6px; border-radius: 8px; border: 1px solid var(--border);
-      font-family: 'Space Mono', monospace; font-size: 0.7rem; font-weight: 700;
+      flex: 1; padding: 16px 10px; border-radius: 10px; border: 1px solid var(--border);
+      font-family: 'Space Mono', monospace; font-size: 0.95rem; font-weight: 700;
       letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
       transition: all 0.15s;
     }
@@ -129,41 +125,18 @@
     }
     #chartWrap { flex: 1; position: relative; }
 
-    /* ── RIGHT: GAUGES ── */
-    #rightCol {
-      width: var(--right-w); flex-shrink: 0;
-      display: flex; flex-direction: column; gap: 10px; padding: 8px;
+    /* ── DISTANCE OVERLAY (on chart, upper-right) ── */
+    #distOverlay {
+      position: absolute; top: 10px; right: 10px;
+      background: rgba(26,29,39,0.88); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 16px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+      z-index: 5;
     }
-
-    .gauge-card {
-      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-      padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px;
-    }
-
-    .gauge-label {
-      font-family: 'Space Mono', monospace; font-size: 0.6rem;
-      color: var(--muted); letter-spacing: 2px; text-transform: uppercase;
-    }
-
     #distReadout {
-      font-family: 'Space Mono', monospace; font-size: 2.4rem; font-weight: 700;
+      font-family: 'Space Mono', monospace; font-size: 2rem; font-weight: 700;
       color: var(--accent); line-height: 1;
     }
-    #distUnit { font-family: 'Space Mono', monospace; font-size: 0.7rem; color: var(--muted); }
-
-    #arrowCanvas { width: 120px; height: 120px; }
-
-    #slopeReadout {
-      font-family: 'Space Mono', monospace; font-size: 1.5rem; font-weight: 700; line-height: 1;
-    }
-    #slopeReadout.pos  { color: var(--slope-pos); }
-    #slopeReadout.neg  { color: var(--slope-neg); }
-    #slopeReadout.zero { color: var(--slope-zero); }
-
-    #slopeDirLabel {
-      font-family: 'Space Mono', monospace; font-size: 0.62rem;
-      color: var(--muted); text-align: center; letter-spacing: 0.5px;
-    }
+    #distUnit { font-family: 'Space Mono', monospace; font-size: 0.65rem; color: var(--muted); }
 
     /* ── TRACKING MODE INDICATOR ── */
     #trackingMode {
@@ -244,31 +217,19 @@
     <div id="chartArea">
       <div id="chartWrap">
         <canvas id="chart"></canvas>
+        <div id="distOverlay">
+          <div id="distReadout">--</div>
+          <div style="display:flex; align-items:center; gap:6px; justify-content:center;">
+            <div id="distUnit">feet</div>
+            <button type="button" id="unitToggleBtn" style="cursor:pointer; background:none; border:1px solid var(--border); border-radius:5px; color:var(--muted); font-family:'Space Mono',monospace; font-size:0.62rem; padding:2px 6px;">m</button>
+          </div>
+        </div>
       </div>
       <!-- No-setup overlay -->
       <div id="noSetupBanner" class="visible">
         <h2>Setup required</h2>
         <p>Choose your tracking method before starting — colored ball or ArUco marker.</p>
         <a href="setup.html?from=quickstart.html">Go to Setup →</a>
-      </div>
-    </div>
-
-    <!-- GAUGES -->
-    <div id="rightCol">
-      <div class="gauge-card">
-        <div class="gauge-label">Distance</div>
-        <div id="distReadout">--</div>
-        <div style="display:flex; align-items:center; gap:6px;">
-          <div id="distUnit">feet</div>
-          <button type="button" id="unitToggleBtn" style="cursor:pointer; background:none; border:1px solid var(--border); border-radius:5px; color:var(--muted); font-family:'Space Mono',monospace; font-size:0.62rem; padding:2px 6px;">m</button>
-        </div>
-      </div>
-
-      <div class="gauge-card">
-        <div class="gauge-label">Slope</div>
-        <canvas id="arrowCanvas" width="120" height="120"></canvas>
-        <div id="slopeReadout" class="zero">0.0</div>
-        <div id="slopeDirLabel">—</div>
       </div>
     </div>
 
@@ -313,10 +274,6 @@ const cameraBtn      = document.getElementById('cameraBtn');
 const startBtn       = document.getElementById('startBtn');
 const clearBtn       = document.getElementById('clearBtn');
 const distReadout    = document.getElementById('distReadout');
-const arrowCanvas    = document.getElementById('arrowCanvas');
-const arrowCtx       = arrowCanvas.getContext('2d');
-const slopeReadout   = document.getElementById('slopeReadout');
-const slopeDirLabel  = document.getElementById('slopeDirLabel');
 const countdownOverlay = document.getElementById('countdownOverlay');
 const countdownNum     = document.getElementById('countdownNum');
 const logBtn           = document.getElementById('logBtn');
@@ -350,7 +307,6 @@ let startTime       = null;
 let lastRecordTime  = 0;
 let smooth           = MotionTracker.createSmoother();
 let calcSlope         = MotionTracker.createSlopeCalc();
-let arrowAngleDeg   = 0;
 let detector        = null;
 let lastKnownPxW    = null;
 let ballColor       = null;  // { r, g, b, h, s, v }
@@ -513,69 +469,8 @@ function interpolateAt(t) {
   return null;
 }
 
-// ════════════════════════════════════════════════
-// SLOPE ARROW GAUGE (same as full lab)
-// ════════════════════════════════════════════════
-function slopeToColor(slope) {
-  const abs = Math.abs(slope);
-  const norm = Math.min(abs / 4, 1);
-  const alpha = 0.08 + norm * 0.77;
-  if (abs < 0.05) return { solid: `rgba(255,215,64,${alpha})`, pure: '#ffd740', name: 'zero' };
-  if (slope > 0)  return { solid: `rgba(105,240,174,${alpha})`, pure: '#69f0ae', name: 'pos' };
-  return              { solid: `rgba(255,64,129,${alpha})`,  pure: '#ff4081', name: 'neg' };
-}
-
-function drawArrow(angleDeg, slope) {
-  const w = arrowCanvas.width, h = arrowCanvas.height;
-  const cx = w/2, cy = h/2, r = Math.min(w,h)*0.42;
-  arrowCtx.clearRect(0, 0, w, h);
-  const col = slopeToColor(slope);
-
-  arrowCtx.beginPath();
-  arrowCtx.arc(cx, cy, r+6, 0, Math.PI*2);
-  arrowCtx.fillStyle = col.solid; arrowCtx.fill();
-  arrowCtx.strokeStyle = col.pure+'88'; arrowCtx.lineWidth = 2; arrowCtx.stroke();
-
-  [-90,-67.5,-45,-22.5,0,22.5,45,67.5,90].forEach(deg => {
-    const rad = deg*Math.PI/180, isMajor = deg%45===0;
-    const inner = r-(isMajor?7:4), outer = r+1;
-    arrowCtx.beginPath();
-    arrowCtx.moveTo(cx+Math.cos(rad)*inner, cy+Math.sin(rad)*inner);
-    arrowCtx.lineTo(cx+Math.cos(rad)*outer, cy+Math.sin(rad)*outer);
-    arrowCtx.strokeStyle = isMajor?'#4a5280':'#2e3356';
-    arrowCtx.lineWidth = isMajor?2:1; arrowCtx.stroke();
-  });
-
-  const rad   = angleDeg*Math.PI/180;
-  const tipX  = cx+Math.cos(rad)*(r-8), tipY  = cy+Math.sin(rad)*(r-8);
-  const tailX = cx-Math.cos(rad)*(r-18), tailY = cy-Math.sin(rad)*(r-18);
-  arrowCtx.beginPath(); arrowCtx.moveTo(tailX,tailY); arrowCtx.lineTo(tipX,tipY);
-  arrowCtx.strokeStyle = col.pure; arrowCtx.lineWidth = 5; arrowCtx.lineCap='round'; arrowCtx.stroke();
-  const hl=14, ha=0.42;
-  arrowCtx.beginPath();
-  arrowCtx.moveTo(tipX,tipY);
-  arrowCtx.lineTo(tipX-hl*Math.cos(rad-ha), tipY-hl*Math.sin(rad-ha));
-  arrowCtx.moveTo(tipX,tipY);
-  arrowCtx.lineTo(tipX-hl*Math.cos(rad+ha), tipY-hl*Math.sin(rad+ha));
-  arrowCtx.strokeStyle=col.pure; arrowCtx.lineWidth=4; arrowCtx.stroke();
-  arrowCtx.beginPath(); arrowCtx.arc(cx,cy,5,0,Math.PI*2);
-  arrowCtx.fillStyle=col.pure; arrowCtx.fill();
-}
-drawArrow(0, 0);
-
 function updateGauges(distFt, slope) {
   distReadout.textContent = distFt.toFixed(1);
-  const clamped = Math.max(-4, Math.min(4, slope));
-  const target  = -clamped * 20;
-  arrowAngleDeg += (target - arrowAngleDeg) * 0.22;
-  drawArrow(arrowAngleDeg, slope);
-  const sign = slope >= 0 ? '+' : '';
-  slopeReadout.textContent = sign + slope.toFixed(1);
-  const col = slopeToColor(slope);
-  slopeReadout.className = col.name;
-  slopeDirLabel.textContent = Math.abs(slope) < 0.05 ? 'constant' : slope > 0 ? 'moving away' : 'moving closer';
-  videoWrapper.classList.remove('slope-pos','slope-neg','slope-zero');
-  videoWrapper.classList.add('slope-' + col.name);
 }
 
 // ════════════════════════════════════════════════
@@ -674,7 +569,6 @@ function processVideo() {
       if (logging && logRows.length) logRows[logRows.length-1].distance_ft = distFt.toFixed(3);
     } else {
       distBadge.innerText='No ball found';
-      videoWrapper.classList.remove('slope-pos','slope-neg','slope-zero');
     }
     requestAnimationFrame(processVideo); return;
   }
@@ -707,7 +601,6 @@ function processVideo() {
     if(recording) recordPoint(distDisplay);
   } else {
     distBadge.innerText='No marker';
-    videoWrapper.classList.remove('slope-pos','slope-neg','slope-zero');
   }
   requestAnimationFrame(processVideo);
 }
@@ -924,9 +817,6 @@ clearBtn.onclick=()=>{
   smooth=MotionTracker.createSmoother(); lastRecordTime=0; calcSlope=MotionTracker.createSlopeCalc();
   statusDot.classList.remove('recording');
   distReadout.textContent='--';
-  drawArrow(0,0);
-  slopeReadout.textContent='0.0'; slopeReadout.className='zero';
-  slopeDirLabel.textContent='—';
 };
 </script>
 </body>
