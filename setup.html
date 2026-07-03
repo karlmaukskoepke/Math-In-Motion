@@ -6,6 +6,7 @@
   <title>Motion Math — Setup</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="units.js"></script>
   <style>
     :root {
       --bg:       #0f1117;
@@ -586,12 +587,12 @@
 
       <div class="ball-options">
 
-        <!-- Recommended: Rhino Skin neon set -->
-        <div class="ball-card" id="ballRhino" onclick="selectBall('rhino', 16.0)">
+        <!-- Recommended: Amazon Basics foam dodgeball 6-pack -->
+        <div class="ball-card" id="ballAmazonBasics" onclick="selectBall('amazonBasics', 15.2)">
           <div class="ball-swatch" style="background: linear-gradient(135deg, #ff4081, #ffd740, #69f0ae, #00e5ff, #b39ddb, #ff6d00);">🏀</div>
-          <h3>Rhino Skin Neon Set</h3>
-          <div class="ball-spec">6.3 in · 6 colors<br>Matte foam coating</div>
-          <a class="ball-link" href="https://www.amazon.com/dp/B074KZ2MYZ" target="_blank" onclick="event.stopPropagation()">Buy on Amazon ↗</a>
+          <h3>Amazon Basics Foam Dodgeball</h3>
+          <div class="ball-spec">6 in · 6-pack, 6 colors<br>Foam, mesh storage bag</div>
+          <a class="ball-link" href="https://www.amazon.com/Amazon-Basics-Dodgeballs-6-inch-Dodgeball/dp/B0FF8Y36GL" target="_blank" onclick="event.stopPropagation()">Buy on Amazon ↗</a>
         </div>
 
         <!-- Tennis ball -->
@@ -618,7 +619,7 @@
           <label>Diameter</label>
           <input type="number" id="customDiam" placeholder="6.3" step="0.1" min="1" max="30"
                  oninput="onCustomDiam()">
-          <span class="unit">cm</span>
+          <button type="button" id="diamUnitBtn" class="unit" style="cursor:pointer; background:none; border:1px solid var(--border); border-radius:5px; color:var(--muted); font-family:inherit; font-size:inherit; padding:2px 6px;" onclick="toggleDiamUnit(); event.stopPropagation();">cm</button>
         </div>
         <div class="form-row">
           <label style="color: var(--muted); font-size: 0.62rem; width:120px;">Tip: measure<br>across the widest point</label>
@@ -682,7 +683,7 @@
 
     /* ── STATE ── */
     let topMode    = null;   // 'ball' | 'aruco'
-    let ballType   = null;   // 'rhino' | 'tennis' | 'custom'
+    let ballType   = null;   // 'amazonBasics' | 'tennis' | 'custom'
     let ballDiam   = null;   // cm
     let arucoType  = null;   // 'twolaptop' | 'print'
 
@@ -699,7 +700,7 @@
     function describeSelection(s) {
       if (!s) return '—';
       if (s.topMode === 'ball') {
-        const names = { rhino: 'Rhino Skin Neon Set', tennis: 'Tennis Ball', custom: 'Custom Ball' };
+        const names = { amazonBasics: 'Amazon Basics Foam Dodgeball', tennis: 'Tennis Ball', custom: 'Custom Ball' };
         return `Colored Ball — ${names[s.ballType] || s.ballType} (${s.ballDiam} cm)`;
       }
       if (s.topMode === 'aruco') {
@@ -732,7 +733,7 @@
 
     /* ── BALL SELECTION ── */
     const BALL_PRESETS = {
-      rhino:  { diam: 16.0, label: 'Rhino Skin Neon Set' },
+      amazonBasics: { diam: 15.2, label: 'Amazon Basics Foam Dodgeball' },
       tennis: { diam: 6.7,  label: 'Tennis Ball' },
     };
 
@@ -757,12 +758,32 @@
 
     function onCustomDiam() {
       const val = parseFloat(document.getElementById('customDiam').value);
-      ballDiam = isNaN(val) || val <= 0 ? null : val;
+      const unit = Units.getPref().diam;
+      ballDiam = isNaN(val) || val <= 0 ? null : Units.diamToCm(val, unit); // always stored internally as cm
       updateConfirm();
     }
 
+    function toggleDiamUnit() {
+      const cur = Units.getPref().diam;
+      const next = cur === 'cm' ? 'in' : 'cm';
+      Units.setPref({ diam: next });
+      document.getElementById('diamUnitBtn').textContent = next;
+      // Re-render the input's displayed value in the new unit without
+      // changing the underlying ballDiam (still stored in cm)
+      const input = document.getElementById('customDiam');
+      if (ballDiam !== null) {
+        input.value = Units.diamFromCm(ballDiam, next).toFixed(1);
+      }
+    }
+
+    // Apply saved unit preference on load
+    (function initUnits() {
+      const unit = Units.getPref().diam;
+      document.getElementById('diamUnitBtn').textContent = unit;
+    })();
+
     function clearBallCards() {
-      ['ballRhino','ballTennis','ballCustom'].forEach(id =>
+      ['ballAmazonBasics','ballTennis','ballCustom'].forEach(id =>
         document.getElementById(id).classList.remove('selected'));
     }
 

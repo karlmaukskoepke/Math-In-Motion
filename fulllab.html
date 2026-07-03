@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Motion Math — Quick Start</title>
+  <title>Motion Math — Full Lab</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="cv.js"></script>
@@ -199,9 +199,9 @@
   <!-- HEADER -->
   <div id="header">
     <a class="hdr-btn back" href="index.html">← Home</a>
-    <h1>Quick Start</h1>
+    <h1>Full Lab</h1>
     <div class="status-dot" id="statusDot"></div>
-    <a class="hdr-btn" href="setup.html?from=quickstart.html&change=1">⚙ Setup</a>
+    <a class="hdr-btn" href="setup.html?from=fulllab.html&change=1">⚙ Setup</a>
   </div>
 
   <!-- CONTENT -->
@@ -228,6 +228,11 @@
         <button class="ctrl-btn" id="clearBtn">✕ Clear</button>
       </div>
 
+      <div id="modeControls" style="display:flex; gap:6px;">
+        <button class="ctrl-btn" id="modeDistBtn" style="flex:1;">Distance</button>
+        <button class="ctrl-btn" id="modeSpeedBtn" style="flex:1;">Speed</button>
+      </div>
+
       <!-- TEMP: remove after size-history filter is validated -->
       <div id="logControls" style="display:flex; gap:6px;">
         <button class="ctrl-btn" id="logBtn" style="flex:1;">● Log: OFF</button>
@@ -249,7 +254,7 @@
       <div id="noSetupBanner" class="visible">
         <h2>Setup required</h2>
         <p>Choose your tracking method before starting — colored ball or ArUco marker.</p>
-        <a href="setup.html?from=quickstart.html">Go to Setup →</a>
+        <a href="setup.html?from=fulllab.html">Go to Setup →</a>
       </div>
     </div>
 
@@ -322,11 +327,20 @@ const countdownNum     = document.getElementById('countdownNum');
 const logBtn           = document.getElementById('logBtn');
 const downloadLogBtn   = document.getElementById('downloadLogBtn');
 const unitToggleBtn    = document.getElementById('unitToggleBtn');
+const modeDistBtn      = document.getElementById('modeDistBtn');
+const modeSpeedBtn     = document.getElementById('modeSpeedBtn');
 
 // ════════════════════════════════════════════════
 // CONSTANTS
 // ════════════════════════════════════════════════
-const DURATION    = 5;     // fixed 5-second recording
+// ════════════════════════════════════════════════
+// FULL LAB: open-ended recording (not fixed 5s like Quick Start).
+// ASSUMPTION (not explicitly confirmed with Karl — flag if wrong):
+// starts at a 15s window, grows automatically if recording runs longer,
+// hard safety cap at 45s to bound memory/chart clutter.
+// ════════════════════════════════════════════════
+const INITIAL_WINDOW = 15;
+const MAX_DURATION    = 45;
 const MARKER_SIZE = 14.0;  // cm — printable ArUco PDF
 const BALL_DIAM   = tracking ? (tracking.ballDiam || 15.2) : 15.2; // cm
 let   focalLength = 863;
@@ -338,7 +352,13 @@ let   focalLength = 863;
 // smaller, so the arrow gauge will read "quieter" in meters. Flagging this
 // as a known simplification, not a bug.
 let currentUnit = Units.getPref().dist; // 'ft' | 'm'
-const Y_MAX = { ft: 12, m: 3.7 };
+let graphMode   = 'distance'; // 'distance' | 'speed'
+// Speed range is a first guess (not empirically tuned) — signed, so 0 sits
+// in the middle: positive = moving away, negative = moving closer.
+const Y_MAX = {
+  distance: { ft: 12,  m: 3.7 },
+  speed:    { ft: 8,   m: 2.5 }
+};
 
 // ════════════════════════════════════════════════
 // STATE
@@ -413,34 +433,10 @@ const coordLabelPlugin = {
   }
 };
 
-// Plugin: recording endpoint marker
-const recordingMarkerPlugin = {
-  id: 'recordingMarker',
-  afterDraw(ch) {
-    const xScale = ch.scales.x;
-    const yScale = ch.scales.y;
-    if (!xScale || !yScale) return;
-    const xPx = xScale.getPixelForValue(DURATION);
-    if (xPx < xScale.left || xPx > xScale.right) return;
-    const c2 = ch.ctx;
-    c2.save();
-    c2.strokeStyle = 'rgba(255,215,64,0.45)';
-    c2.lineWidth = 2;
-    c2.setLineDash([5, 4]);
-    c2.beginPath();
-    c2.moveTo(xPx, yScale.top);
-    c2.lineTo(xPx, yScale.bottom);
-    c2.stroke();
-    c2.setLineDash([]);
-    c2.fillStyle = '#ffd740';
-    c2.font = 'bold 11px "Space Mono", monospace';
-    c2.textAlign = 'center';
-    c2.fillText(`${DURATION}s`, xPx, yScale.top - 5);
-    c2.restore();
-  }
-};
+// (Full Lab removes the fixed-duration marker plugin from Quick Start —
+// recording length is open-ended here, so there's no fixed endpoint to mark.)
 
-Chart.register(coordLabelPlugin, recordingMarkerPlugin);
+Chart.register(coordLabelPlugin);
 
 const chart = new Chart(document.getElementById('chart'), {
   type: 'line',
@@ -464,14 +460,16 @@ const chart = new Chart(document.getElementById('chart'), {
         padding: 12,
         callbacks: {
           title: items => `t = ${parseFloat(items[0].parsed.x).toFixed(1)} sec`,
-          label: item  => ` dist: ${item.parsed.y.toFixed(1)} ft`
+          label: item  => graphMode === 'speed'
+            ? ` speed: ${item.parsed.y.toFixed(2)} ${currentUnit}/s`
+            : ` dist: ${item.parsed.y.toFixed(2)} ${currentUnit}`
         }
       }
     },
     scales: {
       x: {
         type: 'linear',
-        min: 0, max: DURATION,
+        min: 0, max: INITIAL_WINDOW,
         title: { display: true, text: 'Time (s)', color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
         ticks: {
           color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
@@ -484,8 +482,9 @@ const chart = new Chart(document.getElementById('chart'), {
         }
       },
       y: {
-        min: 0, max: Y_MAX[currentUnit],
-        title: { display: true, text: `Distance (${currentUnit})`, color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
+        min: graphMode === 'speed' ? -Y_MAX.speed[currentUnit] : 0,
+        max: Y_MAX[graphMode][currentUnit],
+        title: { display: true, text: graphMode === 'speed' ? `Speed (${currentUnit}/s)` : `Distance (${currentUnit})`, color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
         ticks: {
           color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
           stepSize: 1,
@@ -669,8 +668,9 @@ function processVideo() {
       ctx.fillStyle='#ffd740'; ctx.fill();
       distBadge.innerText=distDisplay.toFixed(2)+' '+currentUnit;
       const now=(Date.now()-startTime)/1000;
-      updateGauges(distDisplay, calcSlope(now,distDisplay));
-      if(recording) recordPoint(distDisplay);
+      const slope = calcSlope(now,distDisplay);
+      updateGauges(distDisplay, slope);
+      if(recording) recordPoint(graphMode === 'speed' ? slope : distDisplay);
       if (logging && logRows.length) logRows[logRows.length-1].distance_ft = distFt.toFixed(3);
     } else {
       distBadge.innerText='No ball found';
@@ -703,8 +703,9 @@ function processVideo() {
     const distDisplay = currentUnit==='m' ? Units.ftToM(distFt) : distFt;
     distBadge.innerText=distDisplay.toFixed(2)+' '+currentUnit;
     const now=(Date.now()-startTime)/1000;
-    updateGauges(distDisplay, calcSlope(now,distDisplay));
-    if(recording) recordPoint(distDisplay);
+    const slope = calcSlope(now,distDisplay);
+    updateGauges(distDisplay, slope);
+    if(recording) recordPoint(graphMode === 'speed' ? slope : distDisplay);
   } else {
     distBadge.innerText='No marker';
     videoWrapper.classList.remove('slope-pos','slope-neg','slope-zero');
@@ -712,14 +713,20 @@ function processVideo() {
   requestAnimationFrame(processVideo);
 }
 
-function recordPoint(distFt) {
+function recordPoint(value) {
   const t=(Date.now()-startTime)/1000;
-  if(t>=DURATION){ stopRecording(); return; }
+  if(t>=MAX_DURATION){ stopRecording(); return; }
   if(t-lastRecordTime>=0.05){
     lastRecordTime=t;
-    const tv=parseFloat(t.toFixed(2)), dv=parseFloat(distFt.toFixed(3));
+    const tv=parseFloat(t.toFixed(2)), dv=parseFloat(value.toFixed(3));
     data.push([tv,dv]);
     chart.data.datasets[0].data.push({x:tv,y:dv});
+    // Grow the visible window as recording runs past it, rather than
+    // clipping — same reasoning as the fixed-window Quick Start version,
+    // just without a hard stop.
+    if (tv > chart.options.scales.x.max - 1) {
+      chart.options.scales.x.max += 5;
+    }
     chart.update('none');
   }
 }
@@ -787,7 +794,8 @@ function playChime(isGo){
 }
 
 startBtn.onclick = () => {
-  if(countingDown||recording) return;
+  if(countingDown) return;
+  if(recording){ stopRecording(); return; }
   countingDown=true; startBtn.disabled=true;
   let remaining=3;
   countdownOverlay.classList.add('visible');
@@ -821,6 +829,8 @@ function beginRecording(){
   smooth=MotionTracker.createSmoother(); calcSlope=MotionTracker.createSlopeCalc();
   statusDot.classList.remove('active');
   statusDot.classList.add('recording');
+  startBtn.textContent = '■ Stop';
+  chart.options.scales.x.max = INITIAL_WINDOW; // reset growth from any prior take
   // Ghost previous run (faint)
   const prev=chart.data.datasets[0];
   if(prev&&prev.data&&prev.data.length>0){
@@ -842,6 +852,7 @@ function stopRecording(){
   recording=false;
   statusDot.classList.remove('recording');
   statusDot.classList.add('active');
+  startBtn.textContent = '▶ Start';
   chart.update();
 }
 
@@ -883,12 +894,20 @@ downloadLogBtn.onclick = () => {
 };
 
 // ════════════════════════════════════════════════
-// UNITS
+// UNITS + GRAPH MODE
 // ════════════════════════════════════════════════
 function convertDist(val, fromU, toU) {
   if (fromU === toU) return val;
   const ft = fromU === 'm' ? Units.mToFt(val) : val;
   return toU === 'm' ? Units.ftToM(ft) : ft;
+}
+
+function applyAxisConfig() {
+  chart.options.scales.y.max = Y_MAX[graphMode][currentUnit];
+  chart.options.scales.y.min = graphMode === 'speed' ? -Y_MAX.speed[currentUnit] : 0;
+  chart.options.scales.y.title.text = graphMode === 'speed'
+    ? `Speed (${currentUnit}/s)` : `Distance (${currentUnit})`;
+  chart.update();
 }
 
 unitToggleBtn.onclick = () => {
@@ -897,16 +916,37 @@ unitToggleBtn.onclick = () => {
   Units.setPref({ dist: currentUnit });
   unitToggleBtn.textContent = currentUnit === 'ft' ? 'm' : 'ft'; // shows the unit you'd switch TO
   distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
-  chart.options.scales.y.max = Y_MAX[currentUnit];
-  chart.options.scales.y.title.text = `Distance (${currentUnit})`;
   // Retroactively convert already-plotted points so the graph stays
   // consistent rather than showing a mix of units
   data = data.map(([t,d]) => [t, convertDist(d, prevUnit, currentUnit)]);
   chart.data.datasets.forEach(ds => {
     ds.data = ds.data.map(pt => ({ x: pt.x, y: convertDist(pt.y, prevUnit, currentUnit) }));
   });
-  chart.update();
+  applyAxisConfig();
 };
+
+function setGraphMode(mode) {
+  if (mode === graphMode) return;
+  // Switching modes clears the graph rather than trying to convert
+  // distance points into speed points (or vice versa) — plotting a
+  // fabricated speed history from stale distance data would be
+  // pedagogically misleading (looks like real motion, isn't).
+  graphMode = mode;
+  modeDistBtn.style.color = mode === 'distance' ? 'var(--accent)' : '';
+  modeDistBtn.style.borderColor = mode === 'distance' ? 'var(--accent)' : '';
+  modeSpeedBtn.style.color = mode === 'speed' ? 'var(--accent)' : '';
+  modeSpeedBtn.style.borderColor = mode === 'speed' ? 'var(--accent)' : '';
+  data = [];
+  chart.data.datasets = [{
+    label: 'Motion', data: [],
+    borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
+    borderWidth: 3, pointRadius: 0, fill: true, tension: 0.3
+  }];
+  applyAxisConfig();
+}
+modeDistBtn.onclick  = () => setGraphMode('distance');
+modeSpeedBtn.onclick = () => setGraphMode('speed');
+setGraphMode('distance'); // initialize button highlight state
 
 // Apply saved unit preference on load
 unitToggleBtn.textContent = currentUnit === 'ft' ? 'm' : 'ft';
@@ -914,7 +954,8 @@ distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
 
 clearBtn.onclick=()=>{
   if(countingDown){clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
-  recording=false; startBtn.disabled=false; data=[];
+  recording=false; startBtn.disabled=false; startBtn.textContent='▶ Start'; data=[];
+  chart.options.scales.x.max = INITIAL_WINDOW;
   chart.data.datasets=[{
     label:'Motion',data:[],
     borderColor:'#00e5ff',backgroundColor:'rgba(0,229,255,0.08)',
