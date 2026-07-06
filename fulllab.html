@@ -172,7 +172,7 @@
       position: absolute; top: 10px; left: 10px;
       background: rgba(26,29,39,0.88); border: 1px solid var(--border); border-radius: 10px;
       padding: 8px 12px; display: flex; flex-direction: column; align-items: center; gap: 2px;
-      z-index: 5;
+      z-index: 5; cursor: grab; touch-action: none; user-select: none;
     }
     #arrowCanvas { width: 90px; height: 90px; }
     #slopeReadout {
@@ -244,7 +244,10 @@
         <a class="settings-link" href="setup.html?from=fulllab.html&change=1">← Change tracking mode</a>
         <div class="settings-row">
           <span>Units</span>
-          <button type="button" id="unitToggleBtn" class="toggle-btn">m</button>
+          <div class="settings-subtoggle">
+            <button type="button" id="ftBtn" class="toggle-btn active">ft</button>
+            <button type="button" id="mBtn" class="toggle-btn">m</button>
+          </div>
         </div>
         <div class="settings-row">
           <span>Graph</span>
@@ -256,6 +259,14 @@
         <div class="settings-row">
           <span>Data table</span>
           <input type="checkbox" id="tableToggle">
+        </div>
+        <div class="settings-row">
+          <span>Table every</span>
+          <div class="settings-subtoggle">
+            <button type="button" class="toggle-btn table-interval-btn" data-interval="0.1">0.1s</button>
+            <button type="button" class="toggle-btn table-interval-btn" data-interval="0.5">0.5s</button>
+            <button type="button" class="toggle-btn table-interval-btn active" data-interval="1">1s</button>
+          </div>
         </div>
         <div class="settings-row">
           <span>Points each second</span>
@@ -384,12 +395,14 @@ const countdownOverlay = document.getElementById('countdownOverlay');
 const countdownNum     = document.getElementById('countdownNum');
 const logBtn           = document.getElementById('logBtn');
 const downloadLogBtn   = document.getElementById('downloadLogBtn');
-const unitToggleBtn    = document.getElementById('unitToggleBtn');
+const ftBtn            = document.getElementById('ftBtn');
+const mBtn              = document.getElementById('mBtn');
 const modeDistBtn      = document.getElementById('modeDistBtn');
 const modeSpeedBtn     = document.getElementById('modeSpeedBtn');
 const settingsBtn      = document.getElementById('settingsBtn');
 const settingsPanel    = document.getElementById('settingsPanel');
 const tableToggle      = document.getElementById('tableToggle');
+const tableIntervalBtns = document.querySelectorAll('.table-interval-btn');
 const pointsToggle     = document.getElementById('pointsToggle');
 const slopeGaugeToggle = document.getElementById('slopeGaugeToggle');
 const tableCol         = document.getElementById('tableCol');
@@ -401,23 +414,64 @@ document.addEventListener('click', (e) => {
   if (!settingsPanel.contains(e.target) && e.target !== settingsBtn) settingsPanel.classList.remove('open');
 });
 
+// ── DATA TABLE: tenths-of-a-unit precision, thinned to a chosen interval
+// (raw ~20Hz recording would make for an unreadably long table otherwise) ──
+let tableInterval = 1; // seconds; default matches the "1s" button
+let lastTableRowTime = -Infinity;
+
 function rebuildTable() {
   dataTableBody.innerHTML = '';
+  lastTableRowTime = -Infinity;
   for (const [t, v] of data) {
+    if (t - lastTableRowTime < tableInterval - 0.001) continue;
+    lastTableRowTime = t;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${t.toFixed(2)}</td><td>${v.toFixed(2)}</td>`;
+    tr.innerHTML = `<td>${t.toFixed(1)}</td><td>${v.toFixed(1)}</td>`;
     dataTableBody.appendChild(tr);
   }
-  dataTableBody.parentElement.parentElement.scrollTop = dataTableBody.parentElement.parentElement.scrollHeight;
+  const scrollBox = dataTableBody.parentElement.parentElement;
+  scrollBox.scrollTop = scrollBox.scrollHeight;
 }
 
 tableToggle.onchange = () => {
   tableCol.classList.toggle('hidden', !tableToggle.checked);
   if (tableToggle.checked) rebuildTable();
 };
+tableIntervalBtns.forEach(btn => {
+  btn.onclick = () => {
+    tableInterval = parseFloat(btn.dataset.interval);
+    tableIntervalBtns.forEach(b => b.classList.toggle('active', b === btn));
+    if (tableToggle.checked) rebuildTable(); // re-thin existing data to the new interval
+  };
+});
 slopeGaugeToggle.onchange = () => {
   slopeOverlay.classList.toggle('hidden', !slopeGaugeToggle.checked);
 };
+
+// ── SLOPE GAUGE: draggable anywhere within the chart area ──
+(function makeDraggable(el) {
+  let dragging = false, offX = 0, offY = 0;
+  el.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    el.setPointerCapture(e.pointerId);
+    const rect = el.getBoundingClientRect();
+    offX = e.clientX - rect.left;
+    offY = e.clientY - rect.top;
+    el.style.cursor = 'grabbing';
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const parentRect = el.parentElement.getBoundingClientRect();
+    let x = e.clientX - parentRect.left - offX;
+    let y = e.clientY - parentRect.top - offY;
+    x = Math.max(0, Math.min(x, parentRect.width - el.offsetWidth));
+    y = Math.max(0, Math.min(y, parentRect.height - el.offsetHeight));
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+  });
+  el.addEventListener('pointerup', () => { dragging = false; el.style.cursor = 'grab'; });
+})(slopeOverlay);
+
 let showSecondPoints = false;
 function pointRadiusFn(ctx) {
   if (!showSecondPoints || !ctx.parsed) return 0;
@@ -830,9 +884,10 @@ function recordPoint(value) {
       chart.options.scales.x.max += 5;
     }
     chart.update('none');
-    if (tableToggle.checked) {
+    if (tableToggle.checked && tv - lastTableRowTime >= tableInterval - 0.001) {
+      lastTableRowTime = tv;
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${tv.toFixed(2)}</td><td>${dv.toFixed(2)}</td>`;
+      tr.innerHTML = `<td>${tv.toFixed(1)}</td><td>${dv.toFixed(1)}</td>`;
       dataTableBody.appendChild(tr);
       const scrollBox = dataTableBody.parentElement.parentElement;
       scrollBox.scrollTop = scrollBox.scrollHeight;
@@ -936,7 +991,7 @@ function beginRecording(){
   data=[]; recording=true;
   startTime=Date.now(); lastRecordTime=0;
   smooth=MotionTracker.createSmoother(); calcSlope=MotionTracker.createSlopeCalc();
-  dataTableBody.innerHTML='';
+  dataTableBody.innerHTML=''; lastTableRowTime=-Infinity;
   statusDot.classList.remove('active');
   statusDot.classList.add('recording');
   startBtn.textContent = '■ Stop';
@@ -1020,11 +1075,13 @@ function applyAxisConfig() {
   chart.update();
 }
 
-unitToggleBtn.onclick = () => {
+function setUnit(unit) {
+  if (unit === currentUnit) return;
   const prevUnit = currentUnit;
-  currentUnit = currentUnit === 'ft' ? 'm' : 'ft';
+  currentUnit = unit;
   Units.setPref({ dist: currentUnit });
-  unitToggleBtn.textContent = currentUnit === 'ft' ? 'm' : 'ft'; // shows the unit you'd switch TO
+  ftBtn.classList.toggle('active', currentUnit === 'ft');
+  mBtn.classList.toggle('active', currentUnit === 'm');
   distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
   // Retroactively convert already-plotted points so the graph stays
   // consistent rather than showing a mix of units
@@ -1032,8 +1089,11 @@ unitToggleBtn.onclick = () => {
   chart.data.datasets.forEach(ds => {
     ds.data = ds.data.map(pt => ({ x: pt.x, y: convertDist(pt.y, prevUnit, currentUnit) }));
   });
+  if (tableToggle.checked) rebuildTable();
   applyAxisConfig();
-};
+}
+ftBtn.onclick = () => setUnit('ft');
+mBtn.onclick  = () => setUnit('m');
 
 function setGraphMode(mode) {
   if (mode === graphMode) return;
@@ -1042,12 +1102,10 @@ function setGraphMode(mode) {
   // fabricated speed history from stale distance data would be
   // pedagogically misleading (looks like real motion, isn't).
   graphMode = mode;
-  modeDistBtn.style.color = mode === 'distance' ? 'var(--accent)' : '';
-  modeDistBtn.style.borderColor = mode === 'distance' ? 'var(--accent)' : '';
-  modeSpeedBtn.style.color = mode === 'speed' ? 'var(--accent)' : '';
-  modeSpeedBtn.style.borderColor = mode === 'speed' ? 'var(--accent)' : '';
+  modeDistBtn.classList.toggle('active', mode === 'distance');
+  modeSpeedBtn.classList.toggle('active', mode === 'speed');
   data = [];
-  dataTableBody.innerHTML = '';
+  dataTableBody.innerHTML = ''; lastTableRowTime = -Infinity;
   chart.data.datasets = [{
     label: 'Motion', data: [],
     borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
@@ -1060,13 +1118,14 @@ modeSpeedBtn.onclick = () => setGraphMode('speed');
 setGraphMode('distance'); // initialize button highlight state
 
 // Apply saved unit preference on load
-unitToggleBtn.textContent = currentUnit === 'ft' ? 'm' : 'ft';
+ftBtn.classList.toggle('active', currentUnit === 'ft');
+mBtn.classList.toggle('active', currentUnit === 'm');
 distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
 
 clearBtn.onclick=()=>{
   if(countingDown){clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
   recording=false; startBtn.disabled=false; startBtn.textContent='▶ Start'; data=[];
-  dataTableBody.innerHTML='';
+  dataTableBody.innerHTML=''; lastTableRowTime=-Infinity;
   chart.options.scales.x.max = INITIAL_WINDOW;
   chart.data.datasets=[{
     label:'Motion',data:[],

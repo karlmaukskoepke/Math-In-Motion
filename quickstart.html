@@ -207,7 +207,10 @@
         <a class="settings-link" href="setup.html?from=quickstart.html&change=1">← Change tracking mode</a>
         <div class="settings-row">
           <span>Units</span>
-          <button type="button" id="unitToggleBtn" class="toggle-btn">m</button>
+          <div class="settings-subtoggle">
+            <button type="button" id="ftBtn" class="toggle-btn active">ft</button>
+            <button type="button" id="mBtn" class="toggle-btn">m</button>
+          </div>
         </div>
       </div>
     </div>
@@ -311,7 +314,8 @@ const countdownOverlay = document.getElementById('countdownOverlay');
 const countdownNum     = document.getElementById('countdownNum');
 const logBtn           = document.getElementById('logBtn');
 const downloadLogBtn   = document.getElementById('downloadLogBtn');
-const unitToggleBtn    = document.getElementById('unitToggleBtn');
+const ftBtn            = document.getElementById('ftBtn');
+const mBtn              = document.getElementById('mBtn');
 const settingsBtn      = document.getElementById('settingsBtn');
 const settingsPanel    = document.getElementById('settingsPanel');
 settingsBtn.onclick = (e) => { e.stopPropagation(); settingsPanel.classList.toggle('open'); };
@@ -823,11 +827,13 @@ function convertDist(val, fromU, toU) {
   return toU === 'm' ? Units.ftToM(ft) : ft;
 }
 
-unitToggleBtn.onclick = () => {
+function setUnit(unit) {
+  if (unit === currentUnit) return;
   const prevUnit = currentUnit;
-  currentUnit = currentUnit === 'ft' ? 'm' : 'ft';
+  currentUnit = unit;
   Units.setPref({ dist: currentUnit });
-  unitToggleBtn.textContent = currentUnit === 'ft' ? 'm' : 'ft'; // shows the unit you'd switch TO
+  ftBtn.classList.toggle('active', currentUnit === 'ft');
+  mBtn.classList.toggle('active', currentUnit === 'm');
   distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
   chart.options.scales.y.max = Y_MAX[currentUnit];
   chart.options.scales.y.title.text = `Distance (${currentUnit})`;
@@ -838,10 +844,13 @@ unitToggleBtn.onclick = () => {
     ds.data = ds.data.map(pt => ({ x: pt.x, y: convertDist(pt.y, prevUnit, currentUnit) }));
   });
   chart.update();
-};
+}
+ftBtn.onclick = () => setUnit('ft');
+mBtn.onclick  = () => setUnit('m');
 
 // Apply saved unit preference on load
-unitToggleBtn.textContent = currentUnit === 'ft' ? 'm' : 'ft';
+ftBtn.classList.toggle('active', currentUnit === 'ft');
+mBtn.classList.toggle('active', currentUnit === 'm');
 distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
 
 clearBtn.onclick=()=>{
