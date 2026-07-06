@@ -55,6 +55,33 @@
     .hdr-btn:hover { border-color: var(--accent); color: var(--accent); }
     .hdr-btn.back  { color: var(--muted); }
 
+    /* ── SETTINGS PANEL (gear dropdown) ── */
+    #settingsWrap { position: relative; }
+    #settingsPanel {
+      display: none; position: absolute; top: calc(100% + 8px); right: 0;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px; min-width: 220px; z-index: 30;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    #settingsPanel.open { display: block; }
+    .settings-link {
+      display: block; padding: 8px 6px; margin-bottom: 6px;
+      color: var(--muted); font-family: 'Space Mono', monospace; font-size: 0.72rem;
+      border-bottom: 1px solid var(--border); text-decoration: none;
+    }
+    .settings-link:hover { color: var(--accent); }
+    .settings-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px; font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--text);
+      gap: 10px;
+    }
+    .settings-subtoggle { display: flex; gap: 4px; }
+    .toggle-btn {
+      cursor: pointer; background: none; border: 1px solid var(--border); border-radius: 5px;
+      color: var(--muted); font-family: 'Space Mono', monospace; font-size: 0.68rem; padding: 3px 8px;
+    }
+    .toggle-btn.active { color: var(--accent); border-color: var(--accent); }
+
     /* ── CONTENT ── */
     #content { display: flex; flex: 1; overflow: hidden; }
 
@@ -133,10 +160,10 @@
       z-index: 5;
     }
     #distReadout {
-      font-family: 'Space Mono', monospace; font-size: 2rem; font-weight: 700;
+      font-family: 'Space Mono', monospace; font-size: 4rem; font-weight: 700;
       color: var(--accent); line-height: 1;
     }
-    #distUnit { font-family: 'Space Mono', monospace; font-size: 0.65rem; color: var(--muted); }
+    #distUnit { font-family: 'Space Mono', monospace; font-size: 0.85rem; color: var(--muted); text-align: center; }
 
     /* ── TRACKING MODE INDICATOR ── */
     #trackingMode {
@@ -174,7 +201,16 @@
     <a class="hdr-btn back" href="index.html">← Home</a>
     <h1>Quick Start</h1>
     <div class="status-dot" id="statusDot"></div>
-    <a class="hdr-btn" href="setup.html?from=quickstart.html&change=1">⚙ Setup</a>
+    <div id="settingsWrap">
+      <button class="hdr-btn" id="settingsBtn">⚙ Settings</button>
+      <div id="settingsPanel">
+        <a class="settings-link" href="setup.html?from=quickstart.html&change=1">← Change tracking mode</a>
+        <div class="settings-row">
+          <span>Units</span>
+          <button type="button" id="unitToggleBtn" class="toggle-btn">m</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- CONTENT -->
@@ -219,10 +255,7 @@
         <canvas id="chart"></canvas>
         <div id="distOverlay">
           <div id="distReadout">--</div>
-          <div style="display:flex; align-items:center; gap:6px; justify-content:center;">
-            <div id="distUnit">feet</div>
-            <button type="button" id="unitToggleBtn" style="cursor:pointer; background:none; border:1px solid var(--border); border-radius:5px; color:var(--muted); font-family:'Space Mono',monospace; font-size:0.62rem; padding:2px 6px;">m</button>
-          </div>
+          <div id="distUnit">feet</div>
         </div>
       </div>
       <!-- No-setup overlay -->
@@ -279,6 +312,12 @@ const countdownNum     = document.getElementById('countdownNum');
 const logBtn           = document.getElementById('logBtn');
 const downloadLogBtn   = document.getElementById('downloadLogBtn');
 const unitToggleBtn    = document.getElementById('unitToggleBtn');
+const settingsBtn      = document.getElementById('settingsBtn');
+const settingsPanel    = document.getElementById('settingsPanel');
+settingsBtn.onclick = (e) => { e.stopPropagation(); settingsPanel.classList.toggle('open'); };
+document.addEventListener('click', (e) => {
+  if (!settingsPanel.contains(e.target) && e.target !== settingsBtn) settingsPanel.classList.remove('open');
+});
 
 // ════════════════════════════════════════════════
 // CONSTANTS

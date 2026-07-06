@@ -56,6 +56,34 @@
     .hdr-btn:hover { border-color: var(--accent); color: var(--accent); }
     .hdr-btn.back  { color: var(--muted); }
 
+    /* ── SETTINGS PANEL (gear dropdown) ── */
+    #settingsWrap { position: relative; }
+    #settingsPanel {
+      display: none; position: absolute; top: calc(100% + 8px); right: 0;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px; min-width: 220px; z-index: 30;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    #settingsPanel.open { display: block; }
+    .settings-link {
+      display: block; padding: 8px 6px; margin-bottom: 6px;
+      color: var(--muted); font-family: 'Space Mono', monospace; font-size: 0.72rem;
+      border-bottom: 1px solid var(--border); text-decoration: none;
+    }
+    .settings-link:hover { color: var(--accent); }
+    .settings-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px; font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--text);
+      gap: 10px;
+    }
+    .settings-subtoggle { display: flex; gap: 4px; }
+    .toggle-btn {
+      cursor: pointer; background: none; border: 1px solid var(--border); border-radius: 5px;
+      color: var(--muted); font-family: 'Space Mono', monospace; font-size: 0.68rem; padding: 3px 8px;
+    }
+    .toggle-btn.active { color: var(--accent); border-color: var(--accent); }
+    .hidden { display: none !important; }
+
     /* ── CONTENT ── */
     #content { display: flex; flex: 1; overflow: hidden; }
 
@@ -69,9 +97,6 @@
       overflow: hidden; border: 3px solid var(--border); flex: 1;
       transition: border-color 0.25s, box-shadow 0.25s;
     }
-    #videoWrapper.slope-pos  { border-color: var(--slope-pos); box-shadow: 0 0 16px rgba(105,240,174,0.3); }
-    #videoWrapper.slope-neg  { border-color: var(--slope-neg); box-shadow: 0 0 16px rgba(255,64,129,0.3); }
-    #videoWrapper.slope-zero { border-color: var(--slope-zero); }
     #video   { width: 100%; height: 100%; object-fit: cover; display: block; }
     #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
     #distBadge {
@@ -129,41 +154,53 @@
     }
     #chartWrap { flex: 1; position: relative; }
 
-    /* ── RIGHT: GAUGES ── */
-    #rightCol {
-      width: var(--right-w); flex-shrink: 0;
-      display: flex; flex-direction: column; gap: 10px; padding: 8px;
+    /* ── DISTANCE OVERLAY (on chart, upper-right) ── */
+    #distOverlay {
+      position: absolute; top: 10px; right: 10px;
+      background: rgba(26,29,39,0.88); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 16px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+      z-index: 5;
     }
-
-    .gauge-card {
-      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-      padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px;
-    }
-
-    .gauge-label {
-      font-family: 'Space Mono', monospace; font-size: 0.6rem;
-      color: var(--muted); letter-spacing: 2px; text-transform: uppercase;
-    }
-
     #distReadout {
-      font-family: 'Space Mono', monospace; font-size: 2.4rem; font-weight: 700;
+      font-family: 'Space Mono', monospace; font-size: 4rem; font-weight: 700;
       color: var(--accent); line-height: 1;
     }
-    #distUnit { font-family: 'Space Mono', monospace; font-size: 0.7rem; color: var(--muted); }
+    #distUnit { font-family: 'Space Mono', monospace; font-size: 0.85rem; color: var(--muted); text-align: center; }
 
-    #arrowCanvas { width: 120px; height: 120px; }
-
+    /* ── SLOPE GAUGE OVERLAY (on chart, upper-left — optional, toggled) ── */
+    #slopeOverlay {
+      position: absolute; top: 10px; left: 10px;
+      background: rgba(26,29,39,0.88); border: 1px solid var(--border); border-radius: 10px;
+      padding: 8px 12px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+      z-index: 5;
+    }
+    #arrowCanvas { width: 90px; height: 90px; }
     #slopeReadout {
-      font-family: 'Space Mono', monospace; font-size: 1.5rem; font-weight: 700; line-height: 1;
+      font-family: 'Space Mono', monospace; font-size: 1.2rem; font-weight: 700; line-height: 1;
     }
     #slopeReadout.pos  { color: var(--slope-pos); }
     #slopeReadout.neg  { color: var(--slope-neg); }
     #slopeReadout.zero { color: var(--slope-zero); }
-
     #slopeDirLabel {
-      font-family: 'Space Mono', monospace; font-size: 0.62rem;
+      font-family: 'Space Mono', monospace; font-size: 0.58rem;
       color: var(--muted); text-align: center; letter-spacing: 0.5px;
     }
+
+    /* ── DATA TABLE (toggleable, reuses the space the old gauge column had) ── */
+    #tableCol {
+      width: var(--right-w); flex-shrink: 0;
+      display: flex; flex-direction: column; padding: 8px; gap: 6px;
+    }
+    #tableHeader {
+      font-family: 'Space Mono', monospace; font-size: 0.62rem; color: var(--muted);
+      letter-spacing: 1px; text-transform: uppercase; text-align: center;
+    }
+    #tableScroll {
+      flex: 1; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    }
+    #dataTable { width: 100%; border-collapse: collapse; font-family: 'Space Mono', monospace; font-size: 0.7rem; }
+    #dataTable td { padding: 3px 8px; border-bottom: 1px solid var(--border); color: var(--text); text-align: right; }
+    #dataTable tr:last-child td { color: var(--accent); }
 
     /* ── TRACKING MODE INDICATOR ── */
     #trackingMode {
@@ -201,7 +238,35 @@
     <a class="hdr-btn back" href="index.html">← Home</a>
     <h1>Full Lab</h1>
     <div class="status-dot" id="statusDot"></div>
-    <a class="hdr-btn" href="setup.html?from=fulllab.html&change=1">⚙ Setup</a>
+    <div id="settingsWrap">
+      <button class="hdr-btn" id="settingsBtn">⚙ Settings</button>
+      <div id="settingsPanel">
+        <a class="settings-link" href="setup.html?from=fulllab.html&change=1">← Change tracking mode</a>
+        <div class="settings-row">
+          <span>Units</span>
+          <button type="button" id="unitToggleBtn" class="toggle-btn">m</button>
+        </div>
+        <div class="settings-row">
+          <span>Graph</span>
+          <div class="settings-subtoggle">
+            <button type="button" id="modeDistBtn" class="toggle-btn active">Dist</button>
+            <button type="button" id="modeSpeedBtn" class="toggle-btn">Speed</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span>Data table</span>
+          <input type="checkbox" id="tableToggle">
+        </div>
+        <div class="settings-row">
+          <span>Points each second</span>
+          <input type="checkbox" id="pointsToggle">
+        </div>
+        <div class="settings-row">
+          <span>Slope gauge</span>
+          <input type="checkbox" id="slopeGaugeToggle">
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- CONTENT -->
@@ -228,11 +293,6 @@
         <button class="ctrl-btn" id="clearBtn">✕ Clear</button>
       </div>
 
-      <div id="modeControls" style="display:flex; gap:6px;">
-        <button class="ctrl-btn" id="modeDistBtn" style="flex:1;">Distance</button>
-        <button class="ctrl-btn" id="modeSpeedBtn" style="flex:1;">Speed</button>
-      </div>
-
       <!-- TEMP: remove after size-history filter is validated -->
       <div id="logControls" style="display:flex; gap:6px;">
         <button class="ctrl-btn" id="logBtn" style="flex:1;">● Log: OFF</button>
@@ -249,6 +309,15 @@
     <div id="chartArea">
       <div id="chartWrap">
         <canvas id="chart"></canvas>
+        <div id="distOverlay">
+          <div id="distReadout">--</div>
+          <div id="distUnit">feet</div>
+        </div>
+        <div id="slopeOverlay" class="hidden">
+          <canvas id="arrowCanvas" width="90" height="90"></canvas>
+          <div id="slopeReadout" class="zero">0.0</div>
+          <div id="slopeDirLabel">—</div>
+        </div>
       </div>
       <!-- No-setup overlay -->
       <div id="noSetupBanner" class="visible">
@@ -258,22 +327,11 @@
       </div>
     </div>
 
-    <!-- GAUGES -->
-    <div id="rightCol">
-      <div class="gauge-card">
-        <div class="gauge-label">Distance</div>
-        <div id="distReadout">--</div>
-        <div style="display:flex; align-items:center; gap:6px;">
-          <div id="distUnit">feet</div>
-          <button type="button" id="unitToggleBtn" style="cursor:pointer; background:none; border:1px solid var(--border); border-radius:5px; color:var(--muted); font-family:'Space Mono',monospace; font-size:0.62rem; padding:2px 6px;">m</button>
-        </div>
-      </div>
-
-      <div class="gauge-card">
-        <div class="gauge-label">Slope</div>
-        <canvas id="arrowCanvas" width="120" height="120"></canvas>
-        <div id="slopeReadout" class="zero">0.0</div>
-        <div id="slopeDirLabel">—</div>
+    <!-- DATA TABLE (toggleable, replaces the old fixed gauge column) -->
+    <div id="tableCol" class="hidden">
+      <div id="tableHeader">t (s) / value</div>
+      <div id="tableScroll">
+        <table id="dataTable"><tbody id="dataTableBody"></tbody></table>
       </div>
     </div>
 
@@ -329,6 +387,50 @@ const downloadLogBtn   = document.getElementById('downloadLogBtn');
 const unitToggleBtn    = document.getElementById('unitToggleBtn');
 const modeDistBtn      = document.getElementById('modeDistBtn');
 const modeSpeedBtn     = document.getElementById('modeSpeedBtn');
+const settingsBtn      = document.getElementById('settingsBtn');
+const settingsPanel    = document.getElementById('settingsPanel');
+const tableToggle      = document.getElementById('tableToggle');
+const pointsToggle     = document.getElementById('pointsToggle');
+const slopeGaugeToggle = document.getElementById('slopeGaugeToggle');
+const tableCol         = document.getElementById('tableCol');
+const slopeOverlay     = document.getElementById('slopeOverlay');
+const dataTableBody    = document.getElementById('dataTableBody');
+
+settingsBtn.onclick = (e) => { e.stopPropagation(); settingsPanel.classList.toggle('open'); };
+document.addEventListener('click', (e) => {
+  if (!settingsPanel.contains(e.target) && e.target !== settingsBtn) settingsPanel.classList.remove('open');
+});
+
+function rebuildTable() {
+  dataTableBody.innerHTML = '';
+  for (const [t, v] of data) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${t.toFixed(2)}</td><td>${v.toFixed(2)}</td>`;
+    dataTableBody.appendChild(tr);
+  }
+  dataTableBody.parentElement.parentElement.scrollTop = dataTableBody.parentElement.parentElement.scrollHeight;
+}
+
+tableToggle.onchange = () => {
+  tableCol.classList.toggle('hidden', !tableToggle.checked);
+  if (tableToggle.checked) rebuildTable();
+};
+slopeGaugeToggle.onchange = () => {
+  slopeOverlay.classList.toggle('hidden', !slopeGaugeToggle.checked);
+};
+let showSecondPoints = false;
+function pointRadiusFn(ctx) {
+  if (!showSecondPoints || !ctx.parsed) return 0;
+  return Math.abs(ctx.parsed.x - Math.round(ctx.parsed.x)) < 0.03 ? 4 : 0;
+}
+function pointColorFn(ctx) {
+  return '#ffd740';
+}
+pointsToggle.onchange = () => {
+  showSecondPoints = pointsToggle.checked;
+  chart.update();
+};
+
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -444,7 +546,7 @@ const chart = new Chart(document.getElementById('chart'), {
     datasets: [{
       label: 'Motion', data: [],
       borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
-      borderWidth: 3, pointRadius: 0, fill: true, tension: 0.3
+      borderWidth: 3, pointRadius: pointRadiusFn, pointBackgroundColor: pointColorFn, fill: true, tension: 0.3
     }]
   },
   options: {
@@ -728,6 +830,13 @@ function recordPoint(value) {
       chart.options.scales.x.max += 5;
     }
     chart.update('none');
+    if (tableToggle.checked) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${tv.toFixed(2)}</td><td>${dv.toFixed(2)}</td>`;
+      dataTableBody.appendChild(tr);
+      const scrollBox = dataTableBody.parentElement.parentElement;
+      scrollBox.scrollTop = scrollBox.scrollHeight;
+    }
   }
 }
 
@@ -827,6 +936,7 @@ function beginRecording(){
   data=[]; recording=true;
   startTime=Date.now(); lastRecordTime=0;
   smooth=MotionTracker.createSmoother(); calcSlope=MotionTracker.createSlopeCalc();
+  dataTableBody.innerHTML='';
   statusDot.classList.remove('active');
   statusDot.classList.add('recording');
   startBtn.textContent = '■ Stop';
@@ -843,7 +953,7 @@ function beginRecording(){
   chart.data.datasets[0]={
     label:'Motion',data:[],
     borderColor:'#00e5ff',backgroundColor:'rgba(0,229,255,0.08)',
-    borderWidth:3,pointRadius:0,fill:true,tension:0.3
+    borderWidth:3,pointRadius:pointRadiusFn,pointBackgroundColor:pointColorFn,fill:true,tension:0.3
   };
   chart.update();
 }
@@ -937,10 +1047,11 @@ function setGraphMode(mode) {
   modeSpeedBtn.style.color = mode === 'speed' ? 'var(--accent)' : '';
   modeSpeedBtn.style.borderColor = mode === 'speed' ? 'var(--accent)' : '';
   data = [];
+  dataTableBody.innerHTML = '';
   chart.data.datasets = [{
     label: 'Motion', data: [],
     borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
-    borderWidth: 3, pointRadius: 0, fill: true, tension: 0.3
+    borderWidth: 3, pointRadius: pointRadiusFn, pointBackgroundColor: pointColorFn, fill: true, tension: 0.3
   }];
   applyAxisConfig();
 }
@@ -955,11 +1066,12 @@ distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
 clearBtn.onclick=()=>{
   if(countingDown){clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
   recording=false; startBtn.disabled=false; startBtn.textContent='▶ Start'; data=[];
+  dataTableBody.innerHTML='';
   chart.options.scales.x.max = INITIAL_WINDOW;
   chart.data.datasets=[{
     label:'Motion',data:[],
     borderColor:'#00e5ff',backgroundColor:'rgba(0,229,255,0.08)',
-    borderWidth:3,pointRadius:0,fill:true,tension:0.3
+    borderWidth:3,pointRadius:pointRadiusFn,pointBackgroundColor:pointColorFn,fill:true,tension:0.3
   }];
   chart.update();
   smooth=MotionTracker.createSmoother(); lastRecordTime=0; calcSlope=MotionTracker.createSlopeCalc();
