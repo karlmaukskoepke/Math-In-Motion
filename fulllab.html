@@ -270,7 +270,7 @@
         </div>
         <div class="settings-row">
           <span>Points each second</span>
-          <input type="checkbox" id="pointsToggle">
+          <input type="checkbox" id="pointsToggle" checked>
         </div>
         <div class="settings-row">
           <span>Slope gauge</span>
@@ -420,22 +420,32 @@ document.addEventListener('click', (e) => {
 });
 
 // ── DATA TABLE: tenths-of-a-unit precision, thinned to a chosen interval
-// (raw ~20Hz recording would make for an unreadably long table otherwise) ──
+// (raw ~20Hz recording would make for an unreadably long table otherwise).
+// Rows are anchored to clean multiples of tableInterval FROM t=0 (Go),
+// not "whenever the first sample happened to land" — guarantees a real
+// "0.0" row at the y-intercept instead of drifting to 0.1 or similar.
 let tableInterval = 1; // seconds; default matches the "1s" button
-let lastTableRowTime = -Infinity;
+let nextTableTargetT = 0;
 function tableMinT() { return negTimeToggle.checked ? NEG_TIME_MIN : 0; }
+function resetTableTargets() {
+  // Smallest clean multiple of tableInterval at or below the earliest
+  // possible sample (-GO_DELAY), so pre-roll rows land on clean negative
+  // multiples too (e.g. -1,-2,-3 for a 1s interval).
+  nextTableTargetT = -Math.ceil(GO_DELAY / tableInterval) * tableInterval;
+}
 
 function rebuildTable() {
   dataTableBody.innerHTML = '';
-  lastTableRowTime = -Infinity;
+  resetTableTargets();
   const minT = tableMinT();
   for (const [t, v] of data) {
-    if (t < minT) continue;
-    if (t - lastTableRowTime < tableInterval - 0.001) continue;
-    lastTableRowTime = t;
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${t.toFixed(1)}</td><td>${v.toFixed(1)}</td>`;
-    dataTableBody.appendChild(tr);
+    if (t < nextTableTargetT) continue;
+    if (t >= minT) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${t.toFixed(1)}</td><td>${v.toFixed(1)}</td>`;
+      dataTableBody.appendChild(tr);
+    }
+    nextTableTargetT += tableInterval;
   }
   const scrollBox = dataTableBody.parentElement.parentElement;
   scrollBox.scrollTop = scrollBox.scrollHeight;
@@ -485,16 +495,29 @@ slopeGaugeToggle.onchange = () => {
   el.addEventListener('pointerup', () => { dragging = false; el.style.cursor = 'grab'; });
 })(slopeOverlay);
 
-let showSecondPoints = false;
-function pointRadiusFn(ctx) {
-  if (!showSecondPoints || !ctx.parsed) return 0;
-  return Math.abs(ctx.parsed.x - Math.round(ctx.parsed.x)) < 0.03 ? 4 : 0;
+let showSecondPoints = true; // default ON per request
+
+function updateSecondMarkers() {
+  const ds = chart.data.datasets.find(d => d.label === 'SecondMarkers');
+  if (!ds) return;
+  if (!showSecondPoints || data.length < 2) { ds.data = []; return; }
+  const markers = [];
+  const startSec = Math.ceil(data[0][0]);
+  const endSec = Math.floor(data[data.length-1][0]);
+  for (let s = startSec; s <= endSec; s++) {
+    let closest = data[0], closestDist = Math.abs(data[0][0]-s);
+    for (const [t,v] of data) {
+      const d2 = Math.abs(t-s);
+      if (d2 < closestDist) { closest = [t,v]; closestDist = d2; }
+    }
+    markers.push({x: closest[0], y: closest[1]});
+  }
+  ds.data = markers;
 }
-function pointColorFn(ctx) {
-  return '#ffd740';
-}
+
 pointsToggle.onchange = () => {
   showSecondPoints = pointsToggle.checked;
+  updateSecondMarkers();
   chart.update();
 };
 
@@ -615,16 +638,57 @@ const coordLabelPlugin = {
 // (Full Lab removes the fixed-duration marker plugin from Quick Start —
 // recording length is open-ended here, so there's no fixed endpoint to mark.)
 
-Chart.register(coordLabelPlugin);
+// Plugin: vertical "Start" line at t=0 — only meaningful (and only drawn)
+// when the x-axis extends below 0, i.e. the negative-time toggle is on.
+const startLinePlugin = {
+  id: 'startLine',
+  afterDraw(ch) {
+    const xScale = ch.scales.x, yScale = ch.scales.y;
+    if (!xScale || !yScale || xScale.min >= 0) return;
+    const xPx = xScale.getPixelForValue(0);
+    if (xPx < xScale.left || xPx > xScale.right) return;
+    const c2 = ch.ctx;
+    c2.save();
+    c2.strokeStyle = 'rgba(255,255,255,0.55)';
+    c2.lineWidth = 2;
+    c2.beginPath();
+    c2.moveTo(xPx, yScale.top);
+    c2.lineTo(xPx, yScale.bottom);
+    c2.stroke();
+    c2.fillStyle = '#ffffff';
+    c2.font = 'bold 11px "Space Mono", monospace';
+    c2.textAlign = 'center';
+    c2.fillText('Start', xPx, yScale.top - 5);
+    c2.restore();
+  }
+};
+
+Chart.register(coordLabelPlugin, startLinePlugin);
+
+function motionDataset() {
+  return {
+    label: 'Motion', data: [],
+    borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
+    borderWidth: 3, pointRadius: 0, fill: true, tension: 0.3
+  };
+}
+function markerDataset() {
+  // Explicit, separately-managed dataset for the "points each second"
+  // markers — computed by scanning recorded data for the closest sample
+  // to each whole-second mark. Kept independent of the main line's
+  // per-point scriptable styling, which proved unreliable once combined
+  // with tension-smoothed curves.
+  return {
+    label: 'SecondMarkers', data: [],
+    showLine: false, pointRadius: 4, pointBackgroundColor: '#ffd740',
+    pointBorderColor: '#000', pointBorderWidth: 1
+  };
+}
 
 const chart = new Chart(document.getElementById('chart'), {
   type: 'line',
   data: {
-    datasets: [{
-      label: 'Motion', data: [],
-      borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
-      borderWidth: 3, pointRadius: pointRadiusFn, pointBackgroundColor: pointColorFn, fill: true, tension: 0.3
-    }]
+    datasets: [motionDataset(), markerDataset()]
   },
   options: {
     animation: false, responsive: true, maintainAspectRatio: false,
@@ -900,21 +964,22 @@ function recordPoint(value) {
     const tv=parseFloat(t.toFixed(2)), dv=parseFloat(value.toFixed(3));
     data.push([tv,dv]);
     chart.data.datasets[0].data.push({x:tv,y:dv});
-    // Grow the visible window as recording runs past it, rather than
-    // clipping — same reasoning as the fixed-window Quick Start version,
-    // just without a hard stop.
-    if (tv > chart.options.scales.x.max - 1) {
-      chart.options.scales.x.max += 5;
-    }
     chart.update('none');
-    if (tableToggle.checked && tv >= tableMinT() && tv - lastTableRowTime >= tableInterval - 0.001) {
-      lastTableRowTime = tv;
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${tv.toFixed(1)}</td><td>${dv.toFixed(1)}</td>`;
-      dataTableBody.appendChild(tr);
-      const scrollBox = dataTableBody.parentElement.parentElement;
-      scrollBox.scrollTop = scrollBox.scrollHeight;
+    // Table rows are anchored to clean multiples of tableInterval FROM
+    // t=0 (e.g. 0, 1, 2, 3... or 0, -1, -2 with negative time shown) —
+    // not "whenever the first sample happened to land" — so the zero
+    // row reliably reads "0.0" instead of drifting to "0.1" or similar.
+    if (tableToggle.checked && tv >= nextTableTargetT) {
+      if (tv >= tableMinT()) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${tv.toFixed(1)}</td><td>${dv.toFixed(1)}</td>`;
+        dataTableBody.appendChild(tr);
+        const scrollBox = dataTableBody.parentElement.parentElement;
+        scrollBox.scrollTop = scrollBox.scrollHeight;
+      }
+      nextTableTargetT += tableInterval;
     }
+    if (showSecondPoints) updateSecondMarkers();
   }
 }
 
@@ -1015,7 +1080,7 @@ function beginRecording(){
   data=[]; recording=true;
   startTime=Date.now(); lastRecordTime=-Infinity; // startTime = button press (T0); recordPoint subtracts GO_DELAY
   smooth=MotionTracker.createSmoother(); calcSlope=MotionTracker.createSlopeCalc();
-  dataTableBody.innerHTML=''; lastTableRowTime=-Infinity;
+  dataTableBody.innerHTML=''; resetTableTargets();
   statusDot.classList.remove('active');
   statusDot.classList.add('recording');
   startBtn.textContent = '■ Stop';
@@ -1023,18 +1088,12 @@ function beginRecording(){
   chart.options.scales.x.min = negTimeToggle.checked ? NEG_TIME_MIN : 0;
   // Ghost previous run (faint)
   const prev=chart.data.datasets[0];
-  if(prev&&prev.data&&prev.data.length>0){
-    chart.data.datasets.push({
-      label:'Prev',data:prev.data.slice(),
-      borderColor:'rgba(0,229,255,0.15)',backgroundColor:'transparent',
-      borderWidth:1,pointRadius:0,fill:false,tension:0.3
-    });
-  }
-  chart.data.datasets[0]={
-    label:'Motion',data:[],
-    borderColor:'#00e5ff',backgroundColor:'rgba(0,229,255,0.08)',
-    borderWidth:3,pointRadius:pointRadiusFn,pointBackgroundColor:pointColorFn,fill:true,tension:0.3
-  };
+  const ghost = (prev&&prev.data&&prev.data.length>0) ? {
+    label:'Prev',data:prev.data.slice(),
+    borderColor:'rgba(0,229,255,0.15)',backgroundColor:'transparent',
+    borderWidth:1,pointRadius:0,fill:false,tension:0.3
+  } : null;
+  chart.data.datasets = ghost ? [motionDataset(), markerDataset(), ghost] : [motionDataset(), markerDataset()];
   chart.update();
 }
 
@@ -1135,12 +1194,8 @@ function setGraphMode(mode) {
   modeDistBtn.classList.toggle('active', mode === 'distance');
   modeSpeedBtn.classList.toggle('active', mode === 'speed');
   data = [];
-  dataTableBody.innerHTML = ''; lastTableRowTime = -Infinity;
-  chart.data.datasets = [{
-    label: 'Motion', data: [],
-    borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
-    borderWidth: 3, pointRadius: pointRadiusFn, pointBackgroundColor: pointColorFn, fill: true, tension: 0.3
-  }];
+  dataTableBody.innerHTML = ''; resetTableTargets();
+  chart.data.datasets = [motionDataset(), markerDataset()];
   applyAxisConfig();
 }
 modeDistBtn.onclick  = () => setGraphMode('distance');
@@ -1155,13 +1210,10 @@ distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
 clearBtn.onclick=()=>{
   if(countingDown){clearTimeout(preDelayTimer);clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
   recording=false; startBtn.disabled=false; startBtn.textContent='▶ Start'; data=[];
-  dataTableBody.innerHTML=''; lastTableRowTime=-Infinity;
+  dataTableBody.innerHTML=''; resetTableTargets();
   chart.options.scales.x.max = INITIAL_WINDOW;
-  chart.data.datasets=[{
-    label:'Motion',data:[],
-    borderColor:'#00e5ff',backgroundColor:'rgba(0,229,255,0.08)',
-    borderWidth:3,pointRadius:pointRadiusFn,pointBackgroundColor:pointColorFn,fill:true,tension:0.3
-  }];
+  chart.options.scales.x.min = negTimeToggle.checked ? NEG_TIME_MIN : 0;
+  chart.data.datasets=[motionDataset(), markerDataset()];
   chart.update();
   smooth=MotionTracker.createSmoother(); lastRecordTime=-Infinity; calcSlope=MotionTracker.createSlopeCalc();
   statusDot.classList.remove('recording');
