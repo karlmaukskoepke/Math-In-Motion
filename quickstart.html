@@ -374,11 +374,36 @@ const arucoMode  = !ballModeOn;
 
 // Plugin: draw coordinate labels at each whole second + y-intercept
 let pinnedPoints = []; // [{t, v}, ...] — student-picked points, click to add/remove
+let hoverPreview = null; // {t, v} | null — live preview snapped to half-second grid
+
+// Rounds to tenths, then drops the trailing ".0" for whole numbers.
+function formatSig(v) {
+  const rounded = Math.round(v * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function drawCoordDot(c2, xPx, yPx, label, { fill, stroke, alpha }) {
+  c2.beginPath();
+  c2.arc(xPx, yPx, 6, 0, Math.PI * 2);
+  c2.globalAlpha = alpha;
+  c2.fillStyle = fill;
+  c2.fill();
+  c2.strokeStyle = stroke;
+  c2.lineWidth = 2;
+  c2.stroke();
+  const labelY = yPx - 14;
+  c2.fillStyle = 'rgba(15,17,23,0.9)';
+  const w = c2.measureText(label).width;
+  c2.fillRect(xPx - w/2 - 4, labelY - 12, w + 8, 16);
+  c2.fillStyle = '#ffffff';
+  c2.fillText(label, xPx, labelY);
+  c2.globalAlpha = 1;
+}
 
 const coordLabelPlugin = {
   id: 'coordLabels',
   afterDraw(ch) {
-    if (!pinnedPoints.length) return;
+    if (!pinnedPoints.length && !hoverPreview) return;
     const xScale = ch.scales.x;
     const yScale = ch.scales.y;
     const c2     = ch.ctx;
@@ -386,28 +411,22 @@ const coordLabelPlugin = {
     c2.font = 'bold 11px "Space Mono", monospace';
     c2.textAlign = 'center';
 
+    // Live preview (not yet clicked) — softer, so it reads as "not final"
+    if (hoverPreview) {
+      const xPx = xScale.getPixelForValue(hoverPreview.t);
+      const yPx = yScale.getPixelForValue(hoverPreview.v);
+      if (xPx >= xScale.left && xPx <= xScale.right) {
+        drawCoordDot(c2, xPx, yPx, `(${formatSig(hoverPreview.t)}, ${formatSig(hoverPreview.v)})`,
+          { fill: '#ffd740', stroke: '#ffffff', alpha: 0.55 });
+      }
+    }
+
     pinnedPoints.forEach(({t, v}) => {
       const xPx = xScale.getPixelForValue(t);
       const yPx = yScale.getPixelForValue(v);
       if (xPx < xScale.left || xPx > xScale.right) return;
-
-      // Dot
-      c2.beginPath();
-      c2.arc(xPx, yPx, 6, 0, Math.PI * 2);
-      c2.fillStyle = '#ff4081';
-      c2.fill();
-      c2.strokeStyle = '#ffffff';
-      c2.lineWidth = 2;
-      c2.stroke();
-
-      // Label
-      const label = `(${t.toFixed(1)}, ${v.toFixed(1)})`;
-      const labelY = yPx - 14;
-      c2.fillStyle = 'rgba(15,17,23,0.9)';
-      const w = c2.measureText(label).width;
-      c2.fillRect(xPx - w/2 - 4, labelY - 12, w + 8, 16);
-      c2.fillStyle = '#ffffff';
-      c2.fillText(label, xPx, labelY);
+      drawCoordDot(c2, xPx, yPx, `(${formatSig(t)}, ${formatSig(v)})`,
+        { fill: '#ff4081', stroke: '#ffffff', alpha: 1 });
     });
 
     c2.restore();
@@ -457,18 +476,7 @@ const chart = new Chart(document.getElementById('chart'), {
     interaction: { mode: 'nearest', intersect: false, axis: 'x' },
     plugins: {
       legend: { display: false },
-      tooltip: {
-        backgroundColor: 'rgba(10,12,20,0.97)',
-        borderColor: '#00e5ff', borderWidth: 1,
-        titleColor: '#00e5ff', bodyColor: '#fff',
-        titleFont: { family: 'Space Mono', size: 13, weight: 'bold' },
-        bodyFont:  { family: 'Space Mono', size: 13, weight: 'bold' },
-        padding: 12,
-        callbacks: {
-          title: items => `t = ${parseFloat(items[0].parsed.x).toFixed(1)} sec`,
-          label: item  => ` dist: ${item.parsed.y.toFixed(1)} ft`
-        }
-      }
+      tooltip: { enabled: false }
     },
     scales: {
       x: {
@@ -502,26 +510,38 @@ const chart = new Chart(document.getElementById('chart'), {
   }
 });
 
-// ── CLICK-TO-PIN: click near the line to permanently label that point;
-// click an existing pinned point again to remove it. Snaps to the
-// nearest ACTUAL recorded sample (by time), not an arbitrary click coord —
-// so the coordinates shown are always real data, never fabricated.
-const PIN_EPSILON = 0.15; // seconds — click tolerance for "same point"
-chart.canvas.addEventListener('click', (e) => {
-  if (!data.length) return;
+// ── HOVER + CLICK-TO-PIN: the cursor always snaps to the nearest
+// half-second mark (0, 0.5, 1.0, 1.5...), not the nearest actual sample.
+// Since recorded data is far finer-grained than that, the value shown is
+// a LINEAR INTERPOLATION between the two real samples bracketing that
+// half-second — i.e. the point on the straight line connecting them,
+// not a raw data value. Hovering previews it; clicking pins it in place;
+// clicking a pinned point again removes it.
+const HALF_STEP = 0.5;
+function snappedPreviewAt(clientX) {
   const rect = chart.canvas.getBoundingClientRect();
-  const clickT = chart.scales.x.getValueForPixel(e.clientX - rect.left);
-  let nearest = data[0], nearestDist = Math.abs(data[0][0] - clickT);
-  for (const [t, v] of data) {
-    const d = Math.abs(t - clickT);
-    if (d < nearestDist) { nearest = [t, v]; nearestDist = d; }
-  }
-  const [nt, nv] = nearest;
-  const existingIdx = pinnedPoints.findIndex(p => Math.abs(p.t - nt) < PIN_EPSILON);
+  const rawT = chart.scales.x.getValueForPixel(clientX - rect.left);
+  const snappedT = Math.round(rawT / HALF_STEP) * HALF_STEP;
+  const v = interpolateAt(snappedT);
+  return v === null ? null : { t: snappedT, v };
+}
+
+chart.canvas.addEventListener('mousemove', (e) => {
+  hoverPreview = snappedPreviewAt(e.clientX);
+  chart.update('none');
+});
+chart.canvas.addEventListener('mouseleave', () => {
+  hoverPreview = null;
+  chart.update('none');
+});
+chart.canvas.addEventListener('click', (e) => {
+  const pt = snappedPreviewAt(e.clientX);
+  if (!pt) return;
+  const existingIdx = pinnedPoints.findIndex(p => Math.abs(p.t - pt.t) < HALF_STEP/2);
   if (existingIdx >= 0) {
     pinnedPoints.splice(existingIdx, 1); // click again to unpin
   } else {
-    pinnedPoints.push({ t: nt, v: nv });
+    pinnedPoints.push(pt);
   }
   chart.update('none');
 });
