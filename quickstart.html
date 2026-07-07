@@ -474,8 +474,8 @@ const chart = new Chart(document.getElementById('chart'), {
         title: { display: true, text: 'Time (s)', color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
         ticks: {
           color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
-          stepSize: 1,
-          callback: v => Number.isInteger(v) ? String(v) : null
+          maxTicksLimit: 10,
+          callback: v => Number.isInteger(v) ? String(v) : v.toFixed(1)
         },
         grid: {
           color: c => Number.isInteger(c.tick.value) ? 'rgba(160,180,255,0.55)' : 'rgba(100,120,200,0.25)',
@@ -487,8 +487,8 @@ const chart = new Chart(document.getElementById('chart'), {
         title: { display: true, text: `Distance (${currentUnit})`, color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
         ticks: {
           color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
-          stepSize: 1,
-          callback: v => Number.isInteger(v) ? String(v) : null
+          maxTicksLimit: 10,
+          callback: v => Number.isInteger(v) ? String(v) : v.toFixed(1)
         },
         grid: {
           color: 'rgba(160,180,255,0.45)',

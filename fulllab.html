@@ -276,6 +276,10 @@
           <span>Slope gauge</span>
           <input type="checkbox" id="slopeGaugeToggle">
         </div>
+        <div class="settings-row">
+          <span>Show "before start" (-3s)</span>
+          <input type="checkbox" id="negTimeToggle">
+        </div>
       </div>
     </div>
   </div>
@@ -405,6 +409,7 @@ const tableToggle      = document.getElementById('tableToggle');
 const tableIntervalBtns = document.querySelectorAll('.table-interval-btn');
 const pointsToggle     = document.getElementById('pointsToggle');
 const slopeGaugeToggle = document.getElementById('slopeGaugeToggle');
+const negTimeToggle    = document.getElementById('negTimeToggle');
 const tableCol         = document.getElementById('tableCol');
 const slopeOverlay     = document.getElementById('slopeOverlay');
 const dataTableBody    = document.getElementById('dataTableBody');
@@ -418,11 +423,14 @@ document.addEventListener('click', (e) => {
 // (raw ~20Hz recording would make for an unreadably long table otherwise) ──
 let tableInterval = 1; // seconds; default matches the "1s" button
 let lastTableRowTime = -Infinity;
+function tableMinT() { return negTimeToggle.checked ? NEG_TIME_MIN : 0; }
 
 function rebuildTable() {
   dataTableBody.innerHTML = '';
   lastTableRowTime = -Infinity;
+  const minT = tableMinT();
   for (const [t, v] of data) {
+    if (t < minT) continue;
     if (t - lastTableRowTime < tableInterval - 0.001) continue;
     lastTableRowTime = t;
     const tr = document.createElement('tr');
@@ -444,6 +452,11 @@ tableIntervalBtns.forEach(btn => {
     if (tableToggle.checked) rebuildTable(); // re-thin existing data to the new interval
   };
 });
+negTimeToggle.onchange = () => {
+  chart.options.scales.x.min = negTimeToggle.checked ? NEG_TIME_MIN : 0;
+  chart.update();
+  if (tableToggle.checked) rebuildTable();
+};
 slopeGaugeToggle.onchange = () => {
   slopeOverlay.classList.toggle('hidden', !slopeGaugeToggle.checked);
 };
@@ -490,13 +503,22 @@ pointsToggle.onchange = () => {
 // CONSTANTS
 // ════════════════════════════════════════════════
 // ════════════════════════════════════════════════
-// FULL LAB: open-ended recording (not fixed 5s like Quick Start).
-// ASSUMPTION (not explicitly confirmed with Karl — flag if wrong):
-// starts at a 15s window, grows automatically if recording runs longer,
-// hard safety cap at 45s to bound memory/chart clutter.
+// FULL LAB: Go-relative timing.
+// Data collection starts the instant Start is pressed (t is very negative
+// then). The visible/audible countdown is a display overlay layered on
+// top, delayed by PRE_DELAY so it doesn't feel instantaneous. "Go" fires
+// at PRE_DELAY + COUNTDOWN_LEN seconds after Start — that moment becomes
+// t=0. Everything before it is negative time ("before we started"),
+// which is what lets a graph show a real y-intercept instead of starting
+// mid-motion. Recording hard-stops at GO_DELAY + MAX_DURATION after Start
+// (i.e. exactly 10s after Go).
 // ════════════════════════════════════════════════
-const INITIAL_WINDOW = 15;
-const MAX_DURATION    = 45;
+const PRE_DELAY      = 0.5;              // silent buffer before countdown UI appears
+const COUNTDOWN_LEN  = 3;                // visible 3-2-1 countdown
+const GO_DELAY        = PRE_DELAY + COUNTDOWN_LEN; // 3.5s — Start press to "Go"
+const INITIAL_WINDOW = 10;               // default graph window after Go
+const MAX_DURATION    = 10;               // hard auto-stop, seconds after Go
+const NEG_TIME_MIN    = -3;               // how far back the toggle reveals
 const MARKER_SIZE = 14.0;  // cm — printable ArUco PDF
 const BALL_DIAM   = tracking ? (tracking.ballDiam || 15.2) : 15.2; // cm
 let   focalLength = 863;
@@ -523,7 +545,7 @@ let recording       = false;
 let countingDown    = false;
 let data            = [];   // [[t, distFt], ...]
 let startTime       = null;
-let lastRecordTime  = 0;
+let lastRecordTime  = -Infinity;
 let smooth           = MotionTracker.createSmoother();
 let calcSlope         = MotionTracker.createSlopeCalc();
 let arrowAngleDeg   = 0;
@@ -532,6 +554,7 @@ let lastKnownPxW    = null;
 let ballColor       = null;  // { r, g, b, h, s, v }
 let ballPickMode    = false;
 let countdownTimer  = null;
+let preDelayTimer   = null;
 // TEMP: logging state — remove after size-history filter is validated
 let logging         = false;
 let logRows         = [];
@@ -617,8 +640,8 @@ const chart = new Chart(document.getElementById('chart'), {
         callbacks: {
           title: items => `t = ${parseFloat(items[0].parsed.x).toFixed(1)} sec`,
           label: item  => graphMode === 'speed'
-            ? ` speed: ${item.parsed.y.toFixed(2)} ${currentUnit}/s`
-            : ` dist: ${item.parsed.y.toFixed(2)} ${currentUnit}`
+            ? ` speed: ${item.parsed.y.toFixed(1)} ${currentUnit}/s`
+            : ` dist: ${item.parsed.y.toFixed(1)} ${currentUnit}`
         }
       }
     },
@@ -629,8 +652,8 @@ const chart = new Chart(document.getElementById('chart'), {
         title: { display: true, text: 'Time (s)', color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
         ticks: {
           color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
-          stepSize: 1,
-          callback: v => Number.isInteger(v) ? String(v) : null
+          maxTicksLimit: 14,
+          callback: v => Number.isInteger(v) ? String(v) : v.toFixed(1)
         },
         grid: {
           color: c => Number.isInteger(c.tick.value) ? 'rgba(160,180,255,0.55)' : 'rgba(100,120,200,0.25)',
@@ -643,8 +666,8 @@ const chart = new Chart(document.getElementById('chart'), {
         title: { display: true, text: graphMode === 'speed' ? `Speed (${currentUnit}/s)` : `Distance (${currentUnit})`, color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
         ticks: {
           color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
-          stepSize: 1,
-          callback: v => Number.isInteger(v) ? String(v) : null
+          maxTicksLimit: 8,
+          callback: v => Number.isInteger(v) ? String(v) : v.toFixed(1)
         },
         grid: {
           color: 'rgba(160,180,255,0.45)',
@@ -870,7 +893,7 @@ function processVideo() {
 }
 
 function recordPoint(value) {
-  const t=(Date.now()-startTime)/1000;
+  const t=(Date.now()-startTime)/1000 - GO_DELAY; // negative until "Go" fires
   if(t>=MAX_DURATION){ stopRecording(); return; }
   if(t-lastRecordTime>=0.05){
     lastRecordTime=t;
@@ -884,7 +907,7 @@ function recordPoint(value) {
       chart.options.scales.x.max += 5;
     }
     chart.update('none');
-    if (tableToggle.checked && tv - lastTableRowTime >= tableInterval - 0.001) {
+    if (tableToggle.checked && tv >= tableMinT() && tv - lastTableRowTime >= tableInterval - 0.001) {
       lastTableRowTime = tv;
       const tr = document.createElement('tr');
       tr.innerHTML = `<td>${tv.toFixed(1)}</td><td>${dv.toFixed(1)}</td>`;
@@ -958,44 +981,46 @@ function playChime(isGo){
 }
 
 startBtn.onclick = () => {
-  if(countingDown) return;
   if(recording){ stopRecording(); return; }
-  countingDown=true; startBtn.disabled=true;
-  let remaining=3;
-  countdownOverlay.classList.add('visible');
-  countdownNum.classList.remove('go');
-  countdownNum.textContent=remaining;
-  playChime(false);
-  countdownTimer=setInterval(()=>{
-    remaining--;
-    if(remaining>0){
-      countdownNum.classList.remove('go');
-      countdownNum.textContent=remaining;
-      playChime(false);
-    } else {
-      countdownNum.classList.add('go');
-      countdownNum.textContent='GO!';
-      playChime(true);
-      clearInterval(countdownTimer);
-      setTimeout(()=>{
-        countdownOverlay.classList.remove('visible');
+  beginRecording(); // data collection starts NOW — t is negative until "Go"
+  countingDown = true;
+  preDelayTimer = setTimeout(() => {
+    let remaining = COUNTDOWN_LEN;
+    countdownOverlay.classList.add('visible');
+    countdownNum.classList.remove('go');
+    countdownNum.textContent = remaining;
+    playChime(false);
+    countdownTimer = setInterval(() => {
+      remaining--;
+      if (remaining > 0) {
         countdownNum.classList.remove('go');
-        countingDown=false; startBtn.disabled=false;
-        beginRecording();
-      },800);
-    }
-  },1000);
+        countdownNum.textContent = remaining;
+        playChime(false);
+      } else {
+        countdownNum.classList.add('go');
+        countdownNum.textContent = 'GO!';
+        playChime(true);
+        clearInterval(countdownTimer);
+        setTimeout(() => {
+          countdownOverlay.classList.remove('visible');
+          countdownNum.classList.remove('go');
+          countingDown = false;
+        }, 800);
+      }
+    }, 1000);
+  }, PRE_DELAY * 1000);
 };
 
 function beginRecording(){
   data=[]; recording=true;
-  startTime=Date.now(); lastRecordTime=0;
+  startTime=Date.now(); lastRecordTime=-Infinity; // startTime = button press (T0); recordPoint subtracts GO_DELAY
   smooth=MotionTracker.createSmoother(); calcSlope=MotionTracker.createSlopeCalc();
   dataTableBody.innerHTML=''; lastTableRowTime=-Infinity;
   statusDot.classList.remove('active');
   statusDot.classList.add('recording');
   startBtn.textContent = '■ Stop';
   chart.options.scales.x.max = INITIAL_WINDOW; // reset growth from any prior take
+  chart.options.scales.x.min = negTimeToggle.checked ? NEG_TIME_MIN : 0;
   // Ghost previous run (faint)
   const prev=chart.data.datasets[0];
   if(prev&&prev.data&&prev.data.length>0){
@@ -1015,6 +1040,11 @@ function beginRecording(){
 
 function stopRecording(){
   recording=false;
+  countingDown=false;
+  clearTimeout(preDelayTimer);
+  clearInterval(countdownTimer);
+  countdownOverlay.classList.remove('visible');
+  countdownNum.classList.remove('go');
   statusDot.classList.remove('recording');
   statusDot.classList.add('active');
   startBtn.textContent = '▶ Start';
@@ -1123,7 +1153,7 @@ mBtn.classList.toggle('active', currentUnit === 'm');
 distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
 
 clearBtn.onclick=()=>{
-  if(countingDown){clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
+  if(countingDown){clearTimeout(preDelayTimer);clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
   recording=false; startBtn.disabled=false; startBtn.textContent='▶ Start'; data=[];
   dataTableBody.innerHTML=''; lastTableRowTime=-Infinity;
   chart.options.scales.x.max = INITIAL_WINDOW;
@@ -1133,7 +1163,7 @@ clearBtn.onclick=()=>{
     borderWidth:3,pointRadius:pointRadiusFn,pointBackgroundColor:pointColorFn,fill:true,tension:0.3
   }];
   chart.update();
-  smooth=MotionTracker.createSmoother(); lastRecordTime=0; calcSlope=MotionTracker.createSlopeCalc();
+  smooth=MotionTracker.createSmoother(); lastRecordTime=-Infinity; calcSlope=MotionTracker.createSlopeCalc();
   statusDot.classList.remove('recording');
   distReadout.textContent='--';
   drawArrow(0,0);
