@@ -207,6 +207,7 @@
     #dataTable td { padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--text); text-align: right; }
     #dataTable tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
     #dataTable tr:last-child td { color: var(--accent); font-weight: 700; }
+    #dataTable td.gapRow { font-style: italic; color: var(--muted); }
 
     /* ── TRACKING MODE INDICATOR ── */
     #trackingMode {
@@ -442,23 +443,35 @@ function formatSig(v) {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
-function nearestSample(targetT) {
+// Interpolates the value AT an exact target time from the two real
+// samples bracketing it — works even across a tracking gap, since it
+// only needs one good sample before and one after. Returns the bracket
+// width too, so callers can flag targets that fell inside an unusually
+// long gap (interpolating across 2+ seconds of missing tracking is a much
+// rougher estimate than across the normal ~0.05s sample spacing).
+function interpolateAt(t) {
   if (!data.length) return null;
-  let closest = data[0], closestDist = Math.abs(data[0][0]-targetT);
-  for (const [t,v] of data) {
-    const d = Math.abs(t-targetT);
-    if (d < closestDist) { closest=[t,v]; closestDist=d; }
+  if (t < data[0][0] || t > data[data.length-1][0]) return null;
+  for (let i = 0; i < data.length - 1; i++) {
+    if (data[i][0] <= t && data[i+1][0] >= t) {
+      const gap = data[i+1][0] - data[i][0];
+      const v = gap < 0.001 ? data[i][1]
+        : data[i][1] + (data[i+1][1] - data[i][1]) * (t - data[i][0]) / gap;
+      return { v, gap };
+    }
   }
-  return closest;
+  return null;
 }
 
 // ── DATA TABLE: tenths-of-a-unit precision, thinned to a chosen interval
 // (raw ~20Hz recording would make for an unreadably long table otherwise).
-// Rows land on the nearest ACTUAL sample to each clean multiple of
-// tableInterval from t=0 (Go) — same snapping as the graph markers — so
-// times read as clean "1.0"/"2.0" instead of drifting to "1.1" etc.
+// Rows land EXACTLY on each clean multiple of tableInterval from t=0 (Go)
+// — interpolated through any tracking gaps rather than snapping to
+// whatever real sample happened to be nearby.
 let tableInterval = 1; // seconds; default matches the "1s" button
 function tableMinT() { return negTimeToggle.checked ? NEG_TIME_MIN : 0; }
+
+const GAP_FLAG_THRESHOLD = 0.5; // seconds — bracket wider than this = a real tracking gap spanned this target
 
 function rebuildTable() {
   dataTableBody.innerHTML = '';
@@ -470,9 +483,17 @@ function rebuildTable() {
   for (let i = 0; i <= steps; i++) {
     const target = startTarget + i * tableInterval;
     if (target < minT - 0.0001) continue;
-    const [t, v] = nearestSample(target);
+    const result = interpolateAt(target);
+    if (!result) continue;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${formatSig(t)}</td><td>${formatSig(v)}</td>`;
+    if (result.gap > GAP_FLAG_THRESHOLD) {
+      // Estimated across a real tracking gap — flag it as an estimate
+      // rather than presenting it as an ordinary clean reading.
+      tr.innerHTML = `<td class="gapRow">${formatSig(target)}*</td><td class="gapRow">${formatSig(result.v)}</td>`;
+      tr.title = `Estimated — tracking gap of ~${result.gap.toFixed(1)}s spanned this moment`;
+    } else {
+      tr.innerHTML = `<td>${formatSig(target)}</td><td>${formatSig(result.v)}</td>`;
+    }
     dataTableBody.appendChild(tr);
   }
   const scrollBox = dataTableBody.parentElement.parentElement;
@@ -533,8 +554,9 @@ function updateSecondMarkers() {
   const startSec = Math.ceil(data[0][0]);
   const endSec = Math.floor(data[data.length-1][0]);
   for (let s = startSec; s <= endSec; s++) {
-    const [t, v] = nearestSample(s);
-    markers.push({x: t, y: v});
+    const result = interpolateAt(s);
+    if (!result) continue;
+    markers.push({x: s, y: result.v});
   }
   ds.data = markers;
 }
@@ -843,6 +865,15 @@ function updateGauges(distFt, slope) {
 // ════════════════════════════════════════════════
 function processVideo() {
   if (!video.videoWidth) { requestAnimationFrame(processVideo); return; }
+  // Auto-stop must not depend on tracking succeeding this frame — the
+  // duration check inside recordPoint() only ran when found/detected was
+  // true, so a tracking dropout right around t=10 (motion ending, ball
+  // settling, common right when the clip should end) could skip it
+  // indefinitely. Checked here, every frame, unconditionally.
+  if (recording) {
+    const t = (Date.now()-startTime)/1000 - GO_DELAY;
+    if (t >= MAX_DURATION) { stopRecording(); requestAnimationFrame(processVideo); return; }
+  }
   const vw=video.videoWidth, vh=video.videoHeight;
   const dw=videoWrapper.clientWidth, dh=videoWrapper.clientHeight;
   const vAsp=vw/vh, dAsp=dw/dh;

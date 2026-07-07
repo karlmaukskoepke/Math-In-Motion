@@ -326,7 +326,8 @@ document.addEventListener('click', (e) => {
 // ════════════════════════════════════════════════
 // CONSTANTS
 // ════════════════════════════════════════════════
-const DURATION    = 5;     // fixed 5-second recording, measured from "Go"
+const DURATION    = 5.5;   // records a touch past 5s so the 5s point has room to breathe, not glued to the edge
+const CHART_X_MAX = 6;     // axis shows a bit beyond DURATION too, for the same reason
 const PRE_DELAY     = 0.5; // silent buffer before countdown UI appears
 const COUNTDOWN_LEN = 3;   // visible 3-2-1 countdown
 const GO_DELAY      = PRE_DELAY + COUNTDOWN_LEN; // 3.5s — Start press to "Go"
@@ -341,7 +342,7 @@ let   focalLength = 863;
 // smaller, so the arrow gauge will read "quieter" in meters. Flagging this
 // as a known simplification, not a bug.
 let currentUnit = Units.getPref().dist; // 'ft' | 'm'
-const Y_MAX = { ft: 12, m: 3.7 };
+const Y_MAX = { ft: 10.5, m: 3.2 }; // labeled ceiling is 10ft/3m — the rest is headroom so a point at the ceiling isn't jammed against the edge
 
 // ════════════════════════════════════════════════
 // STATE
@@ -481,7 +482,7 @@ const chart = new Chart(document.getElementById('chart'), {
     scales: {
       x: {
         type: 'linear',
-        min: 0, max: DURATION,
+        min: 0, max: CHART_X_MAX,
         title: { display: true, text: 'Time (s)', color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
         ticks: {
           color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
@@ -498,11 +499,13 @@ const chart = new Chart(document.getElementById('chart'), {
         title: { display: true, text: `Distance (${currentUnit})`, color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
         ticks: {
           color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
-          maxTicksLimit: 10,
-          callback: v => Number.isInteger(v) ? String(v) : v.toFixed(1)
+          stepSize: 0.5,
+          // Only whole numbers get a label — half-point ticks still get a
+          // gridline (below) but no number, i.e. an unlabeled "midline".
+          callback: v => Number.isInteger(v) ? String(v) : ''
         },
         grid: {
-          color: 'rgba(160,180,255,0.45)',
+          color: c => Number.isInteger(c.tick.value) ? 'rgba(160,180,255,0.45)' : 'rgba(160,180,255,0.15)',
           lineWidth: c => Number.isInteger(c.tick.value) ? 2 : 0.8
         }
       }
