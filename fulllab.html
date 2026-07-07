@@ -191,16 +191,22 @@
       width: var(--right-w); flex-shrink: 0;
       display: flex; flex-direction: column; padding: 8px; gap: 6px;
     }
-    #tableHeader {
-      font-family: 'Space Mono', monospace; font-size: 0.62rem; color: var(--muted);
-      letter-spacing: 1px; text-transform: uppercase; text-align: center;
-    }
     #tableScroll {
       flex: 1; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
     }
-    #dataTable { width: 100%; border-collapse: collapse; font-family: 'Space Mono', monospace; font-size: 0.7rem; }
-    #dataTable td { padding: 3px 8px; border-bottom: 1px solid var(--border); color: var(--text); text-align: right; }
-    #dataTable tr:last-child td { color: var(--accent); }
+    #dataTable { width: 100%; border-collapse: collapse; font-family: 'Space Mono', monospace; font-size: 0.75rem; }
+    #dataTable thead th {
+      position: sticky; top: 0; z-index: 2;
+      padding: 8px 10px; background: var(--surface2); color: var(--accent);
+      font-size: 0.62rem; letter-spacing: 1px; text-transform: uppercase;
+      border-bottom: 2px solid var(--accent); text-align: right;
+    }
+    #dataTable th:first-child, #dataTable td:first-child {
+      border-right: 2px solid var(--border); text-align: center;
+    }
+    #dataTable td { padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--text); text-align: right; }
+    #dataTable tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
+    #dataTable tr:last-child td { color: var(--accent); font-weight: 700; }
 
     /* ── TRACKING MODE INDICATOR ── */
     #trackingMode {
@@ -344,9 +350,11 @@
 
     <!-- DATA TABLE (toggleable, replaces the old fixed gauge column) -->
     <div id="tableCol" class="hidden">
-      <div id="tableHeader">t (s) / value</div>
       <div id="tableScroll">
-        <table id="dataTable"><tbody id="dataTableBody"></tbody></table>
+        <table id="dataTable">
+          <thead><tr><th>Time (s)</th><th id="tableValueHeader">Distance (ft)</th></tr></thead>
+          <tbody id="dataTableBody"></tbody>
+        </table>
       </div>
     </div>
 
@@ -413,39 +421,52 @@ const negTimeToggle    = document.getElementById('negTimeToggle');
 const tableCol         = document.getElementById('tableCol');
 const slopeOverlay     = document.getElementById('slopeOverlay');
 const dataTableBody    = document.getElementById('dataTableBody');
+const tableValueHeader = document.getElementById('tableValueHeader');
+function updateTableHeader() {
+  tableValueHeader.textContent = graphMode === 'speed'
+    ? `Speed (${currentUnit}/s)` : `Distance (${currentUnit})`;
+}
 
 settingsBtn.onclick = (e) => { e.stopPropagation(); settingsPanel.classList.toggle('open'); };
 document.addEventListener('click', (e) => {
   if (!settingsPanel.contains(e.target) && e.target !== settingsBtn) settingsPanel.classList.remove('open');
 });
 
+// ── SHARED SNAPPING: find the actual recorded sample closest to a target
+// time. Used by both the per-second graph markers AND the table, so both
+// land on the same tight alignment instead of drifting differently.
+function nearestSample(targetT) {
+  if (!data.length) return null;
+  let closest = data[0], closestDist = Math.abs(data[0][0]-targetT);
+  for (const [t,v] of data) {
+    const d = Math.abs(t-targetT);
+    if (d < closestDist) { closest=[t,v]; closestDist=d; }
+  }
+  return closest;
+}
+
 // ── DATA TABLE: tenths-of-a-unit precision, thinned to a chosen interval
 // (raw ~20Hz recording would make for an unreadably long table otherwise).
-// Rows are anchored to clean multiples of tableInterval FROM t=0 (Go),
-// not "whenever the first sample happened to land" — guarantees a real
-// "0.0" row at the y-intercept instead of drifting to 0.1 or similar.
+// Rows land on the nearest ACTUAL sample to each clean multiple of
+// tableInterval from t=0 (Go) — same snapping as the graph markers — so
+// times read as clean "1.0"/"2.0" instead of drifting to "1.1" etc.
 let tableInterval = 1; // seconds; default matches the "1s" button
-let nextTableTargetT = 0;
 function tableMinT() { return negTimeToggle.checked ? NEG_TIME_MIN : 0; }
-function resetTableTargets() {
-  // Smallest clean multiple of tableInterval at or below the earliest
-  // possible sample (-GO_DELAY), so pre-roll rows land on clean negative
-  // multiples too (e.g. -1,-2,-3 for a 1s interval).
-  nextTableTargetT = -Math.ceil(GO_DELAY / tableInterval) * tableInterval;
-}
 
 function rebuildTable() {
   dataTableBody.innerHTML = '';
-  resetTableTargets();
+  if (!data.length) { return; }
   const minT = tableMinT();
-  for (const [t, v] of data) {
-    if (t < nextTableTargetT) continue;
-    if (t >= minT) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${t.toFixed(1)}</td><td>${v.toFixed(1)}</td>`;
-      dataTableBody.appendChild(tr);
-    }
-    nextTableTargetT += tableInterval;
+  const firstT = data[0][0], lastT = data[data.length-1][0];
+  const startTarget = Math.ceil(firstT / tableInterval) * tableInterval;
+  const steps = Math.floor((lastT - startTarget) / tableInterval + 0.0001);
+  for (let i = 0; i <= steps; i++) {
+    const target = startTarget + i * tableInterval;
+    if (target < minT - 0.0001) continue;
+    const [t, v] = nearestSample(target);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${t.toFixed(1)}</td><td>${v.toFixed(1)}</td>`;
+    dataTableBody.appendChild(tr);
   }
   const scrollBox = dataTableBody.parentElement.parentElement;
   scrollBox.scrollTop = scrollBox.scrollHeight;
@@ -505,12 +526,8 @@ function updateSecondMarkers() {
   const startSec = Math.ceil(data[0][0]);
   const endSec = Math.floor(data[data.length-1][0]);
   for (let s = startSec; s <= endSec; s++) {
-    let closest = data[0], closestDist = Math.abs(data[0][0]-s);
-    for (const [t,v] of data) {
-      const d2 = Math.abs(t-s);
-      if (d2 < closestDist) { closest = [t,v]; closestDist = d2; }
-    }
-    markers.push({x: closest[0], y: closest[1]});
+    const [t, v] = nearestSample(s);
+    markers.push({x: t, y: v});
   }
   ds.data = markers;
 }
@@ -663,7 +680,36 @@ const startLinePlugin = {
   }
 };
 
-Chart.register(coordLabelPlugin, startLinePlugin);
+// Plugin: coordinate labels above each "points each second" marker.
+// The markers themselves are a separate dataset (built in
+// updateSecondMarkers) — this just draws the "(t, v)" text next to each.
+const secondMarkerLabelsPlugin = {
+  id: 'secondMarkerLabels',
+  afterDraw(ch) {
+    const ds = ch.data.datasets.find(d => d.label === 'SecondMarkers');
+    if (!ds || !ds.data.length) return;
+    const xScale = ch.scales.x, yScale = ch.scales.y;
+    const c2 = ch.ctx;
+    c2.save();
+    c2.font = 'bold 10px "Space Mono", monospace';
+    c2.textAlign = 'center';
+    ds.data.forEach(pt => {
+      const xPx = xScale.getPixelForValue(pt.x);
+      const yPx = yScale.getPixelForValue(pt.y);
+      if (xPx < xScale.left || xPx > xScale.right) return;
+      const label = `(${pt.x.toFixed(1)}, ${pt.y.toFixed(1)})`;
+      const labelY = yPx - 12;
+      c2.fillStyle = 'rgba(15,17,23,0.88)';
+      const w = c2.measureText(label).width;
+      c2.fillRect(xPx - w/2 - 4, labelY - 11, w + 8, 15);
+      c2.fillStyle = '#ffd740';
+      c2.fillText(label, xPx, labelY);
+    });
+    c2.restore();
+  }
+};
+
+Chart.register(coordLabelPlugin, startLinePlugin, secondMarkerLabelsPlugin);
 
 function motionDataset() {
   return {
@@ -965,20 +1011,7 @@ function recordPoint(value) {
     data.push([tv,dv]);
     chart.data.datasets[0].data.push({x:tv,y:dv});
     chart.update('none');
-    // Table rows are anchored to clean multiples of tableInterval FROM
-    // t=0 (e.g. 0, 1, 2, 3... or 0, -1, -2 with negative time shown) —
-    // not "whenever the first sample happened to land" — so the zero
-    // row reliably reads "0.0" instead of drifting to "0.1" or similar.
-    if (tableToggle.checked && tv >= nextTableTargetT) {
-      if (tv >= tableMinT()) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${tv.toFixed(1)}</td><td>${dv.toFixed(1)}</td>`;
-        dataTableBody.appendChild(tr);
-        const scrollBox = dataTableBody.parentElement.parentElement;
-        scrollBox.scrollTop = scrollBox.scrollHeight;
-      }
-      nextTableTargetT += tableInterval;
-    }
+    if (tableToggle.checked) rebuildTable();
     if (showSecondPoints) updateSecondMarkers();
   }
 }
@@ -1080,7 +1113,7 @@ function beginRecording(){
   data=[]; recording=true;
   startTime=Date.now(); lastRecordTime=-Infinity; // startTime = button press (T0); recordPoint subtracts GO_DELAY
   smooth=MotionTracker.createSmoother(); calcSlope=MotionTracker.createSlopeCalc();
-  dataTableBody.innerHTML=''; resetTableTargets();
+  dataTableBody.innerHTML='';
   statusDot.classList.remove('active');
   statusDot.classList.add('recording');
   startBtn.textContent = '■ Stop';
@@ -1179,6 +1212,7 @@ function setUnit(unit) {
     ds.data = ds.data.map(pt => ({ x: pt.x, y: convertDist(pt.y, prevUnit, currentUnit) }));
   });
   if (tableToggle.checked) rebuildTable();
+  updateTableHeader();
   applyAxisConfig();
 }
 ftBtn.onclick = () => setUnit('ft');
@@ -1194,8 +1228,9 @@ function setGraphMode(mode) {
   modeDistBtn.classList.toggle('active', mode === 'distance');
   modeSpeedBtn.classList.toggle('active', mode === 'speed');
   data = [];
-  dataTableBody.innerHTML = ''; resetTableTargets();
+  dataTableBody.innerHTML = '';
   chart.data.datasets = [motionDataset(), markerDataset()];
+  updateTableHeader();
   applyAxisConfig();
 }
 modeDistBtn.onclick  = () => setGraphMode('distance');
@@ -1210,7 +1245,7 @@ distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
 clearBtn.onclick=()=>{
   if(countingDown){clearTimeout(preDelayTimer);clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
   recording=false; startBtn.disabled=false; startBtn.textContent='▶ Start'; data=[];
-  dataTableBody.innerHTML=''; resetTableTargets();
+  dataTableBody.innerHTML='';
   chart.options.scales.x.max = INITIAL_WINDOW;
   chart.options.scales.x.min = negTimeToggle.checked ? NEG_TIME_MIN : 0;
   chart.data.datasets=[motionDataset(), markerDataset()];
