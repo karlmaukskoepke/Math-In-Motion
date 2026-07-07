@@ -326,7 +326,10 @@ document.addEventListener('click', (e) => {
 // ════════════════════════════════════════════════
 // CONSTANTS
 // ════════════════════════════════════════════════
-const DURATION    = 5;     // fixed 5-second recording
+const DURATION    = 5;     // fixed 5-second recording, measured from "Go"
+const PRE_DELAY     = 0.5; // silent buffer before countdown UI appears
+const COUNTDOWN_LEN = 3;   // visible 3-2-1 countdown
+const GO_DELAY      = PRE_DELAY + COUNTDOWN_LEN; // 3.5s — Start press to "Go"
 const MARKER_SIZE = 14.0;  // cm — printable ArUco PDF
 const BALL_DIAM   = tracking ? (tracking.ballDiam || 15.2) : 15.2; // cm
 let   focalLength = 863;
@@ -347,7 +350,7 @@ let recording       = false;
 let countingDown    = false;
 let data            = [];   // [[t, distFt], ...]
 let startTime       = null;
-let lastRecordTime  = 0;
+let lastRecordTime  = -Infinity;
 let smooth           = MotionTracker.createSmoother();
 let calcSlope         = MotionTracker.createSlopeCalc();
 let detector        = null;
@@ -355,6 +358,7 @@ let lastKnownPxW    = null;
 let ballColor       = null;  // { r, g, b, h, s, v }
 let ballPickMode    = false;
 let countdownTimer  = null;
+let preDelayTimer   = null;
 // TEMP: logging state — remove after size-history filter is validated
 let logging         = false;
 let logRows         = [];
@@ -369,10 +373,12 @@ const arucoMode  = !ballModeOn;
 // ════════════════════════════════════════════════
 
 // Plugin: draw coordinate labels at each whole second + y-intercept
+let pinnedPoints = []; // [{t, v}, ...] — student-picked points, click to add/remove
+
 const coordLabelPlugin = {
   id: 'coordLabels',
   afterDraw(ch) {
-    if (!data.length) return;
+    if (!pinnedPoints.length) return;
     const xScale = ch.scales.x;
     const yScale = ch.scales.y;
     const c2     = ch.ctx;
@@ -380,28 +386,24 @@ const coordLabelPlugin = {
     c2.font = 'bold 11px "Space Mono", monospace';
     c2.textAlign = 'center';
 
-    // Sample data at 0, 1, 2, 3, 4, 5 seconds
-    const times = [0, 1, 2, 3, 4, 5];
-    times.forEach(t => {
-      const pt = interpolateAt(t);
-      if (pt === null) return;
+    pinnedPoints.forEach(({t, v}) => {
       const xPx = xScale.getPixelForValue(t);
-      const yPx = yScale.getPixelForValue(pt);
+      const yPx = yScale.getPixelForValue(v);
       if (xPx < xScale.left || xPx > xScale.right) return;
 
       // Dot
       c2.beginPath();
-      c2.arc(xPx, yPx, 5, 0, Math.PI * 2);
-      c2.fillStyle = '#ffffff';
+      c2.arc(xPx, yPx, 6, 0, Math.PI * 2);
+      c2.fillStyle = '#ff4081';
       c2.fill();
-      c2.strokeStyle = '#00e5ff';
+      c2.strokeStyle = '#ffffff';
       c2.lineWidth = 2;
       c2.stroke();
 
       // Label
-      const label = `(${t}, ${pt.toFixed(1)})`;
+      const label = `(${t.toFixed(1)}, ${v.toFixed(1)})`;
       const labelY = yPx - 14;
-      c2.fillStyle = 'rgba(15,17,23,0.85)';
+      c2.fillStyle = 'rgba(15,17,23,0.9)';
       const w = c2.measureText(label).width;
       c2.fillRect(xPx - w/2 - 4, labelY - 12, w + 8, 16);
       c2.fillStyle = '#ffffff';
@@ -452,6 +454,7 @@ const chart = new Chart(document.getElementById('chart'), {
   },
   options: {
     animation: false, responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'nearest', intersect: false, axis: 'x' },
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -497,6 +500,30 @@ const chart = new Chart(document.getElementById('chart'), {
       }
     }
   }
+});
+
+// ── CLICK-TO-PIN: click near the line to permanently label that point;
+// click an existing pinned point again to remove it. Snaps to the
+// nearest ACTUAL recorded sample (by time), not an arbitrary click coord —
+// so the coordinates shown are always real data, never fabricated.
+const PIN_EPSILON = 0.15; // seconds — click tolerance for "same point"
+chart.canvas.addEventListener('click', (e) => {
+  if (!data.length) return;
+  const rect = chart.canvas.getBoundingClientRect();
+  const clickT = chart.scales.x.getValueForPixel(e.clientX - rect.left);
+  let nearest = data[0], nearestDist = Math.abs(data[0][0] - clickT);
+  for (const [t, v] of data) {
+    const d = Math.abs(t - clickT);
+    if (d < nearestDist) { nearest = [t, v]; nearestDist = d; }
+  }
+  const [nt, nv] = nearest;
+  const existingIdx = pinnedPoints.findIndex(p => Math.abs(p.t - nt) < PIN_EPSILON);
+  if (existingIdx >= 0) {
+    pinnedPoints.splice(existingIdx, 1); // click again to unpin
+  } else {
+    pinnedPoints.push({ t: nt, v: nv });
+  }
+  chart.update('none');
 });
 
 function interpolateAt(t) {
@@ -649,7 +676,7 @@ function processVideo() {
 }
 
 function recordPoint(distFt) {
-  const t=(Date.now()-startTime)/1000;
+  const t=(Date.now()-startTime)/1000 - GO_DELAY; // negative until "Go" fires
   if(t>=DURATION){ stopRecording(); return; }
   if(t-lastRecordTime>=0.05){
     lastRecordTime=t;
@@ -724,36 +751,39 @@ function playChime(isGo){
 
 startBtn.onclick = () => {
   if(countingDown||recording) return;
-  countingDown=true; startBtn.disabled=true;
-  let remaining=3;
-  countdownOverlay.classList.add('visible');
-  countdownNum.classList.remove('go');
-  countdownNum.textContent=remaining;
-  playChime(false);
-  countdownTimer=setInterval(()=>{
-    remaining--;
-    if(remaining>0){
-      countdownNum.classList.remove('go');
-      countdownNum.textContent=remaining;
-      playChime(false);
-    } else {
-      countdownNum.classList.add('go');
-      countdownNum.textContent='GO!';
-      playChime(true);
-      clearInterval(countdownTimer);
-      setTimeout(()=>{
-        countdownOverlay.classList.remove('visible');
+  startBtn.disabled=true;
+  beginRecording(); // data collection starts NOW — t is negative until "Go"
+  countingDown=true;
+  preDelayTimer=setTimeout(()=>{
+    let remaining=COUNTDOWN_LEN;
+    countdownOverlay.classList.add('visible');
+    countdownNum.classList.remove('go');
+    countdownNum.textContent=remaining;
+    playChime(false);
+    countdownTimer=setInterval(()=>{
+      remaining--;
+      if(remaining>0){
         countdownNum.classList.remove('go');
-        countingDown=false; startBtn.disabled=false;
-        beginRecording();
-      },800);
-    }
-  },1000);
+        countdownNum.textContent=remaining;
+        playChime(false);
+      } else {
+        countdownNum.classList.add('go');
+        countdownNum.textContent='GO!';
+        playChime(true);
+        clearInterval(countdownTimer);
+        setTimeout(()=>{
+          countdownOverlay.classList.remove('visible');
+          countdownNum.classList.remove('go');
+          countingDown=false;
+        },800);
+      }
+    },1000);
+  }, PRE_DELAY*1000);
 };
 
 function beginRecording(){
-  data=[]; recording=true;
-  startTime=Date.now(); lastRecordTime=0;
+  data=[]; recording=true; pinnedPoints=[];
+  startTime=Date.now(); lastRecordTime=-Infinity; // startTime = button press (T0); recordPoint subtracts GO_DELAY
   smooth=MotionTracker.createSmoother(); calcSlope=MotionTracker.createSlopeCalc();
   statusDot.classList.remove('active');
   statusDot.classList.add('recording');
@@ -776,6 +806,7 @@ function beginRecording(){
 
 function stopRecording(){
   recording=false;
+  startBtn.disabled=false;
   statusDot.classList.remove('recording');
   statusDot.classList.add('active');
   chart.update();
@@ -854,15 +885,15 @@ mBtn.classList.toggle('active', currentUnit === 'm');
 distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
 
 clearBtn.onclick=()=>{
-  if(countingDown){clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
-  recording=false; startBtn.disabled=false; data=[];
+  if(countingDown){clearTimeout(preDelayTimer);clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
+  recording=false; startBtn.disabled=false; data=[]; pinnedPoints=[];
   chart.data.datasets=[{
     label:'Motion',data:[],
     borderColor:'#00e5ff',backgroundColor:'rgba(0,229,255,0.08)',
     borderWidth:3,pointRadius:0,fill:true,tension:0.3
   }];
   chart.update();
-  smooth=MotionTracker.createSmoother(); lastRecordTime=0; calcSlope=MotionTracker.createSlopeCalc();
+  smooth=MotionTracker.createSmoother(); lastRecordTime=-Infinity; calcSlope=MotionTracker.createSlopeCalc();
   statusDot.classList.remove('recording');
   distReadout.textContent='--';
 };
