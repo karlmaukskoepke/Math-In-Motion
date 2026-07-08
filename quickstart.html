@@ -73,12 +73,11 @@
     }
     .hdr-btn:hover { border-color: var(--accent); color: var(--accent); }
     .hdr-btn.back  { color: var(--muted); }
-
-    .toggle-btn {
-      cursor: pointer; background: none; border: 1px solid var(--border); border-radius: 5px;
-      color: var(--muted); font-family: 'Space Mono', monospace; font-size: 0.68rem; padding: 3px 8px;
+    .hdr-btn.stacked {
+      flex-direction: column; gap: 1px; padding: 3px 12px; line-height: 1.3;
     }
-    .toggle-btn.active { color: var(--accent); border-color: var(--accent); }
+    .hdr-btn.stacked span { font-size: 0.6rem; letter-spacing: 1px; }
+    .hdr-btn.stacked b    { font-size: 0.8rem; color: var(--accent); }
 
     /* ── CONTENT ── */
     #content { display: flex; flex: 1; overflow: hidden; }
@@ -130,8 +129,8 @@
     }
 
     .ctrl-btn {
-      flex: 1; padding: 16px 10px; border-radius: 10px; border: 1px solid var(--border);
-      font-family: 'Space Mono', monospace; font-size: 0.95rem; font-weight: 700;
+      flex: 1; padding: 22px 10px; border-radius: 10px; border: 1px solid var(--border);
+      font-family: 'Space Mono', monospace; font-size: 1.1rem; font-weight: 700;
       letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
       transition: all 0.15s;
     }
@@ -155,7 +154,7 @@
       position: absolute; top: 10px; right: 10px;
       background: rgba(26,29,39,0.88); border: 1px solid var(--border); border-radius: 10px;
       padding: 10px 16px; display: flex; flex-direction: column; align-items: center; gap: 4px;
-      z-index: 5;
+      z-index: 5; cursor: grab; touch-action: none; user-select: none;
     }
     #distReadout {
       font-family: 'Space Mono', monospace; font-size: 4rem; font-weight: 700;
@@ -187,6 +186,7 @@
     <a class="hdr-btn back" href="index.html">← Home</a>
     <h1>Quick Start</h1>
     <div class="status-dot" id="statusDot"></div>
+    <button class="hdr-btn stacked" id="unitsBtn" type="button"><span>Units</span><b>ft</b></button>
     <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
   </div>
 
@@ -212,12 +212,6 @@
         <button class="ctrl-btn" id="cameraBtn">Camera On</button>
         <button class="ctrl-btn" id="startBtn" disabled>▶ Start</button>
         <button class="ctrl-btn" id="clearBtn">✕ Clear</button>
-      </div>
-
-      <div id="unitsRow" style="display:flex; gap:6px; align-items:center;">
-        <span style="font-family:'Space Mono',monospace; font-size:0.75rem; color:var(--muted); letter-spacing:1px;">Units</span>
-        <button type="button" id="ftBtn" class="toggle-btn active" style="flex:1; padding:8px; font-size:0.8rem;">ft</button>
-        <button type="button" id="mBtn" class="toggle-btn" style="flex:1; padding:8px; font-size:0.8rem;">m</button>
       </div>
     </div>
 
@@ -269,10 +263,11 @@ const cameraBtn      = document.getElementById('cameraBtn');
 const startBtn       = document.getElementById('startBtn');
 const clearBtn       = document.getElementById('clearBtn');
 const distReadout    = document.getElementById('distReadout');
+const distOverlay    = document.getElementById('distOverlay');
 const countdownOverlay = document.getElementById('countdownOverlay');
 const countdownNum     = document.getElementById('countdownNum');
-const ftBtn            = document.getElementById('ftBtn');
-const mBtn              = document.getElementById('mBtn');
+const unitsBtn          = document.getElementById('unitsBtn');
+const unitsBtnValue      = unitsBtn.querySelector('b');
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -330,7 +325,9 @@ function formatSig(v) {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
-function drawCoordDot(c2, xPx, yPx, label, { fill, stroke, alpha }) {
+// Draws a coordinate dot + floating label. fontSize is bumped for the
+// live hover point so it visibly "pops" compared to pinned points.
+function drawCoordDot(c2, xPx, yPx, label, { fill, stroke, alpha }, fontSize = 11) {
   c2.beginPath();
   c2.arc(xPx, yPx, 6, 0, Math.PI * 2);
   c2.globalAlpha = alpha;
@@ -339,13 +336,27 @@ function drawCoordDot(c2, xPx, yPx, label, { fill, stroke, alpha }) {
   c2.strokeStyle = stroke;
   c2.lineWidth = 2;
   c2.stroke();
+  c2.font = `bold ${fontSize}px "Space Mono", monospace`;
   const labelY = yPx - 14;
   c2.fillStyle = 'rgba(15,17,23,0.9)';
   const w = c2.measureText(label).width;
-  c2.fillRect(xPx - w/2 - 4, labelY - 12, w + 8, 16);
+  c2.fillRect(xPx - w/2 - 4, labelY - fontSize - 1, w + 8, fontSize + 5);
   c2.fillStyle = '#ffffff';
   c2.fillText(label, xPx, labelY);
   c2.globalAlpha = 1;
+}
+
+// Small filled chip for the axis-edge value callouts drawn under the
+// hovered point — sits on top of the normal tick labels, same convention
+// most graphing tools use for a live-hover readout.
+function drawAxisChip(c2, x, y, text, align) {
+  c2.textAlign = align;
+  const w = c2.measureText(text).width;
+  const boxX = align === 'center' ? x - w/2 - 4 : (align === 'right' ? x - w - 8 : x);
+  c2.fillStyle = 'rgba(15,17,23,0.92)';
+  c2.fillRect(boxX, y - 9, w + 8, 15);
+  c2.fillStyle = '#ffd740';
+  c2.fillText(text, align === 'center' ? x : (align === 'right' ? x - 4 : x + 4), y + 2);
 }
 
 const coordLabelPlugin = {
@@ -356,16 +367,33 @@ const coordLabelPlugin = {
     const yScale = ch.scales.y;
     const c2     = ch.ctx;
     c2.save();
-    c2.font = 'bold 11px "Space Mono", monospace';
     c2.textAlign = 'center';
 
-    // Live preview (not yet clicked) — softer, so it reads as "not final"
+    // Live hover: dashed guide lines down to the x-axis and across to the
+    // y-axis, with the exact value called out at each axis, plus a bigger
+    // coordinate dot/label than a pinned point gets. All of this clears
+    // the instant the mouse leaves the chart (hoverPreview goes null).
     if (hoverPreview) {
       const xPx = xScale.getPixelForValue(hoverPreview.t);
       const yPx = yScale.getPixelForValue(hoverPreview.v);
-      if (xPx >= xScale.left && xPx <= xScale.right) {
+      if (xPx >= xScale.left && xPx <= xScale.right && yPx >= yScale.top && yPx <= yScale.bottom) {
+        c2.save();
+        c2.strokeStyle = 'rgba(255,215,64,0.6)';
+        c2.lineWidth = 1.5;
+        c2.setLineDash([4, 4]);
+        c2.beginPath();
+        c2.moveTo(xPx, yPx); c2.lineTo(xPx, yScale.bottom);
+        c2.moveTo(xPx, yPx); c2.lineTo(xScale.left, yPx);
+        c2.stroke();
+        c2.setLineDash([]);
+        c2.restore();
+
+        c2.font = 'bold 11px "Space Mono", monospace';
+        drawAxisChip(c2, xPx, yScale.bottom + 16, formatSig(hoverPreview.t), 'center');
+        drawAxisChip(c2, xScale.left - 6, yPx, formatSig(hoverPreview.v), 'right');
+
         drawCoordDot(c2, xPx, yPx, `(${formatSig(hoverPreview.t)}, ${formatSig(hoverPreview.v)})`,
-          { fill: '#ffd740', stroke: '#ffffff', alpha: 0.55 });
+          { fill: '#ffd740', stroke: '#ffffff', alpha: 0.7 }, 15);
       }
     }
 
@@ -383,14 +411,22 @@ const coordLabelPlugin = {
 
 Chart.register(coordLabelPlugin);
 
+// Single source of truth for the main line's dataset config — used at
+// chart creation AND every place the dataset gets rebuilt (beginRecording,
+// clearBtn) so pointHoverRadius:0 (kills Chart.js's own hover circle)
+// can't silently drop out of one of the copies again.
+function motionDataset() {
+  return {
+    label: 'Motion', data: [],
+    borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
+    borderWidth: 3, pointRadius: 0, pointHoverRadius: 0, fill: true, tension: 0.3
+  };
+}
+
 const chart = new Chart(document.getElementById('chart'), {
   type: 'line',
   data: {
-    datasets: [{
-      label: 'Motion', data: [],
-      borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
-      borderWidth: 3, pointRadius: 0, pointHoverRadius: 0, fill: true, tension: 0.3
-    }]
+    datasets: [motionDataset()]
   },
   options: {
     animation: false, responsive: true, maintainAspectRatio: false,
@@ -407,7 +443,10 @@ const chart = new Chart(document.getElementById('chart'), {
         ticks: {
           color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
           stepSize: 1, // fixed step, not autoTicks — guarantees no stray tick/label lands on 5.5
-          callback: v => String(v)
+          // Belt-and-suspenders: Chart.js can still add an extra tick right at
+          // the axis max even with a fixed stepSize, so blank any non-integer
+          // label outright rather than relying on stepSize alone.
+          callback: v => Number.isInteger(v) ? String(v) : ''
         },
         grid: {
           color: c => Number.isInteger(c.tick.value) ? 'rgba(160,180,255,0.55)' : 'rgba(100,120,200,0.25)',
@@ -468,6 +507,36 @@ chart.canvas.addEventListener('click', (e) => {
   }
   chart.update('none');
 });
+
+// ── DISTANCE GAUGE: draggable anywhere within the chart area (same
+// pattern used for Full Lab's slope gauge).
+function makeDraggable(el) {
+  let dragging = false, offX = 0, offY = 0;
+  el.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    el.setPointerCapture(e.pointerId);
+    const rect = el.getBoundingClientRect();
+    const parentRect = el.parentElement.getBoundingClientRect();
+    el.style.left = (rect.left - parentRect.left) + 'px';
+    el.style.top  = (rect.top  - parentRect.top)  + 'px';
+    el.style.right = 'auto';
+    offX = e.clientX - rect.left;
+    offY = e.clientY - rect.top;
+    el.style.cursor = 'grabbing';
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const parentRect = el.parentElement.getBoundingClientRect();
+    let x = e.clientX - parentRect.left - offX;
+    let y = e.clientY - parentRect.top - offY;
+    x = Math.max(0, Math.min(x, parentRect.width - el.offsetWidth));
+    y = Math.max(0, Math.min(y, parentRect.height - el.offsetHeight));
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+  });
+  el.addEventListener('pointerup', () => { dragging = false; el.style.cursor = 'grab'; });
+}
+makeDraggable(distOverlay);
 
 // ── THEME: dark/light, session-persisted (same pattern as mm_tracking,
 // mm_units). CSS variables handle the page chrome automatically; the
@@ -704,7 +773,7 @@ startBtn.onclick = () => {
 };
 
 function beginRecording(){
-  data=[]; recording=true; pinnedPoints=[];
+  data=[]; recording=true; pinnedPoints=[]; hoverPreview=null;
   startTime=Date.now(); lastRecordTime=-Infinity; // startTime = button press (T0); recordPoint subtracts GO_DELAY
   smooth=MotionTracker.createSmoother(); calcSlope=MotionTracker.createSlopeCalc();
   statusDot.classList.remove('active');
@@ -715,14 +784,10 @@ function beginRecording(){
     chart.data.datasets.push({
       label:'Prev',data:prev.data.slice(),
       borderColor:'rgba(0,229,255,0.15)',backgroundColor:'transparent',
-      borderWidth:1,pointRadius:0,fill:false,tension:0.3
+      borderWidth:1,pointRadius:0,pointHoverRadius:0,fill:false,tension:0.3
     });
   }
-  chart.data.datasets[0]={
-    label:'Motion',data:[],
-    borderColor:'#00e5ff',backgroundColor:'rgba(0,229,255,0.08)',
-    borderWidth:3,pointRadius:0,fill:true,tension:0.3
-  };
+  chart.data.datasets[0]=motionDataset();
   chart.update();
 }
 
@@ -748,8 +813,7 @@ function setUnit(unit) {
   const prevUnit = currentUnit;
   currentUnit = unit;
   Units.setPref({ dist: currentUnit });
-  ftBtn.classList.toggle('active', currentUnit === 'ft');
-  mBtn.classList.toggle('active', currentUnit === 'm');
+  unitsBtnValue.textContent = currentUnit;
   distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
   chart.options.scales.y.max = Y_MAX[currentUnit];
   chart.options.scales.y.title.text = `Distance (${currentUnit})`;
@@ -761,22 +825,16 @@ function setUnit(unit) {
   });
   chart.update();
 }
-ftBtn.onclick = () => setUnit('ft');
-mBtn.onclick  = () => setUnit('m');
+unitsBtn.onclick = () => setUnit(currentUnit === 'ft' ? 'm' : 'ft');
 
 // Apply saved unit preference on load
-ftBtn.classList.toggle('active', currentUnit === 'ft');
-mBtn.classList.toggle('active', currentUnit === 'm');
+unitsBtnValue.textContent = currentUnit;
 distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
 
 clearBtn.onclick=()=>{
   if(countingDown){clearTimeout(preDelayTimer);clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
-  recording=false; startBtn.disabled=false; data=[]; pinnedPoints=[];
-  chart.data.datasets=[{
-    label:'Motion',data:[],
-    borderColor:'#00e5ff',backgroundColor:'rgba(0,229,255,0.08)',
-    borderWidth:3,pointRadius:0,fill:true,tension:0.3
-  }];
+  recording=false; startBtn.disabled=false; data=[]; pinnedPoints=[]; hoverPreview=null;
+  chart.data.datasets=[motionDataset()];
   chart.update();
   smooth=MotionTracker.createSmoother(); lastRecordTime=-Infinity; calcSlope=MotionTracker.createSlopeCalc();
   statusDot.classList.remove('recording');
