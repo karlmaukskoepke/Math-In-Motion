@@ -30,6 +30,25 @@
       --right-w:   200px;
     }
 
+    /* Light theme — overrides the same variable names so nothing else
+       in this stylesheet needs to know which theme is active. */
+    html[data-theme="light"] {
+      --bg:        #f4f5fa;
+      --surface:   #ffffff;
+      --surface2:  #eceef7;
+      --accent:    #0077b6;
+      --accent2:   #c2185b;
+      --accent3:   #2e7d32;
+      --accent4:   #e0982a;
+      --text:      #1a1d27;
+      --muted:     #5c6bc0;
+      --border:    #d0d3e6;
+      --slope-pos: #2e7d32;
+      --slope-neg: #c2185b;
+      --slope-zero:#e0982a;
+    }
+    body { transition: background 0.2s, color 0.2s; }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; }
 
@@ -209,18 +228,6 @@
     #dataTable tr:last-child td { color: var(--accent); font-weight: 700; }
     #dataTable td.gapRow { font-style: italic; color: var(--muted); }
 
-    /* ── TRACKING MODE INDICATOR ── */
-    #trackingMode {
-      font-family: 'Space Mono', monospace; font-size: 0.6rem;
-      color: var(--muted); letter-spacing: 1px;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 20px; padding: 4px 10px; text-align: center;
-      display: flex; align-items: center; gap: 6px; justify-content: center;
-    }
-    .mode-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
-    .mode-dot.ball  { background: var(--accent3); }
-    .mode-dot.aruco { background: var(--accent4); }
-
     /* ── NO SESSION BANNER ── */
     #noSetupBanner {
       display: none; position: absolute; inset: 0; z-index: 100;
@@ -254,6 +261,13 @@
           <div class="settings-subtoggle">
             <button type="button" id="ftBtn" class="toggle-btn active">ft</button>
             <button type="button" id="mBtn" class="toggle-btn">m</button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span>Theme</span>
+          <div class="settings-subtoggle">
+            <button type="button" id="darkThemeBtn" class="toggle-btn active">Dark</button>
+            <button type="button" id="lightThemeBtn" class="toggle-btn">Light</button>
           </div>
         </div>
         <div class="settings-row">
@@ -321,10 +335,6 @@
         <button class="ctrl-btn" id="downloadLogBtn" style="flex:1;" disabled>⬇ CSV</button>
       </div>
 
-      <div id="trackingMode">
-        <div class="mode-dot" id="modeDot"></div>
-        <span id="modeLabel">No setup</span>
-      </div>
     </div>
 
     <!-- CHART -->
@@ -371,19 +381,9 @@ const tracking = (() => {
 })();
 
 const noSetupBanner  = document.getElementById('noSetupBanner');
-const modeDot        = document.getElementById('modeDot');
-const modeLabel      = document.getElementById('modeLabel');
 
 if (tracking) {
   noSetupBanner.classList.remove('visible');
-  if (tracking.topMode === 'ball') {
-    modeDot.className  = 'mode-dot ball';
-    const names = { amazonBasics: 'Amazon Basics', tennis: 'Tennis Ball', custom: 'Custom Ball' };
-    modeLabel.textContent = `Ball — ${names[tracking.ballType] || tracking.ballType}`;
-  } else {
-    modeDot.className  = 'mode-dot aruco';
-    modeLabel.textContent = tracking.arucoType === 'twolaptop' ? 'ArUco — Two Laptops' : 'ArUco — Printed';
-  }
 }
 
 // ════════════════════════════════════════════════
@@ -645,6 +645,12 @@ const arucoMode  = !ballModeOn;
 
 // Plugin: vertical "Start" line at t=0 — only meaningful (and only drawn)
 // when the x-axis extends below 0, i.e. the negative-time toggle is on.
+// Shared theme-aware text/line color for canvas-drawn plugins below —
+// Chart.js options read CSS at creation time only, so anything drawn
+// directly on the canvas needs its own live reference, updated by
+// applyTheme() further down.
+let chartTextColor = '#ffffff';
+
 const startLinePlugin = {
   id: 'startLine',
   afterDraw(ch) {
@@ -654,13 +660,13 @@ const startLinePlugin = {
     if (xPx < xScale.left || xPx > xScale.right) return;
     const c2 = ch.ctx;
     c2.save();
-    c2.strokeStyle = 'rgba(255,255,255,0.55)';
+    c2.strokeStyle = chartTextColor === '#ffffff' ? 'rgba(255,255,255,0.55)' : 'rgba(26,29,39,0.55)';
     c2.lineWidth = 2;
     c2.beginPath();
     c2.moveTo(xPx, yScale.top);
     c2.lineTo(xPx, yScale.bottom);
     c2.stroke();
-    c2.fillStyle = '#ffffff';
+    c2.fillStyle = chartTextColor;
     c2.font = 'bold 11px "Space Mono", monospace';
     c2.textAlign = 'center';
     c2.fillText('Start', xPx, yScale.top - 5);
@@ -697,13 +703,71 @@ const secondMarkerLabelsPlugin = {
   }
 };
 
-Chart.register(startLinePlugin, secondMarkerLabelsPlugin);
+// Plugin: hover preview (soft yellow, follows the nearest half-second as
+// you move the mouse) + pinned points (solid pink, click to lock/unlock).
+// Ported from Quick Start so both pages give students the same "we're only
+// looking at 0.5s intervals" reading experience. See mousemove/click
+// listeners below the chart definition for how these get populated.
+let hoverPreview = null;   // { t, v } | null
+let pinnedPoints = [];     // [{ t, v }, ...]
+
+function drawCoordDot(c2, xPx, yPx, label, { fill, stroke, alpha }) {
+  c2.beginPath();
+  c2.arc(xPx, yPx, 6, 0, Math.PI * 2);
+  c2.globalAlpha = alpha;
+  c2.fillStyle = fill;
+  c2.fill();
+  c2.strokeStyle = stroke;
+  c2.lineWidth = 2;
+  c2.stroke();
+  const labelY = yPx - 14;
+  c2.fillStyle = 'rgba(15,17,23,0.9)';
+  const w = c2.measureText(label).width;
+  c2.fillRect(xPx - w/2 - 4, labelY - 12, w + 8, 16);
+  c2.fillStyle = '#ffffff';
+  c2.fillText(label, xPx, labelY);
+  c2.globalAlpha = 1;
+}
+
+const coordLabelPlugin = {
+  id: 'coordLabels',
+  afterDraw(ch) {
+    if (!pinnedPoints.length && !hoverPreview) return;
+    const xScale = ch.scales.x;
+    const yScale = ch.scales.y;
+    const c2     = ch.ctx;
+    c2.save();
+    c2.font = 'bold 11px "Space Mono", monospace';
+    c2.textAlign = 'center';
+
+    if (hoverPreview) {
+      const xPx = xScale.getPixelForValue(hoverPreview.t);
+      const yPx = yScale.getPixelForValue(hoverPreview.v);
+      if (xPx >= xScale.left && xPx <= xScale.right) {
+        drawCoordDot(c2, xPx, yPx, `(${formatSig(hoverPreview.t)}, ${formatSig(hoverPreview.v)})`,
+          { fill: '#ffd740', stroke: '#ffffff', alpha: 0.55 });
+      }
+    }
+
+    pinnedPoints.forEach(({t, v}) => {
+      const xPx = xScale.getPixelForValue(t);
+      const yPx = yScale.getPixelForValue(v);
+      if (xPx < xScale.left || xPx > xScale.right) return;
+      drawCoordDot(c2, xPx, yPx, `(${formatSig(t)}, ${formatSig(v)})`,
+        { fill: '#ff4081', stroke: '#ffffff', alpha: 1 });
+    });
+
+    c2.restore();
+  }
+};
+
+Chart.register(startLinePlugin, secondMarkerLabelsPlugin, coordLabelPlugin);
 
 function motionDataset() {
   return {
     label: 'Motion', data: [],
     borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
-    borderWidth: 3, pointRadius: 0, fill: true, tension: 0.3
+    borderWidth: 3, pointRadius: 0, pointHoverRadius: 0, fill: true, tension: 0.3
   };
 }
 function markerDataset() {
@@ -714,7 +778,7 @@ function markerDataset() {
   // with tension-smoothed curves.
   return {
     label: 'SecondMarkers', data: [],
-    showLine: false, pointRadius: 4, pointBackgroundColor: '#ffd740',
+    showLine: false, pointRadius: 4, pointHoverRadius: 4, pointBackgroundColor: '#ffd740',
     pointBorderColor: '#000', pointBorderWidth: 1
   };
 }
@@ -726,22 +790,10 @@ const chart = new Chart(document.getElementById('chart'), {
   },
   options: {
     animation: false, responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'nearest', intersect: false, axis: 'x' },
     plugins: {
       legend: { display: false },
-      tooltip: {
-        backgroundColor: 'rgba(10,12,20,0.97)',
-        borderColor: '#00e5ff', borderWidth: 1,
-        titleColor: '#00e5ff', bodyColor: '#fff',
-        titleFont: { family: 'Space Mono', size: 13, weight: 'bold' },
-        bodyFont:  { family: 'Space Mono', size: 13, weight: 'bold' },
-        padding: 12,
-        callbacks: {
-          title: items => `t = ${parseFloat(items[0].parsed.x).toFixed(1)} sec`,
-          label: item  => graphMode === 'speed'
-            ? ` speed: ${formatSig(item.parsed.y)} ${currentUnit}/s`
-            : ` dist: ${formatSig(item.parsed.y)} ${currentUnit}`
-        }
-      }
+      tooltip: { enabled: false }
     },
     scales: {
       x: {
@@ -778,18 +830,65 @@ const chart = new Chart(document.getElementById('chart'), {
   }
 });
 
-function interpolateAt(t) {
-  if (!data.length) return null;
-  if (t < data[0][0] || t > data[data.length-1][0]) return null;
-  for (let i = 0; i < data.length - 1; i++) {
-    if (data[i][0] <= t && data[i+1][0] >= t) {
-      const dt = data[i+1][0] - data[i][0];
-      if (dt < 0.001) return data[i][1];
-      return data[i][1] + (data[i+1][1] - data[i][1]) * (t - data[i][0]) / dt;
-    }
-  }
-  return null;
+// ── HOVER + CLICK-TO-PIN: same behavior as Quick Start — cursor snaps to
+// the nearest half-second grid mark, showing a live soft-yellow preview via
+// interpolateAt(); clicking pins it solid pink, clicking a pinned point
+// again removes it. interpolateAt() here returns { v, gap } (not a bare
+// number, unlike Quick Start's version) so this pulls .v out of it.
+const HALF_STEP = 0.5;
+function snappedPreviewAt(clientX) {
+  const rect = chart.canvas.getBoundingClientRect();
+  const rawT = chart.scales.x.getValueForPixel(clientX - rect.left);
+  const snappedT = Math.round(rawT / HALF_STEP) * HALF_STEP;
+  const result = interpolateAt(snappedT);
+  return result === null ? null : { t: snappedT, v: result.v };
 }
+
+chart.canvas.addEventListener('mousemove', (e) => {
+  hoverPreview = snappedPreviewAt(e.clientX);
+  chart.update('none');
+});
+chart.canvas.addEventListener('mouseleave', () => {
+  hoverPreview = null;
+  chart.update('none');
+});
+chart.canvas.addEventListener('click', (e) => {
+  const pt = snappedPreviewAt(e.clientX);
+  if (!pt) return;
+  const existingIdx = pinnedPoints.findIndex(p => Math.abs(p.t - pt.t) < HALF_STEP/2);
+  if (existingIdx >= 0) {
+    pinnedPoints.splice(existingIdx, 1); // click again to unpin
+  } else {
+    pinnedPoints.push(pt);
+  }
+  chart.update('none');
+});
+
+// ── THEME: dark/light, session-persisted (same pattern as mm_tracking,
+// mm_units). CSS variables handle the page chrome automatically; the
+// chart's axis text/lines are set directly in JS (Chart.js doesn't read
+// CSS variables), so chartTextColor is reapplied here whenever it changes.
+const THEME_KEY = 'mm_theme';
+const darkThemeBtn  = document.getElementById('darkThemeBtn');
+const lightThemeBtn = document.getElementById('lightThemeBtn');
+function getTheme() {
+  try { return sessionStorage.getItem(THEME_KEY) || 'dark'; } catch(e) { return 'dark'; }
+}
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  try { sessionStorage.setItem(THEME_KEY, theme); } catch(e) {}
+  darkThemeBtn.classList.toggle('active', theme === 'dark');
+  lightThemeBtn.classList.toggle('active', theme === 'light');
+  chartTextColor = theme === 'light' ? '#1a1d27' : '#ffffff';
+  chart.options.scales.x.title.color = chartTextColor;
+  chart.options.scales.x.ticks.color = chartTextColor;
+  chart.options.scales.y.title.color = chartTextColor;
+  chart.options.scales.y.ticks.color = chartTextColor;
+  chart.update();
+}
+darkThemeBtn.onclick  = () => applyTheme('dark');
+lightThemeBtn.onclick = () => applyTheme('light');
+applyTheme(getTheme());
 
 // ════════════════════════════════════════════════
 // SLOPE ARROW GAUGE (same as full lab)
@@ -1229,6 +1328,7 @@ function setGraphMode(mode) {
   data = [];
   dataTableBody.innerHTML = '';
   chart.data.datasets = [motionDataset(), markerDataset()];
+  pinnedPoints = []; hoverPreview = null;
   updateTableHeader();
   applyAxisConfig();
 }
@@ -1248,6 +1348,7 @@ clearBtn.onclick=()=>{
   chart.options.scales.x.max = INITIAL_WINDOW;
   chart.options.scales.x.min = negTimeToggle.checked ? NEG_TIME_MIN : 0;
   chart.data.datasets=[motionDataset(), markerDataset()];
+  pinnedPoints = []; hoverPreview = null;
   chart.update();
   smooth=MotionTracker.createSmoother(); lastRecordTime=-Infinity; calcSlope=MotionTracker.createSlopeCalc();
   statusDot.classList.remove('recording');

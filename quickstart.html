@@ -29,6 +29,25 @@
       --left-w:    420px;
     }
 
+    /* Light theme — overrides the same variable names so nothing else
+       in this stylesheet needs to know which theme is active. */
+    html[data-theme="light"] {
+      --bg:        #f4f5fa;
+      --surface:   #ffffff;
+      --surface2:  #eceef7;
+      --accent:    #0077b6;
+      --accent2:   #c2185b;
+      --accent3:   #2e7d32;
+      --accent4:   #e0982a;
+      --text:      #1a1d27;
+      --muted:     #5c6bc0;
+      --border:    #d0d3e6;
+      --slope-pos: #2e7d32;
+      --slope-neg: #c2185b;
+      --slope-zero:#e0982a;
+    }
+    body { transition: background 0.2s, color 0.2s; }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; }
 
@@ -55,27 +74,6 @@
     .hdr-btn:hover { border-color: var(--accent); color: var(--accent); }
     .hdr-btn.back  { color: var(--muted); }
 
-    /* ── SETTINGS PANEL (gear dropdown) ── */
-    #settingsWrap { position: relative; }
-    #settingsPanel {
-      display: none; position: absolute; top: calc(100% + 8px); right: 0;
-      background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
-      padding: 10px; min-width: 220px; z-index: 30;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-    }
-    #settingsPanel.open { display: block; }
-    .settings-link {
-      display: block; padding: 8px 6px; margin-bottom: 6px;
-      color: var(--muted); font-family: 'Space Mono', monospace; font-size: 0.72rem;
-      border-bottom: 1px solid var(--border); text-decoration: none;
-    }
-    .settings-link:hover { color: var(--accent); }
-    .settings-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 6px; font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--text);
-      gap: 10px;
-    }
-    .settings-subtoggle { display: flex; gap: 4px; }
     .toggle-btn {
       cursor: pointer; background: none; border: 1px solid var(--border); border-radius: 5px;
       color: var(--muted); font-family: 'Space Mono', monospace; font-size: 0.68rem; padding: 3px 8px;
@@ -165,18 +163,6 @@
     }
     #distUnit { font-family: 'Space Mono', monospace; font-size: 0.85rem; color: var(--muted); text-align: center; }
 
-    /* ── TRACKING MODE INDICATOR ── */
-    #trackingMode {
-      font-family: 'Space Mono', monospace; font-size: 0.6rem;
-      color: var(--muted); letter-spacing: 1px;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 20px; padding: 4px 10px; text-align: center;
-      display: flex; align-items: center; gap: 6px; justify-content: center;
-    }
-    .mode-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
-    .mode-dot.ball  { background: var(--accent3); }
-    .mode-dot.aruco { background: var(--accent4); }
-
     /* ── NO SESSION BANNER ── */
     #noSetupBanner {
       display: none; position: absolute; inset: 0; z-index: 100;
@@ -201,19 +187,7 @@
     <a class="hdr-btn back" href="index.html">← Home</a>
     <h1>Quick Start</h1>
     <div class="status-dot" id="statusDot"></div>
-    <div id="settingsWrap">
-      <button class="hdr-btn" id="settingsBtn">⚙ Settings</button>
-      <div id="settingsPanel">
-        <a class="settings-link" href="setup.html?from=quickstart.html&change=1">← Change tracking mode</a>
-        <div class="settings-row">
-          <span>Units</span>
-          <div class="settings-subtoggle">
-            <button type="button" id="ftBtn" class="toggle-btn active">ft</button>
-            <button type="button" id="mBtn" class="toggle-btn">m</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
   </div>
 
   <!-- CONTENT -->
@@ -240,15 +214,10 @@
         <button class="ctrl-btn" id="clearBtn">✕ Clear</button>
       </div>
 
-      <!-- TEMP: remove after size-history filter is validated -->
-      <div id="logControls" style="display:flex; gap:6px;">
-        <button class="ctrl-btn" id="logBtn" style="flex:1;">● Log: OFF</button>
-        <button class="ctrl-btn" id="downloadLogBtn" style="flex:1;" disabled>⬇ CSV</button>
-      </div>
-
-      <div id="trackingMode">
-        <div class="mode-dot" id="modeDot"></div>
-        <span id="modeLabel">No setup</span>
+      <div id="unitsRow" style="display:flex; gap:6px; align-items:center;">
+        <span style="font-family:'Space Mono',monospace; font-size:0.75rem; color:var(--muted); letter-spacing:1px;">Units</span>
+        <button type="button" id="ftBtn" class="toggle-btn active" style="flex:1; padding:8px; font-size:0.8rem;">ft</button>
+        <button type="button" id="mBtn" class="toggle-btn" style="flex:1; padding:8px; font-size:0.8rem;">m</button>
       </div>
     </div>
 
@@ -281,19 +250,9 @@ const tracking = (() => {
 })();
 
 const noSetupBanner  = document.getElementById('noSetupBanner');
-const modeDot        = document.getElementById('modeDot');
-const modeLabel      = document.getElementById('modeLabel');
 
 if (tracking) {
   noSetupBanner.classList.remove('visible');
-  if (tracking.topMode === 'ball') {
-    modeDot.className  = 'mode-dot ball';
-    const names = { amazonBasics: 'Amazon Basics', tennis: 'Tennis Ball', custom: 'Custom Ball' };
-    modeLabel.textContent = `Ball — ${names[tracking.ballType] || tracking.ballType}`;
-  } else {
-    modeDot.className  = 'mode-dot aruco';
-    modeLabel.textContent = tracking.arucoType === 'twolaptop' ? 'ArUco — Two Laptops' : 'ArUco — Printed';
-  }
 }
 
 // ════════════════════════════════════════════════
@@ -312,22 +271,14 @@ const clearBtn       = document.getElementById('clearBtn');
 const distReadout    = document.getElementById('distReadout');
 const countdownOverlay = document.getElementById('countdownOverlay');
 const countdownNum     = document.getElementById('countdownNum');
-const logBtn           = document.getElementById('logBtn');
-const downloadLogBtn   = document.getElementById('downloadLogBtn');
 const ftBtn            = document.getElementById('ftBtn');
 const mBtn              = document.getElementById('mBtn');
-const settingsBtn      = document.getElementById('settingsBtn');
-const settingsPanel    = document.getElementById('settingsPanel');
-settingsBtn.onclick = (e) => { e.stopPropagation(); settingsPanel.classList.toggle('open'); };
-document.addEventListener('click', (e) => {
-  if (!settingsPanel.contains(e.target) && e.target !== settingsBtn) settingsPanel.classList.remove('open');
-});
 
 // ════════════════════════════════════════════════
 // CONSTANTS
 // ════════════════════════════════════════════════
-const DURATION    = 5.5;   // records a touch past 5s so the 5s point has room to breathe, not glued to the edge
-const CHART_X_MAX = 6;     // axis shows a bit beyond DURATION too, for the same reason
+const DURATION    = 5.5;   // records a touch past 5s so the graph visually keeps going past the "real" 5s boundary
+const CHART_X_MAX = 5.5;   // axis stops exactly at DURATION — no labeled tick or line calls attention to 5.5 itself
 const PRE_DELAY     = 0.5; // silent buffer before countdown UI appears
 const COUNTDOWN_LEN = 3;   // visible 3-2-1 countdown
 const GO_DELAY      = PRE_DELAY + COUNTDOWN_LEN; // 3.5s — Start press to "Go"
@@ -360,10 +311,6 @@ let ballColor       = null;  // { r, g, b, h, s, v }
 let ballPickMode    = false;
 let countdownTimer  = null;
 let preDelayTimer   = null;
-// TEMP: logging state — remove after size-history filter is validated
-let logging         = false;
-let logRows         = [];
-let logStartTime    = null;
 let mediaStreamTrack = null;
 
 const ballModeOn = tracking && tracking.topMode === 'ball';
@@ -434,34 +381,7 @@ const coordLabelPlugin = {
   }
 };
 
-// Plugin: recording endpoint marker
-const recordingMarkerPlugin = {
-  id: 'recordingMarker',
-  afterDraw(ch) {
-    const xScale = ch.scales.x;
-    const yScale = ch.scales.y;
-    if (!xScale || !yScale) return;
-    const xPx = xScale.getPixelForValue(DURATION);
-    if (xPx < xScale.left || xPx > xScale.right) return;
-    const c2 = ch.ctx;
-    c2.save();
-    c2.strokeStyle = 'rgba(255,215,64,0.45)';
-    c2.lineWidth = 2;
-    c2.setLineDash([5, 4]);
-    c2.beginPath();
-    c2.moveTo(xPx, yScale.top);
-    c2.lineTo(xPx, yScale.bottom);
-    c2.stroke();
-    c2.setLineDash([]);
-    c2.fillStyle = '#ffd740';
-    c2.font = 'bold 11px "Space Mono", monospace';
-    c2.textAlign = 'center';
-    c2.fillText(`${DURATION}s`, xPx, yScale.top - 5);
-    c2.restore();
-  }
-};
-
-Chart.register(coordLabelPlugin, recordingMarkerPlugin);
+Chart.register(coordLabelPlugin);
 
 const chart = new Chart(document.getElementById('chart'), {
   type: 'line',
@@ -469,7 +389,7 @@ const chart = new Chart(document.getElementById('chart'), {
     datasets: [{
       label: 'Motion', data: [],
       borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
-      borderWidth: 3, pointRadius: 0, fill: true, tension: 0.3
+      borderWidth: 3, pointRadius: 0, pointHoverRadius: 0, fill: true, tension: 0.3
     }]
   },
   options: {
@@ -486,8 +406,8 @@ const chart = new Chart(document.getElementById('chart'), {
         title: { display: true, text: 'Time (s)', color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
         ticks: {
           color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
-          maxTicksLimit: 10,
-          callback: v => Number.isInteger(v) ? String(v) : v.toFixed(1)
+          stepSize: 1, // fixed step, not autoTicks — guarantees no stray tick/label lands on 5.5
+          callback: v => String(v)
         },
         grid: {
           color: c => Number.isInteger(c.tick.value) ? 'rgba(160,180,255,0.55)' : 'rgba(100,120,200,0.25)',
@@ -549,6 +469,29 @@ chart.canvas.addEventListener('click', (e) => {
   chart.update('none');
 });
 
+// ── THEME: dark/light, session-persisted (same pattern as mm_tracking,
+// mm_units). CSS variables handle the page chrome automatically; the
+// chart's axis text color is set directly in JS (Chart.js doesn't read
+// CSS variables), so it's reapplied here whenever the theme changes.
+const THEME_KEY = 'mm_theme';
+const themeBtn  = document.getElementById('themeBtn');
+function getTheme() {
+  try { return sessionStorage.getItem(THEME_KEY) || 'dark'; } catch(e) { return 'dark'; }
+}
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  try { sessionStorage.setItem(THEME_KEY, theme); } catch(e) {}
+  themeBtn.textContent = theme === 'light' ? '☀ Light' : '🌙 Dark';
+  const textColor = theme === 'light' ? '#1a1d27' : '#ffffff';
+  chart.options.scales.x.title.color = textColor;
+  chart.options.scales.x.ticks.color = textColor;
+  chart.options.scales.y.title.color = textColor;
+  chart.options.scales.y.ticks.color = textColor;
+  chart.update();
+}
+themeBtn.onclick = () => applyTheme(getTheme() === 'light' ? 'dark' : 'light');
+applyTheme(getTheme());
+
 function interpolateAt(t) {
   if (!data.length) return null;
   if (t < data[0][0] || t > data[data.length-1][0]) return null;
@@ -599,49 +542,6 @@ function processVideo() {
     const result = MotionTracker.detectBall(pixels, vw, vh, ballColor);
     const { found, cx: cxN, cy: cyN, r, fitScore, density, clusterCount } = result;
 
-    // ── TEMP: BASELINE LOGGING — remove once ball tracking work resumes ──
-    if (logging) {
-      let fbSum=0, fbN=0;
-      for (let py=0; py<vh; py+=20) {
-        for (let px=0; px<vw; px+=20) {
-          const idx=(py*vw+px)*4;
-          fbSum += MotionTracker.rgbToHsv(pixels[idx],pixels[idx+1],pixels[idx+2]).v;
-          fbN++;
-        }
-      }
-      // Ball-region brightness: sample within the fitted circle directly
-      // (module doesn't expose the raw point cluster, so sample the
-      // detected region itself instead — semantically equivalent).
-      let bbSum=0, bbN=0;
-      if (found) {
-        const SBOX=6;
-        for (let py=Math.max(0,cyN-r); py<Math.min(vh,cyN+r); py+=SBOX) {
-          for (let px=Math.max(0,cxN-r); px<Math.min(vw,cxN+r); px+=SBOX) {
-            if ((px-cxN)**2+(py-cyN)**2 > r*r) continue;
-            const idx=(Math.round(py)*vw+Math.round(px))*4;
-            bbSum += MotionTracker.rgbToHsv(pixels[idx],pixels[idx+1],pixels[idx+2]).v;
-            bbN++;
-          }
-        }
-      }
-      let camSettings = {};
-      try { camSettings = mediaStreamTrack ? mediaStreamTrack.getSettings() : {}; } catch(e) {}
-      logRows.push({
-        t: ((Date.now()-logStartTime)/1000).toFixed(2),
-        found: found ? 1 : 0,
-        radius_px: r ? r.toFixed(1) : '',
-        cluster_count: clusterCount,
-        density: density.toFixed(3),
-        fit_score: fitScore !== null ? fitScore.toFixed(3) : '',
-        distance_ft: '',
-        frame_brightness_v: fbN ? (fbSum/fbN).toFixed(3) : '',
-        ball_brightness_v: bbN ? (bbSum/bbN).toFixed(3) : '',
-        exposure_time: camSettings.exposureTime ?? '',
-        focus_distance: camSettings.focusDistance ?? ''
-      });
-      downloadLogBtn.disabled = false;
-    }
-
     if(found){
       const diamPx=r*2;
       lastKnownPxW=diamPx;
@@ -659,7 +559,6 @@ function processVideo() {
       const now=(Date.now()-startTime)/1000;
       updateGauges(distDisplay, calcSlope(now,distDisplay));
       if(recording) recordPoint(distDisplay);
-      if (logging && logRows.length) logRows[logRows.length-1].distance_ft = distFt.toFixed(3);
     } else {
       distBadge.innerText='No ball found';
     }
@@ -834,43 +733,6 @@ function stopRecording(){
   statusDot.classList.add('active');
   chart.update();
 }
-
-// ════════════════════════════════════════════════
-// TEMP: BASELINE LOGGING — remove after filter validated
-// ════════════════════════════════════════════════
-logBtn.onclick = () => {
-  logging = !logging;
-  if (logging) {
-    logRows = [];
-    logStartTime = Date.now();
-    logBtn.textContent = '● Log: ON';
-    logBtn.style.color = '#ff4081';
-    logBtn.style.borderColor = 'rgba(255,64,129,0.5)';
-    downloadLogBtn.disabled = true;
-  } else {
-    logBtn.textContent = '● Log: OFF';
-    logBtn.style.color = '';
-    logBtn.style.borderColor = '';
-  }
-};
-
-downloadLogBtn.onclick = () => {
-  if (!logRows.length) return;
-  const headers = ['t','found','radius_px','cluster_count','density','fit_score','distance_ft','frame_brightness_v','ball_brightness_v','exposure_time','focus_distance'];
-  const lines = [headers.join(',')];
-  for (const row of logRows) {
-    lines.push(headers.map(h => (row[h] !== undefined && row[h] !== null) ? row[h] : '').join(','));
-  }
-  const blob = new Blob([lines.join('\n')], {type:'text/csv'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `ball-tracking-log-${Date.now()}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-};
 
 // ════════════════════════════════════════════════
 // UNITS
