@@ -244,6 +244,7 @@
     <div class="hdr-group">
       <span class="hdr-group-label">Inputs (x)</span>
       <div class="hdr-group-btns">
+        <button class="hdr-btn stacked" id="durationBtn" type="button"><span>Duration</span><b>10s</b></button>
         <button class="hdr-btn stacked" id="tableIntervalBtn" type="button"><span>Every</span><b>1s</b></button>
       </div>
     </div>
@@ -382,6 +383,8 @@ const graphModeBtn      = document.getElementById('graphModeBtn');
 const graphModeBtnValue = graphModeBtn.querySelector('b');
 const tableBtn          = document.getElementById('tableBtn');
 const tableBtnValue     = tableBtn.querySelector('b');
+const durationBtn      = document.getElementById('durationBtn');
+const durationBtnValue = durationBtn.querySelector('b');
 const tableIntervalBtn      = document.getElementById('tableIntervalBtn');
 const tableIntervalBtnValue = tableIntervalBtn.querySelector('b');
 const slopeGaugeBtn      = document.getElementById('slopeGaugeBtn');
@@ -537,6 +540,14 @@ tableBtn.onclick = () => {
   tableCol.classList.toggle('hidden', !tableOn);
   if (tableOn) rebuildTable();
 };
+const DURATION_OPTIONS = [5, 8, 10];
+durationBtn.onclick = () => {
+  const i = DURATION_OPTIONS.indexOf(recordingDuration);
+  recordingDuration = DURATION_OPTIONS[(i + 1) % DURATION_OPTIONS.length];
+  durationBtnValue.textContent = recordingDuration + 's';
+  chart.options.scales.x.max = recordingDuration;
+  chart.update();
+};
 tableIntervalBtn.onclick = () => {
   tableInterval = tableInterval === 1 ? 0.5 : 1;
   tableIntervalBtnValue.textContent = tableInterval + 's';
@@ -607,14 +618,15 @@ makeDraggable(distOverlay);
 // at PRE_DELAY + COUNTDOWN_LEN seconds after Start — that moment becomes
 // t=0. Everything before it is negative time ("before we started"),
 // which is what lets a graph show a real y-intercept instead of starting
-// mid-motion. Recording hard-stops at GO_DELAY + MAX_DURATION after Start
+// mid-motion. Recording hard-stops at GO_DELAY + recordingDuration after Start
 // (i.e. exactly 10s after Go).
 // ════════════════════════════════════════════════
 const PRE_DELAY      = 0.5;              // silent buffer before countdown UI appears
 const COUNTDOWN_LEN  = 3;                // visible 3-2-1 countdown
 const GO_DELAY        = PRE_DELAY + COUNTDOWN_LEN; // 3.5s — Start press to "Go"
-const INITIAL_WINDOW = 10;               // default graph window after Go
-const MAX_DURATION    = 10;               // hard auto-stop, seconds after Go
+// Recording duration AND the x-axis window are the same number — driven
+// by the "Duration" header toggle (5s/8s/10s), not fixed constants.
+let recordingDuration = 10;
 const NEG_TIME_MIN    = -3;               // how far back the toggle reveals
 const MARKER_SIZE = 14.0;  // cm — printable ArUco PDF
 const BALL_DIAM   = tracking ? (tracking.ballDiam || 15.2) : 15.2; // cm
@@ -858,32 +870,17 @@ function findZeroCrossings() {
   return crossings;
 }
 
-// Builds the actual plotted {x,y} points for the chart, inserting a real
-// (t, 0) point at every crossing found above. This is what makes the two
-// speed-graph fixes work: with a genuine zero point sitting between any
-// positive/negative pair, no rendered segment ever straddles zero anymore
-// — so per-segment red/blue coloring (which colors a segment red if
-// EITHER endpoint is negative) becomes correct instead of bleeding red
-// into the still-positive half of a straddling segment. Combined with
-// tension:0 in speed mode (see motionDataset), the line is now dead
-// straight between real points, so it passes through the same crossing
-// the marker ring is drawn at — no more "slightly off" mismatch between
-// a curved line and a linearly-computed crossing.
-function chartPointsWithZeroCrossings(distSpeedData) {
-  const points = [];
-  for (let i = 0; i < distSpeedData.length; i++) {
-    const [t, v] = distSpeedData[i];
-    points.push({ x: t, y: v });
-    if (i < distSpeedData.length - 1) {
-      const [t1, v1] = distSpeedData[i+1];
-      if (v !== 0 && v1 !== 0 && (v < 0) !== (v1 < 0)) {
-        const tc = t + (0 - v) * (t1 - t) / (v1 - v);
-        points.push({ x: tc, y: 0 });
-      }
-    }
-  }
-  return points;
-}
+// Note: the chart's rendered line is plain interval data — no synthetic
+// zero point gets inserted at each crossing. That was tried (to make
+// per-segment coloring and the marker ring land exactly on zero) but it
+// forced the spline through an artificial hard vertex at every crossing,
+// turning already-sparse interval data into a visibly spiky line. The
+// marker rings and click-snap below read crossings independently via
+// findZeroCrossings(), so precision there doesn't depend on the render
+// data at all — only the coloring is a little imprecise now, confined to
+// whichever single segment straddles a crossing (colored red if EITHER
+// endpoint is negative), which is a much smaller tradeoff than a spiky
+// curve.
 
 // Always-visible (not hover-only) small ring at each x-intercept — plain
 // pinned/hover dots only appear on interaction, but "finding x-intercepts"
@@ -916,11 +913,7 @@ function motionDataset() {
   return {
     label: 'Motion', data: [],
     borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
-    borderWidth: 3, pointRadius: 0, pointHoverRadius: 0, fill: true,
-    // Straight segments in speed mode — a curved spline wouldn't actually
-    // pass through the real zero-crossing points inserted below, which
-    // would put the line and the intercept markers visibly out of sync.
-    tension: graphMode === 'speed' ? 0 : 0.3,
+    borderWidth: 3, pointRadius: 0, pointHoverRadius: 0, fill: true, tension: 0.3,
     // Explicit blue/red only in speed mode — distance is never negative,
     // but without this check it would ALSO turn Distance's line blue
     // instead of leaving it at the app's normal cyan.
@@ -948,7 +941,7 @@ const chart = new Chart(document.getElementById('chart'), {
     scales: {
       x: {
         type: 'linear',
-        min: 0, max: INITIAL_WINDOW,
+        min: 0, max: recordingDuration,
         title: { display: true, text: 'Time (s)', color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
         ticks: {
           color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
@@ -989,16 +982,23 @@ const chart = new Chart(document.getElementById('chart'), {
 const HALF_STEP = 0.5;
 function snappedPreviewAt(clientX) {
   const rect = chart.canvas.getBoundingClientRect();
-  const rawT = chart.scales.x.getValueForPixel(clientX - rect.left);
+  const xPx = clientX - rect.left;
+  const rawT = chart.scales.x.getValueForPixel(xPx);
 
-  // Magnetic pull toward a true x-intercept when the cursor is close to
-  // one — finding these is the point of a speed graph, so they get
-  // precise snapping in addition to the regular interval grid.
+  // Magnetic pull toward the CLOSEST true x-intercept, using a pixel
+  // capture radius rather than a time window — a fixed time window gets
+  // easier or harder to hit depending on zoom, while a pixel radius stays
+  // an equally easy, reliable click target no matter how compressed or
+  // stretched the time axis is. ~18px is roughly a comfortable click/tap
+  // target, same ballpark as the visible marker ring itself.
   if (graphMode === 'speed') {
+    let closestT = null, closestPxDist = Infinity;
     for (const tc of findZeroCrossings()) {
-      if (Math.abs(tc - rawT) < HALF_STEP / 2) {
-        return { t: parseFloat(tc.toFixed(3)), v: 0, isIntercept: true };
-      }
+      const dist = Math.abs(chart.scales.x.getPixelForValue(tc) - xPx);
+      if (dist < closestPxDist) { closestPxDist = dist; closestT = tc; }
+    }
+    if (closestT !== null && closestPxDist < 18) {
+      return { t: parseFloat(closestT.toFixed(3)), v: 0, isIntercept: true };
     }
   }
 
@@ -1131,7 +1131,7 @@ function processVideo() {
   // indefinitely. Checked here, every frame, unconditionally.
   if (recording) {
     const t = (Date.now()-startTime)/1000 - GO_DELAY;
-    if (t >= MAX_DURATION) { stopRecording(); requestAnimationFrame(processVideo); return; }
+    if (t >= recordingDuration) { stopRecording(); requestAnimationFrame(processVideo); return; }
   }
   const vw=video.videoWidth, vh=video.videoHeight;
   const dw=videoWrapper.clientWidth, dh=videoWrapper.clientHeight;
@@ -1262,7 +1262,7 @@ function processVideo() {
 
 function recordPoint(value) {
   const t=(Date.now()-startTime)/1000 - GO_DELAY; // negative until "Go" fires
-  if(t>=MAX_DURATION){ stopRecording(); return; }
+  if(t>=recordingDuration){ stopRecording(); return; }
   if(t-lastRecordTime>=0.05){
     lastRecordTime=t;
     const tv=parseFloat(t.toFixed(2)), dv=parseFloat(value.toFixed(3));
@@ -1378,7 +1378,7 @@ function beginRecording(){
   statusDot.classList.remove('active');
   statusDot.classList.add('recording');
   startBtn.textContent = '■ Stop';
-  chart.options.scales.x.max = INITIAL_WINDOW; // reset growth from any prior take
+  chart.options.scales.x.max = recordingDuration; // reset growth from any prior take
   chart.options.scales.x.min = negTimeOn ? NEG_TIME_MIN : 0;
   // Ghost previous run (faint)
   const prev=chart.data.datasets[0];
@@ -1401,14 +1401,6 @@ function stopRecording(){
   statusDot.classList.remove('recording');
   statusDot.classList.add('active');
   startBtn.textContent = '▶ Start';
-  // Live recording pushes raw points only (no zero-crossing insertion, to
-  // keep the per-frame push simple) — redraw with real crossing points
-  // now that recording's done, so a speed recording made directly (not
-  // via the distance→speed derive path) still gets accurate segment
-  // coloring and intercept markers for analysis.
-  if (graphMode === 'speed' && data.length >= 2) {
-    chart.data.datasets[0].data = chartPointsWithZeroCrossings(data);
-  }
   chart.update();
 }
 
@@ -1531,9 +1523,7 @@ function setGraphMode(mode) {
 
   dataTableBody.innerHTML = '';
   chart.data.datasets = [motionDataset()];
-  chart.data.datasets[0].data = graphMode === 'speed'
-    ? chartPointsWithZeroCrossings(data)
-    : data.map(([t,v]) => ({ x: t, y: v }));
+  chart.data.datasets[0].data = data.map(([t,v]) => ({ x: t, y: v }));
   pinnedPoints = []; hoverPreview = null;
   updateTableHeader();
   applyAxisConfig();
@@ -1550,7 +1540,7 @@ clearBtn.onclick=()=>{
   if(countingDown){clearTimeout(preDelayTimer);clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
   recording=false; startBtn.disabled=false; startBtn.textContent='▶ Start'; data=[]; cachedDistanceData=null;
   dataTableBody.innerHTML='';
-  chart.options.scales.x.max = INITIAL_WINDOW;
+  chart.options.scales.x.max = recordingDuration;
   chart.options.scales.x.min = negTimeOn ? NEG_TIME_MIN : 0;
   chart.data.datasets=[motionDataset()];
   pinnedPoints = []; hoverPreview = null;
