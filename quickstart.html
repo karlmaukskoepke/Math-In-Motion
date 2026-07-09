@@ -73,6 +73,10 @@
     }
     .hdr-btn:hover { border-color: var(--accent); color: var(--accent); }
     .hdr-btn.back  { color: var(--muted); }
+    .hdr-btn.help-btn {
+      width: 24px; height: 24px; padding: 0; justify-content: center;
+      border-radius: 50%; font-weight: 700; text-decoration: none;
+    }
     .hdr-btn.stacked {
       flex-direction: column; gap: 1px; padding: 3px 12px; line-height: 1.3;
     }
@@ -188,6 +192,7 @@
     <button class="hdr-btn stacked" id="unitsBtn" type="button"><span>Units</span><b>ft</b></button>
     <button class="hdr-btn stacked" id="gaugeBtn" type="button"><span>Distance</span><b>Off</b></button>
     <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
+    <a class="hdr-btn help-btn" href="help.html" target="_blank" rel="noopener" title="Help & resources">?</a>
   </div>
 
   <!-- CONTENT -->
@@ -425,7 +430,40 @@ const coordLabelPlugin = {
   }
 };
 
-Chart.register(coordLabelPlugin);
+// Shared theme-aware text color for canvas-drawn plugins (axis end labels,
+// etc.) — Chart.js options are set directly on the chart itself, but
+// anything drawn straight on the canvas needs its own live reference,
+// updated by applyTheme() further down.
+let chartTextColor = '#ffffff';
+
+// Small "x"/"y" labels right at the axis ends, like a textbook coordinate
+// plane — separate from the more descriptive "Time (s)"/"Distance (ft)"
+// titles Chart.js already draws. Positioned off the actual zero-lines
+// (via getPixelForValue(0)) rather than hardcoded to a corner, so this
+// still lines up correctly if an axis's zero ever isn't at the edge.
+const axisLabelsPlugin = {
+  id: 'axisEndLabels',
+  afterDraw(ch) {
+    const xScale = ch.scales.x, yScale = ch.scales.y;
+    const c2 = ch.ctx;
+    c2.save();
+    c2.font = 'bold 13px "Space Mono", monospace';
+    c2.fillStyle = chartTextColor;
+    const zeroYPx = yScale.getPixelForValue(0);
+    if (zeroYPx >= yScale.top && zeroYPx <= yScale.bottom) {
+      c2.textAlign = 'right';
+      c2.fillText('x', xScale.right - 4, zeroYPx - 6);
+    }
+    const zeroXPx = xScale.getPixelForValue(0);
+    if (zeroXPx >= xScale.left && zeroXPx <= xScale.right) {
+      c2.textAlign = 'left';
+      c2.fillText('y', zeroXPx + 6, yScale.top + 14);
+    }
+    c2.restore();
+  }
+};
+
+Chart.register(coordLabelPlugin, axisLabelsPlugin);
 
 // Single source of truth for the main line's dataset config — used at
 // chart creation AND every place the dataset gets rebuilt (beginRecording,
@@ -579,11 +617,11 @@ function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   try { sessionStorage.setItem(THEME_KEY, theme); } catch(e) {}
   themeBtn.textContent = theme === 'light' ? '☀ Light' : '🌙 Dark';
-  const textColor = theme === 'light' ? '#1a1d27' : '#ffffff';
-  chart.options.scales.x.title.color = textColor;
-  chart.options.scales.x.ticks.color = textColor;
-  chart.options.scales.y.title.color = textColor;
-  chart.options.scales.y.ticks.color = textColor;
+  chartTextColor = theme === 'light' ? '#1a1d27' : '#ffffff';
+  chart.options.scales.x.title.color = chartTextColor;
+  chart.options.scales.x.ticks.color = chartTextColor;
+  chart.options.scales.y.title.color = chartTextColor;
+  chart.options.scales.y.ticks.color = chartTextColor;
   chart.update();
 }
 themeBtn.onclick = () => applyTheme(getTheme() === 'light' ? 'dark' : 'light');
@@ -689,7 +727,7 @@ function processVideo() {
     updateGauges(distDisplay, calcSlope(now,distDisplay));
     if(recording) recordPoint(distDisplay);
   } else {
-    distBadge.innerText='No marker';
+    distBadge.innerText='No marker detected';
   }
   requestAnimationFrame(processVideo);
 }
