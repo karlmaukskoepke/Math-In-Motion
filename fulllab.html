@@ -442,6 +442,14 @@ function formatValue(v) {
   return graphMode === 'speed' ? formatSpeed(v) : formatDist(v);
 }
 
+// Always exactly 2 decimals, never drops a trailing zero — used for BOTH
+// the time and the speed of an x-intercept point specifically, so "0.00"
+// reads as a precise measurement rather than the ambiguous bare "0" that
+// formatSpeed would otherwise give an exact zero.
+function formatIntercept(v) {
+  return v.toFixed(2);
+}
+
 // Interpolates the value AT an exact target time from the two real
 // samples bracketing it — works even across a tracking gap, since it
 // only needs one good sample before and one after. Returns the bracket
@@ -758,11 +766,13 @@ const coordLabelPlugin = {
 
     // Pinned points draw first so the (larger, later-drawn) live hover
     // point always renders on top when the two overlap.
-    pinnedPoints.forEach(({t, v}) => {
-      const xPx = xScale.getPixelForValue(t);
-      const yPx = yScale.getPixelForValue(v);
+    pinnedPoints.forEach((pt) => {
+      const xPx = xScale.getPixelForValue(pt.t);
+      const yPx = yScale.getPixelForValue(pt.v);
       if (xPx < xScale.left || xPx > xScale.right) return;
-      drawCoordDot(c2, xPx, yPx, `(${formatSig(t)}, ${formatValue(v)})`,
+      const tLabel = pt.isIntercept ? formatIntercept(pt.t) : formatSig(pt.t);
+      const vLabel = pt.isIntercept ? formatIntercept(pt.v) : formatValue(pt.v);
+      drawCoordDot(c2, xPx, yPx, `(${tLabel}, ${vLabel})`,
         { fill: '#ff4081', stroke: '#ffffff', alpha: 1 });
     });
 
@@ -785,11 +795,13 @@ const coordLabelPlugin = {
         c2.setLineDash([]);
         c2.restore();
 
+        const tLabel = hoverPreview.isIntercept ? formatIntercept(hoverPreview.t) : formatSig(hoverPreview.t);
+        const vLabel = hoverPreview.isIntercept ? formatIntercept(hoverPreview.v) : formatValue(hoverPreview.v);
         c2.font = 'bold 14px "Space Mono", monospace';
-        drawAxisChip(c2, xPx, yScale.bottom + 18, formatSig(hoverPreview.t), 'center');
-        drawAxisChip(c2, xScale.left - 6, yPx, formatValue(hoverPreview.v), 'right');
+        drawAxisChip(c2, xPx, yScale.bottom + 18, tLabel, 'center');
+        drawAxisChip(c2, xScale.left - 6, yPx, vLabel, 'right');
 
-        drawCoordDot(c2, xPx, yPx, `(${formatSig(hoverPreview.t)}, ${formatValue(hoverPreview.v)})`,
+        drawCoordDot(c2, xPx, yPx, `(${tLabel}, ${vLabel})`,
           { fill: '#ffd740', stroke: '#ffffff', alpha: 0.7 }, 19);
       }
     }
@@ -846,6 +858,33 @@ function findZeroCrossings() {
   return crossings;
 }
 
+// Builds the actual plotted {x,y} points for the chart, inserting a real
+// (t, 0) point at every crossing found above. This is what makes the two
+// speed-graph fixes work: with a genuine zero point sitting between any
+// positive/negative pair, no rendered segment ever straddles zero anymore
+// — so per-segment red/blue coloring (which colors a segment red if
+// EITHER endpoint is negative) becomes correct instead of bleeding red
+// into the still-positive half of a straddling segment. Combined with
+// tension:0 in speed mode (see motionDataset), the line is now dead
+// straight between real points, so it passes through the same crossing
+// the marker ring is drawn at — no more "slightly off" mismatch between
+// a curved line and a linearly-computed crossing.
+function chartPointsWithZeroCrossings(distSpeedData) {
+  const points = [];
+  for (let i = 0; i < distSpeedData.length; i++) {
+    const [t, v] = distSpeedData[i];
+    points.push({ x: t, y: v });
+    if (i < distSpeedData.length - 1) {
+      const [t1, v1] = distSpeedData[i+1];
+      if (v !== 0 && v1 !== 0 && (v < 0) !== (v1 < 0)) {
+        const tc = t + (0 - v) * (t1 - t) / (v1 - v);
+        points.push({ x: tc, y: 0 });
+      }
+    }
+  }
+  return points;
+}
+
 // Always-visible (not hover-only) small ring at each x-intercept — plain
 // pinned/hover dots only appear on interaction, but "finding x-intercepts"
 // is the point of this graph, so these get a permanent, subtle marker.
@@ -877,12 +916,19 @@ function motionDataset() {
   return {
     label: 'Motion', data: [],
     borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
-    borderWidth: 3, pointRadius: 0, pointHoverRadius: 0, fill: true, tension: 0.3,
-    // Only ever triggers in speed mode — distance is never negative — but
-    // living here means it doesn't need a graphMode check of its own.
+    borderWidth: 3, pointRadius: 0, pointHoverRadius: 0, fill: true,
+    // Straight segments in speed mode — a curved spline wouldn't actually
+    // pass through the real zero-crossing points inserted below, which
+    // would put the line and the intercept markers visibly out of sync.
+    tension: graphMode === 'speed' ? 0 : 0.3,
+    // Explicit blue/red only in speed mode — distance is never negative,
+    // but without this check it would ALSO turn Distance's line blue
+    // instead of leaving it at the app's normal cyan.
     segment: {
-      borderColor: ctx => (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? '#ff5252' : undefined,
-      backgroundColor: ctx => (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? 'rgba(255,82,82,0.08)' : undefined
+      borderColor: ctx => graphMode !== 'speed' ? undefined
+        : (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? '#ff5252' : '#448aff',
+      backgroundColor: ctx => graphMode !== 'speed' ? undefined
+        : (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? 'rgba(255,82,82,0.08)' : 'rgba(68,138,255,0.08)'
     }
   };
 }
@@ -951,7 +997,7 @@ function snappedPreviewAt(clientX) {
   if (graphMode === 'speed') {
     for (const tc of findZeroCrossings()) {
       if (Math.abs(tc - rawT) < HALF_STEP / 2) {
-        return { t: parseFloat(tc.toFixed(3)), v: 0 };
+        return { t: parseFloat(tc.toFixed(3)), v: 0, isIntercept: true };
       }
     }
   }
@@ -1355,6 +1401,14 @@ function stopRecording(){
   statusDot.classList.remove('recording');
   statusDot.classList.add('active');
   startBtn.textContent = '▶ Start';
+  // Live recording pushes raw points only (no zero-crossing insertion, to
+  // keep the per-frame push simple) — redraw with real crossing points
+  // now that recording's done, so a speed recording made directly (not
+  // via the distance→speed derive path) still gets accurate segment
+  // coloring and intercept markers for analysis.
+  if (graphMode === 'speed' && data.length >= 2) {
+    chart.data.datasets[0].data = chartPointsWithZeroCrossings(data);
+  }
   chart.update();
 }
 
@@ -1477,7 +1531,9 @@ function setGraphMode(mode) {
 
   dataTableBody.innerHTML = '';
   chart.data.datasets = [motionDataset()];
-  chart.data.datasets[0].data = data.map(([t,v]) => ({ x: t, y: v }));
+  chart.data.datasets[0].data = graphMode === 'speed'
+    ? chartPointsWithZeroCrossings(data)
+    : data.map(([t,v]) => ({ x: t, y: v }));
   pinnedPoints = []; hoverPreview = null;
   updateTableHeader();
   applyAxisConfig();
