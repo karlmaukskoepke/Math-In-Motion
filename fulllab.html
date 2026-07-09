@@ -872,51 +872,75 @@ function curveValueAt(t) {
   return result ? result.v : null;
 }
 
-// Finds every x-intercept (speed = 0) by bisection-searching the ACTUAL
-// rendered curve (via curveValueAt) between each pair of raw samples that
-// straddle zero — not a simple linear interpolation, which can miss where
-// a bowed spline really crosses by a noticeable margin at these sparse
-// interval spacings. Used both to draw always-visible markers (so
-// intercepts are visually "findable" without hunting) and to give the
-// hover/click snap a magnetic pull toward them (see snappedPreviewAt).
+// Finds every x-intercept (speed = 0) by densely scanning the ACTUAL
+// rendered curve (via curveValueAt) end-to-end and catching each sign
+// change, then bisecting to pin it precisely. This is the single source
+// of truth for zero crossings: the markers, the click-snap targets, AND
+// the blue/red color boundaries all come from this one function, so they
+// can never disagree with each other or with the visible line.
+//
+// Scanning the rendered curve (rather than only raw-sample intervals where
+// the endpoints straddle zero) matters because a smooth spline can cross
+// zero at a noticeably different spot than a straight line between samples
+// would — and can even dip across and back inside a single raw interval.
+// The old raw-interval method missed those and placed markers where the
+// visible curve wasn't actually at zero. A ~40ms scan step is fine here:
+// speed data is sparse (0.5-1s apart), so real crossings are never closer
+// together than that, and bisection refines each hit to full precision.
 function findZeroCrossings() {
   if (graphMode !== 'speed' || data.length < 2) return [];
+  const tStart = data[0][0], tEnd = data[data.length - 1][0];
+  const STEP = 0.04;
   const crossings = [];
-  for (let i = 0; i < data.length - 1; i++) {
-    const [t0, v0] = data[i], [t1, v1] = data[i+1];
-    if (v0 === 0) { crossings.push(t0); continue; }
-    if ((v0 < 0) === (v1 < 0)) continue; // no sign change across this raw interval
-    let lo = t0, hi = t1, loV = curveValueAt(t0), hiV = curveValueAt(t1);
-    if (loV === null || hiV === null || (loV < 0) === (hiV < 0)) {
-      // Curve lookup unavailable, or didn't confirm a sign change the way
-      // the raw samples suggested (shouldn't normally happen) — fall back
-      // to the simple linear estimate rather than producing nothing.
-      crossings.push(t0 + (0 - v0) * (t1 - t0) / (v1 - v0));
-      continue;
+  let prevT = tStart, prevV = curveValueAt(tStart);
+  for (let t = tStart + STEP; t <= tEnd + 1e-9; t += STEP) {
+    const tc = Math.min(t, tEnd);
+    const v = curveValueAt(tc);
+    if (prevV === null || v === null) { prevT = tc; prevV = v; continue; }
+    if (v === 0) {
+      crossings.push(tc);
+    } else if ((prevV < 0) !== (v < 0)) {
+      // Sign change between prevT and tc — bisect for the exact crossing.
+      let lo = prevT, hi = tc, loV = prevV;
+      for (let iter = 0; iter < 24; iter++) {
+        const mid = (lo + hi) / 2;
+        const midV = curveValueAt(mid);
+        if (midV === null) break;
+        if ((midV < 0) === (loV < 0)) { lo = mid; loV = midV; }
+        else { hi = mid; }
+      }
+      crossings.push((lo + hi) / 2);
     }
-    for (let iter = 0; iter < 20; iter++) {
-      const mid = (lo + hi) / 2;
-      const midV = curveValueAt(mid);
-      if (midV === null) break;
-      if ((midV < 0) === (loV < 0)) { lo = mid; loV = midV; }
-      else { hi = mid; hiV = midV; }
-    }
-    crossings.push((lo + hi) / 2);
+    prevT = tc; prevV = v;
   }
   return crossings;
 }
 
-// Note: the chart's rendered line is plain interval data — no synthetic
-// zero point gets inserted at each crossing. That was tried (to make
-// per-segment coloring and the marker ring land exactly on zero) but it
-// forced the spline through an artificial hard vertex at every crossing,
-// turning already-sparse interval data into a visibly spiky line. The
-// marker rings and click-snap below read crossings independently via
-// findZeroCrossings(), so precision there doesn't depend on the render
-// data at all — only the coloring is a little imprecise now, confined to
-// whichever single segment straddles a crossing (colored red if EITHER
-// endpoint is negative), which is a much smaller tradeoff than a spiky
-// curve.
+// Draws `data` onto the chart, and in speed mode splices an exact (t_c, 0)
+// point in at every zero crossing so the blue/red color boundary can land
+// precisely on each crossing — Chart.js only changes a segment's color AT
+// a data point, never mid-segment, so a crossing needs a real point on it.
+//
+// Two passes are required and unavoidable: findZeroCrossings() reads the
+// RENDERED curve, which can't be read until the raw data has actually been
+// plotted. So: (1) plot raw data → the smooth curve now exists, (2) read
+// its true crossings, (3) splice those in. Because the crossings come from
+// the real curve, each inserted point already lies essentially ON it — the
+// shape barely changes and no spike forms (unlike the old straight-line
+// crossing estimate, which pulled inserted points off the curve). Distance
+// mode does a single pass; it never has crossings.
+function renderData() {
+  const base = data.map(([t, v]) => ({ x: t, y: v }));
+  chart.data.datasets[0].data = base;
+  if (graphMode !== 'speed' || data.length < 2) { chart.update('none'); return; }
+  chart.update('none'); // pass 1: curve must exist before its crossings can be read
+  const crossings = findZeroCrossings();
+  if (!crossings.length) return;
+  for (const tc of crossings) base.push({ x: tc, y: 0 });
+  base.sort((a, b) => a.x - b.x);
+  chart.data.datasets[0].data = base; // pass 2: crossings spliced in as color-boundary anchors
+  chart.update('none');
+}
 
 // Always-visible (not hover-only) small ring at each x-intercept — plain
 // pinned/hover dots only appear on interaction, but "finding x-intercepts"
@@ -950,18 +974,19 @@ function motionDataset() {
     label: 'Motion', data: [],
     borderColor: '#00e5ff', backgroundColor: 'rgba(0,229,255,0.08)',
     borderWidth: 3, pointRadius: 0, pointHoverRadius: 0, fill: true, tension: 0.3,
-    // Explicit blue/red only in speed mode — distance is never negative,
-    // but without this check it would ALSO turn Distance's line blue
-    // instead of leaving it at the app's normal cyan. Colored by the
-    // AVERAGE of the two endpoints, not "either one negative" — that
-    // OR-rule colored an entire segment red the instant just one end
-    // dipped below zero, even barely, which visibly shifted the color
-    // boundary earlier than where the line actually crosses zero.
+    // Explicit blue/red only in speed mode — distance is never negative, so
+    // without this check it would also recolor Distance's line. Because
+    // renderData() splices a real point in at every zero crossing, no drawn
+    // segment straddles zero anymore: both endpoints are always on the same
+    // side, so "either endpoint below zero" is now an exact test and the
+    // color boundary lands precisely on the crossing. A segment whose
+    // endpoint sits exactly at a crossing (y === 0) takes its color from the
+    // OTHER endpoint, so the two halves meet cleanly at the crossing.
     segment: {
       borderColor: ctx => graphMode !== 'speed' ? undefined
-        : (ctx.p0.parsed.y + ctx.p1.parsed.y) < 0 ? '#ff5252' : '#448aff',
+        : (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? '#ff5252' : '#448aff',
       backgroundColor: ctx => graphMode !== 'speed' ? undefined
-        : (ctx.p0.parsed.y + ctx.p1.parsed.y) < 0 ? 'rgba(255,82,82,0.08)' : 'rgba(68,138,255,0.08)'
+        : (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? 'rgba(255,82,82,0.08)' : 'rgba(68,138,255,0.08)'
     }
   };
 }
@@ -1443,7 +1468,10 @@ function stopRecording(){
   statusDot.classList.remove('recording');
   statusDot.classList.add('active');
   startBtn.textContent = '▶ Start';
-  chart.update();
+  // Live recording pushed raw points frame-by-frame; now that it's done,
+  // re-render so speed mode splices in its zero crossings (color anchors +
+  // markers). Distance mode just redraws unchanged.
+  renderData();
 }
 
 // ════════════════════════════════════════════════
@@ -1527,16 +1555,20 @@ function setUnit(unit) {
   // too — the ft→m conversion factor applies the same way since time is
   // unit-independent.
   data = data.map(([t,d]) => [t, convertDist(d, prevUnit, currentUnit)]);
-  chart.data.datasets.forEach(ds => {
-    ds.data = ds.data.map(pt => ({ x: pt.x, y: convertDist(pt.y, prevUnit, currentUnit) }));
-  });
+  // Convert any faint "previous run" ghost dataset in place (renderData
+  // only rebuilds dataset[0], so a ghost in dataset[1] must be handled here).
+  for (let i = 1; i < chart.data.datasets.length; i++) {
+    chart.data.datasets[i].data = chart.data.datasets[i].data.map(
+      pt => ({ x: pt.x, y: convertDist(pt.y, prevUnit, currentUnit) }));
+  }
   if (cachedDistanceData) {
     cachedDistanceData = cachedDistanceData.map(([t,d]) => [t, convertDist(d, prevUnit, currentUnit)]);
   }
   pinnedPoints = []; hoverPreview = null; // these weren't unit-converted, so clear rather than leave them off the line
-  if (tableOn) rebuildTable();
   updateTableHeader();
-  applyAxisConfig();
+  applyAxisConfig(); // rescale y before renderData reads crossings off the curve
+  renderData();      // rebuild dataset[0] (+ spliced crossings) from the converted data
+  if (tableOn) rebuildTable();
 }
 unitsBtn.onclick = () => setUnit(currentUnit === 'ft' ? 'm' : 'ft');
 
@@ -1565,10 +1597,10 @@ function setGraphMode(mode) {
 
   dataTableBody.innerHTML = '';
   chart.data.datasets = [motionDataset()];
-  chart.data.datasets[0].data = data.map(([t,v]) => ({ x: t, y: v }));
   pinnedPoints = []; hoverPreview = null;
   updateTableHeader();
-  applyAxisConfig();
+  applyAxisConfig(); // set the y-scale before renderData reads crossings off the curve
+  renderData();
   if (tableOn) rebuildTable();
 }
 graphModeBtn.onclick = () => setGraphMode(graphMode === 'distance' ? 'speed' : 'distance');
