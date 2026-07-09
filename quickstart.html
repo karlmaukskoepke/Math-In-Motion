@@ -187,6 +187,7 @@
     <h1>Quick Start</h1>
     <div class="status-dot" id="statusDot"></div>
     <button class="hdr-btn stacked" id="unitsBtn" type="button"><span>Units</span><b>ft</b></button>
+    <button class="hdr-btn stacked" id="gaugeBtn" type="button"><span>Gauge</span><b>Off</b></button>
     <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
   </div>
 
@@ -268,6 +269,8 @@ const countdownOverlay = document.getElementById('countdownOverlay');
 const countdownNum     = document.getElementById('countdownNum');
 const unitsBtn          = document.getElementById('unitsBtn');
 const unitsBtnValue      = unitsBtn.querySelector('b');
+const gaugeBtn           = document.getElementById('gaugeBtn');
+const gaugeBtnValue      = gaugeBtn.querySelector('b');
 
 // ════════════════════════════════════════════════
 // CONSTANTS
@@ -551,6 +554,18 @@ function makeDraggable(el) {
   el.addEventListener('pointerup', () => { dragging = false; el.style.cursor = 'grab'; });
 }
 makeDraggable(distOverlay);
+
+// ── DISTANCE GAUGE VISIBILITY: default OFF. Pedagogical call — during
+// live tracking, watching the graph itself is "the thing"; the big gauge
+// is an optional extra layer some students find helpful and others find
+// distracting, so it's opt-in rather than always-on.
+let gaugeOn = false;
+distOverlay.style.display = 'none';
+gaugeBtn.onclick = () => {
+  gaugeOn = !gaugeOn;
+  gaugeBtnValue.textContent = gaugeOn ? 'On' : 'Off';
+  distOverlay.style.display = gaugeOn ? 'flex' : 'none';
+};
 
 // ── THEME: dark/light, session-persisted (same pattern as mm_tracking,
 // mm_units). CSS variables handle the page chrome automatically; the

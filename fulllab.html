@@ -56,7 +56,7 @@
 
     /* ── HEADER ── */
     #header {
-      display: flex; align-items: center; gap: 10px;
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
       padding: 7px 14px; background: var(--surface);
       border-bottom: 2px solid var(--accent); flex-shrink: 0; z-index: 10;
     }
@@ -74,33 +74,11 @@
     }
     .hdr-btn:hover { border-color: var(--accent); color: var(--accent); }
     .hdr-btn.back  { color: var(--muted); }
-
-    /* ── SETTINGS PANEL (gear dropdown) ── */
-    #settingsWrap { position: relative; }
-    #settingsPanel {
-      display: none; position: absolute; top: calc(100% + 8px); right: 0;
-      background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
-      padding: 10px; min-width: 220px; z-index: 30;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    .hdr-btn.stacked {
+      flex-direction: column; gap: 1px; padding: 3px 12px; line-height: 1.3;
     }
-    #settingsPanel.open { display: block; }
-    .settings-link {
-      display: block; padding: 8px 6px; margin-bottom: 6px;
-      color: var(--muted); font-family: 'Space Mono', monospace; font-size: 0.72rem;
-      border-bottom: 1px solid var(--border); text-decoration: none;
-    }
-    .settings-link:hover { color: var(--accent); }
-    .settings-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 6px; font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--text);
-      gap: 10px;
-    }
-    .settings-subtoggle { display: flex; gap: 4px; }
-    .toggle-btn {
-      cursor: pointer; background: none; border: 1px solid var(--border); border-radius: 5px;
-      color: var(--muted); font-family: 'Space Mono', monospace; font-size: 0.68rem; padding: 3px 8px;
-    }
-    .toggle-btn.active { color: var(--accent); border-color: var(--accent); }
+    .hdr-btn.stacked span { font-size: 0.6rem; letter-spacing: 1px; }
+    .hdr-btn.stacked b    { font-size: 0.8rem; color: var(--accent); }
     .hidden { display: none !important; }
 
     /* ── CONTENT ── */
@@ -251,52 +229,14 @@
     <a class="hdr-btn back" href="index.html">← Home</a>
     <h1>Full Lab</h1>
     <div class="status-dot" id="statusDot"></div>
-    <div id="settingsWrap">
-      <button class="hdr-btn" id="settingsBtn">⚙ Settings</button>
-      <div id="settingsPanel">
-        <a class="settings-link" href="setup.html?from=fulllab.html&change=1">← Change tracking mode</a>
-        <div class="settings-row">
-          <span>Units</span>
-          <div class="settings-subtoggle">
-            <button type="button" id="ftBtn" class="toggle-btn active">ft</button>
-            <button type="button" id="mBtn" class="toggle-btn">m</button>
-          </div>
-        </div>
-        <div class="settings-row">
-          <span>Theme</span>
-          <div class="settings-subtoggle">
-            <button type="button" id="darkThemeBtn" class="toggle-btn active">Dark</button>
-            <button type="button" id="lightThemeBtn" class="toggle-btn">Light</button>
-          </div>
-        </div>
-        <div class="settings-row">
-          <span>Graph</span>
-          <div class="settings-subtoggle">
-            <button type="button" id="modeDistBtn" class="toggle-btn active">Dist</button>
-            <button type="button" id="modeSpeedBtn" class="toggle-btn">Speed</button>
-          </div>
-        </div>
-        <div class="settings-row">
-          <span>Data table</span>
-          <input type="checkbox" id="tableToggle">
-        </div>
-        <div class="settings-row">
-          <span>Table every</span>
-          <div class="settings-subtoggle">
-            <button type="button" class="toggle-btn table-interval-btn" data-interval="0.5">0.5s</button>
-            <button type="button" class="toggle-btn table-interval-btn active" data-interval="1">1s</button>
-          </div>
-        </div>
-        <div class="settings-row">
-          <span>Slope gauge</span>
-          <input type="checkbox" id="slopeGaugeToggle">
-        </div>
-        <div class="settings-row">
-          <span>Show "before start" (-3s)</span>
-          <input type="checkbox" id="negTimeToggle">
-        </div>
-      </div>
-    </div>
+    <button class="hdr-btn stacked" id="unitsBtn" type="button"><span>Units</span><b>ft</b></button>
+    <button class="hdr-btn stacked" id="graphModeBtn" type="button"><span>Graph</span><b>Dist</b></button>
+    <button class="hdr-btn stacked" id="tableBtn" type="button"><span>Table</span><b>Off</b></button>
+    <button class="hdr-btn stacked" id="tableIntervalBtn" type="button"><span>Every</span><b>1s</b></button>
+    <button class="hdr-btn stacked" id="slopeGaugeBtn" type="button"><span>Slope</span><b>Off</b></button>
+    <button class="hdr-btn stacked" id="negTimeBtn" type="button"><span>-3s</span><b>Off</b></button>
+    <button class="hdr-btn stacked" id="gaugeBtn" type="button"><span>Gauge</span><b>Off</b></button>
+    <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
   </div>
 
   <!-- CONTENT -->
@@ -402,16 +342,20 @@ const countdownOverlay = document.getElementById('countdownOverlay');
 const countdownNum     = document.getElementById('countdownNum');
 const logBtn           = document.getElementById('logBtn');
 const downloadLogBtn   = document.getElementById('downloadLogBtn');
-const ftBtn            = document.getElementById('ftBtn');
-const mBtn              = document.getElementById('mBtn');
-const modeDistBtn      = document.getElementById('modeDistBtn');
-const modeSpeedBtn     = document.getElementById('modeSpeedBtn');
-const settingsBtn      = document.getElementById('settingsBtn');
-const settingsPanel    = document.getElementById('settingsPanel');
-const tableToggle      = document.getElementById('tableToggle');
-const tableIntervalBtns = document.querySelectorAll('.table-interval-btn');
-const slopeGaugeToggle = document.getElementById('slopeGaugeToggle');
-const negTimeToggle    = document.getElementById('negTimeToggle');
+const unitsBtn          = document.getElementById('unitsBtn');
+const unitsBtnValue      = unitsBtn.querySelector('b');
+const graphModeBtn      = document.getElementById('graphModeBtn');
+const graphModeBtnValue = graphModeBtn.querySelector('b');
+const tableBtn          = document.getElementById('tableBtn');
+const tableBtnValue     = tableBtn.querySelector('b');
+const tableIntervalBtn      = document.getElementById('tableIntervalBtn');
+const tableIntervalBtnValue = tableIntervalBtn.querySelector('b');
+const slopeGaugeBtn      = document.getElementById('slopeGaugeBtn');
+const slopeGaugeBtnValue = slopeGaugeBtn.querySelector('b');
+const negTimeBtn      = document.getElementById('negTimeBtn');
+const negTimeBtnValue = negTimeBtn.querySelector('b');
+const gaugeBtn      = document.getElementById('gaugeBtn');
+const gaugeBtnValue = gaugeBtn.querySelector('b');
 const tableCol         = document.getElementById('tableCol');
 const slopeOverlay     = document.getElementById('slopeOverlay');
 const distOverlay      = document.getElementById('distOverlay');
@@ -422,10 +366,13 @@ function updateTableHeader() {
     ? `Speed (${currentUnit}/s)` : `Distance (${currentUnit})`;
 }
 
-settingsBtn.onclick = (e) => { e.stopPropagation(); settingsPanel.classList.toggle('open'); };
-document.addEventListener('click', (e) => {
-  if (!settingsPanel.contains(e.target) && e.target !== settingsBtn) settingsPanel.classList.remove('open');
-});
+// State for the toggles above that used to be checkboxes — plain booleans
+// now, driven by the stacked header buttons.
+let tableOn = false;
+let slopeGaugeOn = false;
+let negTimeOn = false;
+let gaugeOn = false;
+distOverlay.style.display = 'none'; // gauge starts OFF — see gaugeBtn wiring further down
 
 // ── SHARED SNAPPING: find the actual recorded sample closest to a target
 // time. Used by both the per-second graph markers AND the table, so both
@@ -473,7 +420,7 @@ function interpolateAt(t) {
 // — interpolated through any tracking gaps rather than snapping to
 // whatever real sample happened to be nearby.
 let tableInterval = 1; // seconds; default matches the "1s" button
-function tableMinT() { return negTimeToggle.checked ? NEG_TIME_MIN : 0; }
+function tableMinT() { return negTimeOn ? NEG_TIME_MIN : 0; }
 
 function rebuildTable() {
   dataTableBody.innerHTML = '';
@@ -495,24 +442,33 @@ function rebuildTable() {
   scrollBox.scrollTop = scrollBox.scrollHeight;
 }
 
-tableToggle.onchange = () => {
-  tableCol.classList.toggle('hidden', !tableToggle.checked);
-  if (tableToggle.checked) rebuildTable();
+tableBtn.onclick = () => {
+  tableOn = !tableOn;
+  tableBtnValue.textContent = tableOn ? 'On' : 'Off';
+  tableCol.classList.toggle('hidden', !tableOn);
+  if (tableOn) rebuildTable();
 };
-tableIntervalBtns.forEach(btn => {
-  btn.onclick = () => {
-    tableInterval = parseFloat(btn.dataset.interval);
-    tableIntervalBtns.forEach(b => b.classList.toggle('active', b === btn));
-    if (tableToggle.checked) rebuildTable(); // re-thin existing data to the new interval
-  };
-});
-negTimeToggle.onchange = () => {
-  chart.options.scales.x.min = negTimeToggle.checked ? NEG_TIME_MIN : 0;
+tableIntervalBtn.onclick = () => {
+  tableInterval = tableInterval === 1 ? 0.5 : 1;
+  tableIntervalBtnValue.textContent = tableInterval + 's';
+  if (tableOn) rebuildTable(); // re-thin existing data to the new interval
+};
+negTimeBtn.onclick = () => {
+  negTimeOn = !negTimeOn;
+  negTimeBtnValue.textContent = negTimeOn ? 'On' : 'Off';
+  chart.options.scales.x.min = negTimeOn ? NEG_TIME_MIN : 0;
   chart.update();
-  if (tableToggle.checked) rebuildTable();
+  if (tableOn) rebuildTable();
 };
-slopeGaugeToggle.onchange = () => {
-  slopeOverlay.classList.toggle('hidden', !slopeGaugeToggle.checked);
+slopeGaugeBtn.onclick = () => {
+  slopeGaugeOn = !slopeGaugeOn;
+  slopeGaugeBtnValue.textContent = slopeGaugeOn ? 'On' : 'Off';
+  slopeOverlay.classList.toggle('hidden', !slopeGaugeOn);
+};
+gaugeBtn.onclick = () => {
+  gaugeOn = !gaugeOn;
+  gaugeBtnValue.textContent = gaugeOn ? 'On' : 'Off';
+  distOverlay.style.display = gaugeOn ? 'flex' : 'none';
 };
 
 // ── DRAGGABLE OVERLAYS: distance gauge + slope gauge, both movable
@@ -847,16 +803,14 @@ chart.canvas.addEventListener('click', (e) => {
 // chart's axis text/lines are set directly in JS (Chart.js doesn't read
 // CSS variables), so chartTextColor is reapplied here whenever it changes.
 const THEME_KEY = 'mm_theme';
-const darkThemeBtn  = document.getElementById('darkThemeBtn');
-const lightThemeBtn = document.getElementById('lightThemeBtn');
+const themeBtn = document.getElementById('themeBtn');
 function getTheme() {
   try { return sessionStorage.getItem(THEME_KEY) || 'dark'; } catch(e) { return 'dark'; }
 }
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   try { sessionStorage.setItem(THEME_KEY, theme); } catch(e) {}
-  darkThemeBtn.classList.toggle('active', theme === 'dark');
-  lightThemeBtn.classList.toggle('active', theme === 'light');
+  themeBtn.textContent = theme === 'light' ? '☀ Light' : '🌙 Dark';
   chartTextColor = theme === 'light' ? '#1a1d27' : '#ffffff';
   chart.options.scales.x.title.color = chartTextColor;
   chart.options.scales.x.ticks.color = chartTextColor;
@@ -864,8 +818,7 @@ function applyTheme(theme) {
   chart.options.scales.y.ticks.color = chartTextColor;
   chart.update();
 }
-darkThemeBtn.onclick  = () => applyTheme('dark');
-lightThemeBtn.onclick = () => applyTheme('light');
+themeBtn.onclick = () => applyTheme(getTheme() === 'light' ? 'dark' : 'light');
 applyTheme(getTheme());
 
 // ════════════════════════════════════════════════
@@ -1087,7 +1040,7 @@ function recordPoint(value) {
     data.push([tv,dv]);
     chart.data.datasets[0].data.push({x:tv,y:dv});
     chart.update('none');
-    if (tableToggle.checked) rebuildTable();
+    if (tableOn) rebuildTable();
   }
 }
 
@@ -1193,7 +1146,7 @@ function beginRecording(){
   statusDot.classList.add('recording');
   startBtn.textContent = '■ Stop';
   chart.options.scales.x.max = INITIAL_WINDOW; // reset growth from any prior take
-  chart.options.scales.x.min = negTimeToggle.checked ? NEG_TIME_MIN : 0;
+  chart.options.scales.x.min = negTimeOn ? NEG_TIME_MIN : 0;
   // Ghost previous run (faint)
   const prev=chart.data.datasets[0];
   const ghost = (prev&&prev.data&&prev.data.length>0) ? {
@@ -1277,8 +1230,7 @@ function setUnit(unit) {
   const prevUnit = currentUnit;
   currentUnit = unit;
   Units.setPref({ dist: currentUnit });
-  ftBtn.classList.toggle('active', currentUnit === 'ft');
-  mBtn.classList.toggle('active', currentUnit === 'm');
+  unitsBtnValue.textContent = currentUnit;
   distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
   // Retroactively convert already-plotted points so the graph stays
   // consistent rather than showing a mix of units
@@ -1286,12 +1238,11 @@ function setUnit(unit) {
   chart.data.datasets.forEach(ds => {
     ds.data = ds.data.map(pt => ({ x: pt.x, y: convertDist(pt.y, prevUnit, currentUnit) }));
   });
-  if (tableToggle.checked) rebuildTable();
+  if (tableOn) rebuildTable();
   updateTableHeader();
   applyAxisConfig();
 }
-ftBtn.onclick = () => setUnit('ft');
-mBtn.onclick  = () => setUnit('m');
+unitsBtn.onclick = () => setUnit(currentUnit === 'ft' ? 'm' : 'ft');
 
 function setGraphMode(mode) {
   if (mode === graphMode) return;
@@ -1300,8 +1251,7 @@ function setGraphMode(mode) {
   // fabricated speed history from stale distance data would be
   // pedagogically misleading (looks like real motion, isn't).
   graphMode = mode;
-  modeDistBtn.classList.toggle('active', mode === 'distance');
-  modeSpeedBtn.classList.toggle('active', mode === 'speed');
+  graphModeBtnValue.textContent = mode === 'speed' ? 'Speed' : 'Dist';
   data = [];
   dataTableBody.innerHTML = '';
   chart.data.datasets = [motionDataset()];
@@ -1309,13 +1259,11 @@ function setGraphMode(mode) {
   updateTableHeader();
   applyAxisConfig();
 }
-modeDistBtn.onclick  = () => setGraphMode('distance');
-modeSpeedBtn.onclick = () => setGraphMode('speed');
-setGraphMode('distance'); // initialize button highlight state
+graphModeBtn.onclick = () => setGraphMode(graphMode === 'distance' ? 'speed' : 'distance');
+setGraphMode('distance'); // initialize button label state
 
 // Apply saved unit preference on load
-ftBtn.classList.toggle('active', currentUnit === 'ft');
-mBtn.classList.toggle('active', currentUnit === 'm');
+unitsBtnValue.textContent = currentUnit;
 distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
 
 clearBtn.onclick=()=>{
@@ -1323,7 +1271,7 @@ clearBtn.onclick=()=>{
   recording=false; startBtn.disabled=false; startBtn.textContent='▶ Start'; data=[];
   dataTableBody.innerHTML='';
   chart.options.scales.x.max = INITIAL_WINDOW;
-  chart.options.scales.x.min = negTimeToggle.checked ? NEG_TIME_MIN : 0;
+  chart.options.scales.x.min = negTimeOn ? NEG_TIME_MIN : 0;
   chart.data.datasets=[motionDataset()];
   pinnedPoints = []; hoverPreview = null;
   chart.update();
