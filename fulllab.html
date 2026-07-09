@@ -79,6 +79,14 @@
     }
     .hdr-btn.stacked span { font-size: 0.6rem; letter-spacing: 1px; }
     .hdr-btn.stacked b    { font-size: 0.8rem; color: var(--accent); }
+
+    .hdr-group { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+    .hdr-group-label {
+      font-family: 'Space Mono', monospace; font-size: 0.55rem; color: var(--muted);
+      letter-spacing: 1.5px; text-transform: uppercase; padding-left: 2px;
+    }
+    .hdr-group-btns { display: flex; gap: 6px; }
+    .hdr-divider { align-self: stretch; width: 1px; background: var(--border); margin: 2px 0; }
     .hidden { display: none !important; }
 
     /* ── CONTENT ── */
@@ -136,9 +144,8 @@
       letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
       transition: all 0.15s;
     }
-    #cameraBtn  { background: rgba(0,229,255,0.1);  color: var(--accent);  border-color: rgba(0,229,255,0.3); }
-    #cameraBtn:hover  { background: rgba(0,229,255,0.2); }
-    #cameraBtn:disabled { opacity: 0.4; cursor: default; }
+    #startBtn.cam-pending { background: rgba(0,229,255,0.1);  color: var(--accent);  border-color: rgba(0,229,255,0.3); }
+    #startBtn.cam-pending:hover { background: rgba(0,229,255,0.2); }
     #startBtn   { background: rgba(105,240,174,0.1); color: var(--accent3); border-color: rgba(105,240,174,0.3); }
     #startBtn:hover:not(:disabled)   { background: rgba(105,240,174,0.2); }
     #startBtn:disabled { opacity: 0.4; cursor: default; }
@@ -229,14 +236,38 @@
     <a class="hdr-btn back" href="index.html">← Home</a>
     <h1>Full Lab</h1>
     <div class="status-dot" id="statusDot"></div>
-    <button class="hdr-btn stacked" id="unitsBtn" type="button"><span>Units</span><b>ft</b></button>
-    <button class="hdr-btn stacked" id="graphModeBtn" type="button"><span>Graph</span><b>Dist</b></button>
-    <button class="hdr-btn stacked" id="tableBtn" type="button"><span>Table</span><b>Off</b></button>
-    <button class="hdr-btn stacked" id="tableIntervalBtn" type="button"><span>Every</span><b>1s</b></button>
-    <button class="hdr-btn stacked" id="slopeGaugeBtn" type="button"><span>Slope</span><b>Off</b></button>
-    <button class="hdr-btn stacked" id="negTimeBtn" type="button"><span>-3s</span><b>Off</b></button>
-    <button class="hdr-btn stacked" id="gaugeBtn" type="button"><span>Gauge</span><b>Off</b></button>
-    <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
+
+    <div class="hdr-group">
+      <span class="hdr-group-label">Inputs (x)</span>
+      <div class="hdr-group-btns">
+        <button class="hdr-btn stacked" id="tableIntervalBtn" type="button"><span>Every</span><b>1s</b></button>
+      </div>
+    </div>
+    <div class="hdr-divider"></div>
+    <div class="hdr-group">
+      <span class="hdr-group-label">Outputs (y)</span>
+      <div class="hdr-group-btns">
+        <button class="hdr-btn stacked" id="unitsBtn" type="button"><span>Units</span><b>ft</b></button>
+        <button class="hdr-btn stacked" id="negTimeBtn" type="button"><span>-3s</span><b>Off</b></button>
+        <button class="hdr-btn stacked" id="graphModeBtn" type="button"><span>Graph</span><b>Dist</b></button>
+      </div>
+    </div>
+    <div class="hdr-divider"></div>
+    <div class="hdr-group">
+      <span class="hdr-group-label">Data</span>
+      <div class="hdr-group-btns">
+        <button class="hdr-btn stacked" id="tableBtn" type="button"><span>Table</span><b>Off</b></button>
+        <button class="hdr-btn stacked" id="slopeGaugeBtn" type="button"><span>Slope</span><b>Off</b></button>
+        <button class="hdr-btn stacked" id="gaugeBtn" type="button"><span>Distance</span><b>Off</b></button>
+      </div>
+    </div>
+    <div class="hdr-divider"></div>
+    <div class="hdr-group">
+      <span class="hdr-group-label">Display</span>
+      <div class="hdr-group-btns">
+        <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
+      </div>
+    </div>
   </div>
 
   <!-- CONTENT -->
@@ -258,8 +289,7 @@
       </div>
 
       <div id="controls">
-        <button class="ctrl-btn" id="cameraBtn">Camera On</button>
-        <button class="ctrl-btn" id="startBtn" disabled>▶ Start</button>
+        <button class="ctrl-btn cam-pending" id="startBtn">Camera On</button>
         <button class="ctrl-btn" id="clearBtn">✕ Clear</button>
       </div>
 
@@ -330,7 +360,6 @@ const distBadge      = document.getElementById('distBadge');
 const videoWrapper   = document.getElementById('videoWrapper');
 const camPlaceholder = document.getElementById('camPlaceholder');
 const statusDot      = document.getElementById('statusDot');
-const cameraBtn      = document.getElementById('cameraBtn');
 const startBtn       = document.getElementById('startBtn');
 const clearBtn       = document.getElementById('clearBtn');
 const distReadout    = document.getElementById('distReadout');
@@ -394,6 +423,20 @@ function formatDist(v) {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(places);
 }
 
+// Speed always shows hundredths regardless of unit (unlike distance, which
+// stays at tenths for feet) — a derived rate benefits from the extra digit
+// more than a directly-measured distance does.
+function formatSpeed(v) {
+  const rounded = Math.round(v * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+}
+
+// Dispatches to whichever of the two the current graph mode calls for —
+// used everywhere a plotted VALUE (not time) gets displayed.
+function formatValue(v) {
+  return graphMode === 'speed' ? formatSpeed(v) : formatDist(v);
+}
+
 // Interpolates the value AT an exact target time from the two real
 // samples bracketing it — works even across a tracking gap, since it
 // only needs one good sample before and one after. Returns the bracket
@@ -412,6 +455,39 @@ function interpolateAt(t) {
     }
   }
   return null;
+}
+
+// Derives a speed dataset from a distance dataset for the Graph Type
+// switch. Samples distance at each "Every" interval mark (reusing
+// interpolateAt, gap-safe, same technique the table already uses) rather
+// than differencing raw consecutive samples, which would mostly just
+// amplify tracking jitter into a much noisier "speed" than the actual
+// motion. Each derived speed point is placed at the MIDPOINT of the
+// interval it was computed over — the mathematically honest spot for an
+// average rate, not at either endpoint.
+function deriveSpeedFromDistance(distanceData, interval) {
+  if (distanceData.length < 2) return [];
+  const savedData = data;
+  data = distanceData; // interpolateAt reads the global `data`
+  const firstT = distanceData[0][0], lastT = distanceData[distanceData.length-1][0];
+  const startTarget = Math.ceil(firstT / interval) * interval;
+  const steps = Math.floor((lastT - startTarget) / interval + 0.0001);
+  const marks = [];
+  for (let i = 0; i <= steps; i++) {
+    const target = startTarget + i * interval;
+    const result = interpolateAt(target);
+    if (result) marks.push({ t: target, v: result.v });
+  }
+  data = savedData;
+  const speedPoints = [];
+  for (let i = 1; i < marks.length; i++) {
+    const dt = marks[i].t - marks[i-1].t;
+    if (dt <= 0.0001) continue;
+    const speed = (marks[i].v - marks[i-1].v) / dt;
+    const tMid = (marks[i].t + marks[i-1].t) / 2;
+    speedPoints.push([parseFloat(tMid.toFixed(3)), parseFloat(speed.toFixed(4))]);
+  }
+  return speedPoints;
 }
 
 // ── DATA TABLE: tenths-of-a-unit precision, thinned to a chosen interval
@@ -435,7 +511,7 @@ function rebuildTable() {
     const result = interpolateAt(target);
     if (!result) continue;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${formatSig(target)}</td><td>${formatDist(result.v)}</td>`;
+    tr.innerHTML = `<td>${formatSig(target)}</td><td>${formatValue(result.v)}</td>`;
     dataTableBody.appendChild(tr);
   }
   const scrollBox = dataTableBody.parentElement.parentElement;
@@ -451,6 +527,8 @@ tableBtn.onclick = () => {
 tableIntervalBtn.onclick = () => {
   tableInterval = tableInterval === 1 ? 0.5 : 1;
   tableIntervalBtnValue.textContent = tableInterval + 's';
+  chart.options.scales.x.ticks.stepSize = tableInterval;
+  chart.update();
   if (tableOn) rebuildTable(); // re-thin existing data to the new interval
 };
 negTimeBtn.onclick = () => {
@@ -537,8 +615,14 @@ let   focalLength = 863;
 // as a known simplification, not a bug.
 let currentUnit = Units.getPref().dist; // 'ft' | 'm'
 let graphMode   = 'distance'; // 'distance' | 'speed'
-// Speed range is a first guess (not empirically tuned) — signed, so 0 sits
-// in the middle: positive = moving away, negative = moving closer.
+// Snapshot of the distance dataset, taken right before a Distance→Speed
+// switch derives a speed dataset from it. Lets Speed→Distance restore the
+// exact original points instead of trying to integrate speed back into
+// distance, which would compound tracking noise rather than undo it.
+let cachedDistanceData = null;
+// distance range is a fixed headroom guess; speed's max/min are now
+// computed dynamically from the derived data itself (see applyAxisConfig)
+// — this fallback only applies before anything's been recorded yet.
 const Y_MAX = {
   distance: { ft: 10.5, m: 3.2 },  // labeled ceiling is 10ft/3m — this is
                                      // headroom so a point AT the ceiling
@@ -673,7 +757,7 @@ const coordLabelPlugin = {
       const xPx = xScale.getPixelForValue(t);
       const yPx = yScale.getPixelForValue(v);
       if (xPx < xScale.left || xPx > xScale.right) return;
-      drawCoordDot(c2, xPx, yPx, `(${formatSig(t)}, ${formatDist(v)})`,
+      drawCoordDot(c2, xPx, yPx, `(${formatSig(t)}, ${formatValue(v)})`,
         { fill: '#ff4081', stroke: '#ffffff', alpha: 1 });
     });
 
@@ -698,9 +782,9 @@ const coordLabelPlugin = {
 
         c2.font = 'bold 14px "Space Mono", monospace';
         drawAxisChip(c2, xPx, yScale.bottom + 18, formatSig(hoverPreview.t), 'center');
-        drawAxisChip(c2, xScale.left - 6, yPx, formatDist(hoverPreview.v), 'right');
+        drawAxisChip(c2, xScale.left - 6, yPx, formatValue(hoverPreview.v), 'right');
 
-        drawCoordDot(c2, xPx, yPx, `(${formatSig(hoverPreview.t)}, ${formatDist(hoverPreview.v)})`,
+        drawCoordDot(c2, xPx, yPx, `(${formatSig(hoverPreview.t)}, ${formatValue(hoverPreview.v)})`,
           { fill: '#ffd740', stroke: '#ffffff', alpha: 0.7 }, 19);
       }
     }
@@ -739,7 +823,8 @@ const chart = new Chart(document.getElementById('chart'), {
         ticks: {
           color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
           maxTicksLimit: 14,
-          callback: v => Number.isInteger(v) ? String(v) : v.toFixed(1)
+          stepSize: 1, // toggled to 0.5 by the "Every" header button
+          callback: v => Number.isInteger(v) ? String(v) : ''
         },
         grid: {
           color: c => Number.isInteger(c.tick.value) ? 'rgba(160,180,255,0.55)' : 'rgba(100,120,200,0.25)',
@@ -1069,31 +1154,6 @@ overlay.addEventListener('click', (e) => {
 });
 
 // ════════════════════════════════════════════════
-// CAMERA
-// ════════════════════════════════════════════════
-cameraBtn.onclick = () => {
-  if(arucoMode){
-    if(typeof AR==='undefined'){alert('ArUco library failed to load. Refresh.');return;}
-    if(!detector) detector=new AR.Detector();
-  }
-  navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720}}})
-    .then(stream=>{
-      video.srcObject=stream; video.style.display='block';
-      camPlaceholder.style.display='none';
-      mediaStreamTrack = stream.getVideoTracks()[0];
-      video.onloadedmetadata=()=>{
-        video.play();
-        statusDot.classList.add('active');
-        startBtn.disabled=false;
-        startTime=Date.now();
-        requestAnimationFrame(processVideo);
-      };
-      cameraBtn.disabled=true; cameraBtn.textContent='Camera On';
-    })
-    .catch(err=>alert('Camera access denied: '+err.message));
-};
-
-// ════════════════════════════════════════════════
 // RECORDING
 // ════════════════════════════════════════════════
 function playChime(isGo){
@@ -1108,7 +1168,36 @@ function playChime(isGo){
   }catch(e){}
 }
 
+// First click: request camera permission, turn on the live preview.
+// Once the camera's on, the SAME button becomes Start/Stop for recording —
+// its own label/color switch is the only feedback needed.
+let cameraOn = false;
 startBtn.onclick = () => {
+  if (!cameraOn) {
+    if(arucoMode){
+      if(typeof AR==='undefined'){alert('ArUco library failed to load. Refresh.');return;}
+      if(!detector) detector=new AR.Detector();
+    }
+    startBtn.disabled=true;
+    navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720}}})
+      .then(stream=>{
+        video.srcObject=stream; video.style.display='block';
+        camPlaceholder.style.display='none';
+        mediaStreamTrack = stream.getVideoTracks()[0];
+        video.onloadedmetadata=()=>{
+          video.play();
+          statusDot.classList.add('active');
+          startTime=Date.now();
+          requestAnimationFrame(processVideo);
+        };
+        cameraOn = true;
+        startBtn.disabled=false;
+        startBtn.classList.remove('cam-pending');
+        startBtn.textContent='▶ Start';
+      })
+      .catch(err=>{ alert('Camera access denied: '+err.message); startBtn.disabled=false; });
+    return;
+  }
   if(recording){ stopRecording(); return; }
   beginRecording(); // data collection starts NOW — t is negative until "Go"
   countingDown = true;
@@ -1140,7 +1229,7 @@ startBtn.onclick = () => {
 };
 
 function beginRecording(){
-  data=[]; recording=true;
+  data=[]; recording=true; cachedDistanceData=null; // stale cache from a prior mode switch must not survive into a fresh take
   startTime=Date.now(); lastRecordTime=-Infinity; // startTime = button press (T0); recordPoint subtracts GO_DELAY
   smooth=MotionTracker.createSmoother(); calcSlope=MotionTracker.createSlopeCalc();
   dataTableBody.innerHTML='';
@@ -1220,8 +1309,23 @@ function convertDist(val, fromU, toU) {
 }
 
 function applyAxisConfig() {
-  chart.options.scales.y.max = Y_MAX[graphMode][currentUnit];
-  chart.options.scales.y.min = graphMode === 'speed' ? -Y_MAX.speed[currentUnit] : 0;
+  if (graphMode === 'speed' && data.length) {
+    // Scale to the actual derived data rather than a fixed guess — a
+    // thrown object (once that's tracked) could easily exceed a fixed
+    // ±3 range, and a gentle walk would be dwarfed by one that's too wide.
+    const speeds = data.map(([,v]) => v);
+    const dataMax = Math.max(...speeds), dataMin = Math.min(...speeds);
+    const span = Math.max(dataMax - dataMin, 0.5); // avoid a degenerate near-zero range
+    const pad = span * 0.15;
+    chart.options.scales.y.max = Math.max(dataMax + pad, 0.1);
+    chart.options.scales.y.min = Math.min(dataMin - pad, -0.1); // keep zero visible — crossing it is the moment that matters most
+  } else if (graphMode === 'speed') {
+    chart.options.scales.y.max = Y_MAX.speed[currentUnit]; // nothing recorded yet — fixed guess until there's real data to scale to
+    chart.options.scales.y.min = -Y_MAX.speed[currentUnit];
+  } else {
+    chart.options.scales.y.max = Y_MAX.distance[currentUnit];
+    chart.options.scales.y.min = 0;
+  }
   chart.options.scales.y.title.text = graphMode === 'speed'
     ? `Speed (${currentUnit}/s)` : `Distance (${currentUnit})`;
   chart.update();
@@ -1235,11 +1339,17 @@ function setUnit(unit) {
   unitsBtnValue.textContent = currentUnit;
   distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
   // Retroactively convert already-plotted points so the graph stays
-  // consistent rather than showing a mix of units
+  // consistent rather than showing a mix of units. Works for speed values
+  // too — the ft→m conversion factor applies the same way since time is
+  // unit-independent.
   data = data.map(([t,d]) => [t, convertDist(d, prevUnit, currentUnit)]);
   chart.data.datasets.forEach(ds => {
     ds.data = ds.data.map(pt => ({ x: pt.x, y: convertDist(pt.y, prevUnit, currentUnit) }));
   });
+  if (cachedDistanceData) {
+    cachedDistanceData = cachedDistanceData.map(([t,d]) => [t, convertDist(d, prevUnit, currentUnit)]);
+  }
+  pinnedPoints = []; hoverPreview = null; // these weren't unit-converted, so clear rather than leave them off the line
   if (tableOn) rebuildTable();
   updateTableHeader();
   applyAxisConfig();
@@ -1248,18 +1358,34 @@ unitsBtn.onclick = () => setUnit(currentUnit === 'ft' ? 'm' : 'ft');
 
 function setGraphMode(mode) {
   if (mode === graphMode) return;
-  // Switching modes clears the graph rather than trying to convert
-  // distance points into speed points (or vice versa) — plotting a
-  // fabricated speed history from stale distance data would be
-  // pedagogically misleading (looks like real motion, isn't).
+  const prevMode = graphMode;
   graphMode = mode;
   graphModeBtnValue.textContent = mode === 'speed' ? 'Speed' : 'Dist';
-  data = [];
+
+  if (mode === 'speed' && prevMode === 'distance' && data.length >= 2) {
+    // Redraw as speed, derived from the distance data just recorded —
+    // cache the original first so switching back is a lossless restore,
+    // not an attempt to integrate speed back into distance (which would
+    // compound tracking noise rather than undo it).
+    cachedDistanceData = data;
+    data = deriveSpeedFromDistance(cachedDistanceData, tableInterval);
+  } else if (mode === 'distance' && prevMode === 'speed' && cachedDistanceData) {
+    data = cachedDistanceData;
+    cachedDistanceData = null;
+  } else {
+    // Nothing sensible to derive/restore (empty data, or a fresh start
+    // directly in this mode) — same clean-slate behavior as before.
+    data = [];
+    cachedDistanceData = null;
+  }
+
   dataTableBody.innerHTML = '';
   chart.data.datasets = [motionDataset()];
+  chart.data.datasets[0].data = data.map(([t,v]) => ({ x: t, y: v }));
   pinnedPoints = []; hoverPreview = null;
   updateTableHeader();
   applyAxisConfig();
+  if (tableOn) rebuildTable();
 }
 graphModeBtn.onclick = () => setGraphMode(graphMode === 'distance' ? 'speed' : 'distance');
 setGraphMode('distance'); // initialize button label state
@@ -1270,7 +1396,7 @@ distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
 
 clearBtn.onclick=()=>{
   if(countingDown){clearTimeout(preDelayTimer);clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
-  recording=false; startBtn.disabled=false; startBtn.textContent='▶ Start'; data=[];
+  recording=false; startBtn.disabled=false; startBtn.textContent='▶ Start'; data=[]; cachedDistanceData=null;
   dataTableBody.innerHTML='';
   chart.options.scales.x.max = INITIAL_WINDOW;
   chart.options.scales.x.min = negTimeOn ? NEG_TIME_MIN : 0;

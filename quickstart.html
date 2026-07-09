@@ -134,9 +134,8 @@
       letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
       transition: all 0.15s;
     }
-    #cameraBtn  { background: rgba(0,229,255,0.1);  color: var(--accent);  border-color: rgba(0,229,255,0.3); }
-    #cameraBtn:hover  { background: rgba(0,229,255,0.2); }
-    #cameraBtn:disabled { opacity: 0.4; cursor: default; }
+    #startBtn.cam-pending { background: rgba(0,229,255,0.1);  color: var(--accent);  border-color: rgba(0,229,255,0.3); }
+    #startBtn.cam-pending:hover { background: rgba(0,229,255,0.2); }
     #startBtn   { background: rgba(105,240,174,0.1); color: var(--accent3); border-color: rgba(105,240,174,0.3); }
     #startBtn:hover:not(:disabled)   { background: rgba(105,240,174,0.2); }
     #startBtn:disabled { opacity: 0.4; cursor: default; }
@@ -187,7 +186,7 @@
     <h1>Quick Start</h1>
     <div class="status-dot" id="statusDot"></div>
     <button class="hdr-btn stacked" id="unitsBtn" type="button"><span>Units</span><b>ft</b></button>
-    <button class="hdr-btn stacked" id="gaugeBtn" type="button"><span>Gauge</span><b>Off</b></button>
+    <button class="hdr-btn stacked" id="gaugeBtn" type="button"><span>Distance</span><b>Off</b></button>
     <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
   </div>
 
@@ -210,8 +209,7 @@
       </div>
 
       <div id="controls">
-        <button class="ctrl-btn" id="cameraBtn">Camera On</button>
-        <button class="ctrl-btn" id="startBtn" disabled>▶ Start</button>
+        <button class="ctrl-btn cam-pending" id="startBtn">Camera On</button>
         <button class="ctrl-btn" id="clearBtn">✕ Clear</button>
       </div>
     </div>
@@ -260,7 +258,6 @@ const distBadge      = document.getElementById('distBadge');
 const videoWrapper   = document.getElementById('videoWrapper');
 const camPlaceholder = document.getElementById('camPlaceholder');
 const statusDot      = document.getElementById('statusDot');
-const cameraBtn      = document.getElementById('cameraBtn');
 const startBtn       = document.getElementById('startBtn');
 const clearBtn       = document.getElementById('clearBtn');
 const distReadout    = document.getElementById('distReadout');
@@ -732,31 +729,6 @@ overlay.addEventListener('click', (e) => {
 });
 
 // ════════════════════════════════════════════════
-// CAMERA
-// ════════════════════════════════════════════════
-cameraBtn.onclick = () => {
-  if(arucoMode){
-    if(typeof AR==='undefined'){alert('ArUco library failed to load. Refresh.');return;}
-    if(!detector) detector=new AR.Detector();
-  }
-  navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720}}})
-    .then(stream=>{
-      video.srcObject=stream; video.style.display='block';
-      camPlaceholder.style.display='none';
-      mediaStreamTrack = stream.getVideoTracks()[0];
-      video.onloadedmetadata=()=>{
-        video.play();
-        statusDot.classList.add('active');
-        startBtn.disabled=false;
-        startTime=Date.now();
-        requestAnimationFrame(processVideo);
-      };
-      cameraBtn.disabled=true; cameraBtn.textContent='Camera On';
-    })
-    .catch(err=>alert('Camera access denied: '+err.message));
-};
-
-// ════════════════════════════════════════════════
 // RECORDING
 // ════════════════════════════════════════════════
 function playChime(isGo){
@@ -771,7 +743,36 @@ function playChime(isGo){
   }catch(e){}
 }
 
+// First click: request camera permission, turn on the live preview.
+// Once the camera's on, the SAME button becomes the recording trigger —
+// its own label/color switch is the only feedback needed.
+let cameraOn = false;
 startBtn.onclick = () => {
+  if (!cameraOn) {
+    if(arucoMode){
+      if(typeof AR==='undefined'){alert('ArUco library failed to load. Refresh.');return;}
+      if(!detector) detector=new AR.Detector();
+    }
+    startBtn.disabled=true;
+    navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720}}})
+      .then(stream=>{
+        video.srcObject=stream; video.style.display='block';
+        camPlaceholder.style.display='none';
+        mediaStreamTrack = stream.getVideoTracks()[0];
+        video.onloadedmetadata=()=>{
+          video.play();
+          statusDot.classList.add('active');
+          startTime=Date.now();
+          requestAnimationFrame(processVideo);
+        };
+        cameraOn = true;
+        startBtn.disabled=false;
+        startBtn.classList.remove('cam-pending');
+        startBtn.textContent='▶ Start';
+      })
+      .catch(err=>{ alert('Camera access denied: '+err.message); startBtn.disabled=false; });
+    return;
+  }
   if(countingDown||recording) return;
   startBtn.disabled=true;
   beginRecording(); // data collection starts NOW — t is negative until "Go"
@@ -854,6 +855,7 @@ function setUnit(unit) {
   chart.data.datasets.forEach(ds => {
     ds.data = ds.data.map(pt => ({ x: pt.x, y: convertDist(pt.y, prevUnit, currentUnit) }));
   });
+  pinnedPoints = []; hoverPreview = null; // these weren't unit-converted, so clear rather than leave them off the line
   chart.update();
 }
 unitsBtn.onclick = () => setUnit(currentUnit === 'ft' ? 'm' : 'ft');
