@@ -244,7 +244,7 @@
     <div class="hdr-group">
       <span class="hdr-group-label">Inputs (x)</span>
       <div class="hdr-group-btns">
-        <button class="hdr-btn stacked" id="durationBtn" type="button"><span>Duration</span><b>10s</b></button>
+        <button class="hdr-btn stacked" id="durationBtn" type="button"><span>Duration</span><b>5s</b></button>
         <button class="hdr-btn stacked" id="tableIntervalBtn" type="button"><span>Every</span><b>1s</b></button>
       </div>
     </div>
@@ -626,7 +626,7 @@ const COUNTDOWN_LEN  = 3;                // visible 3-2-1 countdown
 const GO_DELAY        = PRE_DELAY + COUNTDOWN_LEN; // 3.5s — Start press to "Go"
 // Recording duration AND the x-axis window are the same number — driven
 // by the "Duration" header toggle (5s/8s/10s), not fixed constants.
-let recordingDuration = 10;
+let recordingDuration = 5;
 const NEG_TIME_MIN    = -3;               // how far back the toggle reveals
 const MARKER_SIZE = 14.0;  // cm — printable ArUco PDF
 const BALL_DIAM   = tracking ? (tracking.ballDiam || 15.2) : 15.2; // cm
@@ -851,10 +851,32 @@ const axisLabelsPlugin = {
   }
 };
 
-// Finds every x-intercept (speed = 0) in the current speed data by linear
-// interpolation between consecutive samples that straddle zero — same
-// technique as deriveSpeedFromDistance, just solving for t at v=0 instead
-// of v at a given t. Used both to draw always-visible markers (so
+// Returns where the CHART'S OWN RENDERED curve sits at time t — not a
+// linear interpolation between the two nearest raw samples. With sparse
+// interval data (0.5-1s apart) and a smooth spline connecting it, a
+// straight-line estimate between samples can visibly diverge from the
+// actual bowed curve, which is exactly why clicked points sometimes
+// looked like they were floating off the line. Chart.js's line element
+// exposes .interpolate() for precisely this — reading pixel-accurate
+// curve position — with a graceful fallback to the simple linear method
+// if that API isn't available for some reason.
+function curveValueAt(t) {
+  try {
+    const el = chart.getDatasetMeta(0) && chart.getDatasetMeta(0).dataset;
+    if (el && typeof el.interpolate === 'function') {
+      const pt = el.interpolate({ x: t }, 'x');
+      if (pt && Number.isFinite(pt.y)) return pt.y;
+    }
+  } catch (e) {}
+  const result = interpolateAt(t);
+  return result ? result.v : null;
+}
+
+// Finds every x-intercept (speed = 0) by bisection-searching the ACTUAL
+// rendered curve (via curveValueAt) between each pair of raw samples that
+// straddle zero — not a simple linear interpolation, which can miss where
+// a bowed spline really crosses by a noticeable margin at these sparse
+// interval spacings. Used both to draw always-visible markers (so
 // intercepts are visually "findable" without hunting) and to give the
 // hover/click snap a magnetic pull toward them (see snappedPreviewAt).
 function findZeroCrossings() {
@@ -862,10 +884,24 @@ function findZeroCrossings() {
   const crossings = [];
   for (let i = 0; i < data.length - 1; i++) {
     const [t0, v0] = data[i], [t1, v1] = data[i+1];
-    if (v0 === 0) crossings.push(t0);
-    else if ((v0 < 0) !== (v1 < 0)) {
+    if (v0 === 0) { crossings.push(t0); continue; }
+    if ((v0 < 0) === (v1 < 0)) continue; // no sign change across this raw interval
+    let lo = t0, hi = t1, loV = curveValueAt(t0), hiV = curveValueAt(t1);
+    if (loV === null || hiV === null || (loV < 0) === (hiV < 0)) {
+      // Curve lookup unavailable, or didn't confirm a sign change the way
+      // the raw samples suggested (shouldn't normally happen) — fall back
+      // to the simple linear estimate rather than producing nothing.
       crossings.push(t0 + (0 - v0) * (t1 - t0) / (v1 - v0));
+      continue;
     }
+    for (let iter = 0; iter < 20; iter++) {
+      const mid = (lo + hi) / 2;
+      const midV = curveValueAt(mid);
+      if (midV === null) break;
+      if ((midV < 0) === (loV < 0)) { lo = mid; loV = midV; }
+      else { hi = mid; hiV = midV; }
+    }
+    crossings.push((lo + hi) / 2);
   }
   return crossings;
 }
@@ -916,12 +952,16 @@ function motionDataset() {
     borderWidth: 3, pointRadius: 0, pointHoverRadius: 0, fill: true, tension: 0.3,
     // Explicit blue/red only in speed mode — distance is never negative,
     // but without this check it would ALSO turn Distance's line blue
-    // instead of leaving it at the app's normal cyan.
+    // instead of leaving it at the app's normal cyan. Colored by the
+    // AVERAGE of the two endpoints, not "either one negative" — that
+    // OR-rule colored an entire segment red the instant just one end
+    // dipped below zero, even barely, which visibly shifted the color
+    // boundary earlier than where the line actually crosses zero.
     segment: {
       borderColor: ctx => graphMode !== 'speed' ? undefined
-        : (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? '#ff5252' : '#448aff',
+        : (ctx.p0.parsed.y + ctx.p1.parsed.y) < 0 ? '#ff5252' : '#448aff',
       backgroundColor: ctx => graphMode !== 'speed' ? undefined
-        : (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? 'rgba(255,82,82,0.08)' : 'rgba(68,138,255,0.08)'
+        : (ctx.p0.parsed.y + ctx.p1.parsed.y) < 0 ? 'rgba(255,82,82,0.08)' : 'rgba(68,138,255,0.08)'
     }
   };
 }
@@ -1003,8 +1043,8 @@ function snappedPreviewAt(clientX) {
   }
 
   const snappedT = Math.round(rawT / HALF_STEP) * HALF_STEP;
-  const result = interpolateAt(snappedT);
-  return result === null ? null : { t: snappedT, v: result.v };
+  const v = curveValueAt(snappedT);
+  return v === null ? null : { t: snappedT, v };
 }
 
 chart.canvas.addEventListener('mousemove', (e) => {
@@ -1371,7 +1411,7 @@ startBtn.onclick = () => {
 };
 
 function beginRecording(){
-  data=[]; recording=true; cachedDistanceData=null; // stale cache from a prior mode switch must not survive into a fresh take
+  data=[]; recording=true; cachedDistanceData=null; pinnedPoints=[]; hoverPreview=null; // stale cache/points from a prior mode or run must not survive into a fresh take
   startTime=Date.now(); lastRecordTime=-Infinity; // startTime = button press (T0); recordPoint subtracts GO_DELAY
   smooth=MotionTracker.createSmoother(); calcSlope=MotionTracker.createSlopeCalc();
   dataTableBody.innerHTML='';
@@ -1380,9 +1420,11 @@ function beginRecording(){
   startBtn.textContent = '■ Stop';
   chart.options.scales.x.max = recordingDuration; // reset growth from any prior take
   chart.options.scales.x.min = negTimeOn ? NEG_TIME_MIN : 0;
-  // Ghost previous run (faint)
+  // Ghost previous run (faint) — distance mode only. A ghost of a derived,
+  // already-estimated speed curve (now also color-coded by sign) reads as
+  // visual clutter rather than a useful side-by-side comparison.
   const prev=chart.data.datasets[0];
-  const ghost = (prev&&prev.data&&prev.data.length>0) ? {
+  const ghost = (graphMode === 'distance' && prev&&prev.data&&prev.data.length>0) ? {
     label:'Prev',data:prev.data.slice(),
     borderColor:'rgba(0,229,255,0.15)',backgroundColor:'transparent',
     borderWidth:1,pointRadius:0,fill:false,tension:0.3
