@@ -667,6 +667,16 @@ const coordLabelPlugin = {
     c2.save();
     c2.textAlign = 'center';
 
+    // Pinned points draw first so the (larger, later-drawn) live hover
+    // point always renders on top when the two overlap.
+    pinnedPoints.forEach(({t, v}) => {
+      const xPx = xScale.getPixelForValue(t);
+      const yPx = yScale.getPixelForValue(v);
+      if (xPx < xScale.left || xPx > xScale.right) return;
+      drawCoordDot(c2, xPx, yPx, `(${formatSig(t)}, ${formatDist(v)})`,
+        { fill: '#ff4081', stroke: '#ffffff', alpha: 1 });
+    });
+
     // Live hover: dashed guide lines down to the x-axis and across to the
     // y-axis, with the exact value called out at each axis, plus a bigger
     // coordinate dot/label than a pinned point gets. All of this clears
@@ -694,14 +704,6 @@ const coordLabelPlugin = {
           { fill: '#ffd740', stroke: '#ffffff', alpha: 0.7 }, 19);
       }
     }
-
-    pinnedPoints.forEach(({t, v}) => {
-      const xPx = xScale.getPixelForValue(t);
-      const yPx = yScale.getPixelForValue(v);
-      if (xPx < xScale.left || xPx > xScale.right) return;
-      drawCoordDot(c2, xPx, yPx, `(${formatSig(t)}, ${formatDist(v)})`,
-        { fill: '#ff4081', stroke: '#ffffff', alpha: 1 });
-    });
 
     c2.restore();
   }
