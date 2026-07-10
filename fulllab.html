@@ -474,34 +474,32 @@ function interpolateAt(t) {
 }
 
 // Derives a speed dataset from a distance dataset for the Graph Type
-// switch. Samples distance at each "Every" interval mark (reusing
-// interpolateAt, gap-safe, same technique the table already uses) rather
-// than differencing raw consecutive samples, which would mostly just
-// amplify tracking jitter into a much noisier "speed" than the actual
-// motion. Each derived speed point is placed at the MIDPOINT of the
-// interval it was computed over — the mathematically honest spot for an
-// average rate, not at either endpoint.
-function deriveSpeedFromDistance(distanceData, interval) {
+// switch. IMPORTANT: this works at the RAW recording resolution (~20Hz),
+// NOT by re-sampling distance every 0.5-1s. The coarse re-sampling method
+// averaged away any direction change that happened between two sample
+// marks — so a real turnaround (distance stops increasing, starts
+// decreasing) never produced the x-intercept it should. Here, for each
+// raw sample we take a centered slope over a small time window (~0.3s):
+// fine enough to catch every turnaround as a zero crossing, wide enough
+// to suppress the per-frame jitter that differencing adjacent samples
+// alone would amplify. The `interval` argument is no longer used for the
+// speed math itself (only the table still thins to it) — resolution and
+// display interval are now decoupled.
+const SPEED_WINDOW = 0.3; // seconds, half-width of the centered slope window
+function deriveSpeedFromDistance(distanceData) {
   if (distanceData.length < 2) return [];
-  const savedData = data;
-  data = distanceData; // interpolateAt reads the global `data`
-  const firstT = distanceData[0][0], lastT = distanceData[distanceData.length-1][0];
-  const startTarget = Math.ceil(firstT / interval) * interval;
-  const steps = Math.floor((lastT - startTarget) / interval + 0.0001);
-  const marks = [];
-  for (let i = 0; i <= steps; i++) {
-    const target = startTarget + i * interval;
-    const result = interpolateAt(target);
-    if (result) marks.push({ t: target, v: result.v });
-  }
-  data = savedData;
   const speedPoints = [];
-  for (let i = 1; i < marks.length; i++) {
-    const dt = marks[i].t - marks[i-1].t;
-    if (dt <= 0.0001) continue;
-    const speed = (marks[i].v - marks[i-1].v) / dt;
-    const tMid = (marks[i].t + marks[i-1].t) / 2;
-    speedPoints.push([parseFloat(tMid.toFixed(3)), parseFloat(speed.toFixed(4))]);
+  for (let i = 0; i < distanceData.length; i++) {
+    const tc = distanceData[i][0];
+    // Find the samples bracketing [tc - window, tc + window] and take the
+    // slope across that span — a centered finite difference.
+    let lo = i, hi = i;
+    while (lo > 0 && tc - distanceData[lo][0] < SPEED_WINDOW) lo--;
+    while (hi < distanceData.length - 1 && distanceData[hi][0] - tc < SPEED_WINDOW) hi++;
+    const dt = distanceData[hi][0] - distanceData[lo][0];
+    if (dt < 0.02) continue; // not enough span at the very edges to be meaningful
+    const speed = (distanceData[hi][1] - distanceData[lo][1]) / dt;
+    speedPoints.push([parseFloat(tc.toFixed(3)), parseFloat(speed.toFixed(4))]);
   }
   return speedPoints;
 }
@@ -640,11 +638,15 @@ let   focalLength = 863;
 // as a known simplification, not a bug.
 let currentUnit = Units.getPref().dist; // 'ft' | 'm'
 let graphMode   = 'distance'; // 'distance' | 'speed'
-// Snapshot of the distance dataset, taken right before a Distance→Speed
-// switch derives a speed dataset from it. Lets Speed→Distance restore the
-// exact original points instead of trying to integrate speed back into
-// distance, which would compound tracking noise rather than undo it.
-let cachedDistanceData = null;
+// Persistent snapshots of the most recent recording, kept so the graph-type
+// toggle can switch back and forth indefinitely without ever losing data.
+// A run is captured as EITHER distance or speed depending on the mode it
+// was recorded in; whichever it was becomes the canonical source, and the
+// other view is derived from it on demand (speed from distance only —
+// distance is never integrated back from speed, which would compound
+// tracking noise into a fabricated curve).
+let recordedDistance = null;
+let recordedSpeed    = null;
 // distance range is a fixed headroom guess; speed's max/min are now
 // computed dynamically from the derived data itself (see applyAxisConfig)
 // — this fallback only applies before anything's been recorded yet.
@@ -851,23 +853,18 @@ const axisLabelsPlugin = {
   }
 };
 
-// Returns where the CHART'S OWN RENDERED curve sits at time t — not a
-// linear interpolation between the two nearest raw samples. With sparse
-// interval data (0.5-1s apart) and a smooth spline connecting it, a
-// straight-line estimate between samples can visibly diverge from the
-// actual bowed curve, which is exactly why clicked points sometimes
-// looked like they were floating off the line. Chart.js's line element
-// exposes .interpolate() for precisely this — reading pixel-accurate
-// curve position — with a graceful fallback to the simple linear method
-// if that API isn't available for some reason.
+// Returns the graph's y-value at time t by linear interpolation over the
+// stored data. This is reliable now because the data is DENSE in both
+// modes: distance is recorded at ~20Hz, and derived speed keeps a point at
+// every one of those raw samples. At ~0.05s spacing the straight segments
+// between points and the tension:0.3 spline drawn over them differ by well
+// under a pixel, so this matches the visible curve — and it's the exact
+// same interpolation the crossing-finder and coloring rely on, so clicked
+// points, markers, and the line can't disagree. (An earlier version read
+// Chart.js's own LineElement.interpolate(), but that returns the straight
+// chord between rendered points, which visibly diverged from the bowed
+// spline back when the data was sparse.)
 function curveValueAt(t) {
-  try {
-    const el = chart.getDatasetMeta(0) && chart.getDatasetMeta(0).dataset;
-    if (el && typeof el.interpolate === 'function') {
-      const pt = el.interpolate({ x: t }, 'x');
-      if (pt && Number.isFinite(pt.y)) return pt.y;
-    }
-  } catch (e) {}
   const result = interpolateAt(t);
   return result ? result.v : null;
 }
@@ -879,18 +876,19 @@ function curveValueAt(t) {
 // the blue/red color boundaries all come from this one function, so they
 // can never disagree with each other or with the visible line.
 //
-// Scanning the rendered curve (rather than only raw-sample intervals where
-// the endpoints straddle zero) matters because a smooth spline can cross
-// zero at a noticeably different spot than a straight line between samples
-// would — and can even dip across and back inside a single raw interval.
-// The old raw-interval method missed those and placed markers where the
-// visible curve wasn't actually at zero. A ~40ms scan step is fine here:
-// speed data is sparse (0.5-1s apart), so real crossings are never closer
-// together than that, and bisection refines each hit to full precision.
+// Scans the dense data end-to-end catching every sign change, rather than
+// only checking coarse re-sampled marks. This is what makes a real
+// turnaround always produce an x-intercept: when the person stops moving
+// away and starts moving back, distance stops rising and speed passes
+// through zero — and because the speed data now keeps every ~20Hz sample
+// (see deriveSpeedFromDistance), that moment is actually present to be
+// found, instead of being averaged away between two far-apart marks. A
+// 0.03s scan step is finer than the ~0.05s sample spacing, so no crossing
+// slips between steps; bisection then refines each hit to full precision.
 function findZeroCrossings() {
   if (graphMode !== 'speed' || data.length < 2) return [];
   const tStart = data[0][0], tEnd = data[data.length - 1][0];
-  const STEP = 0.04;
+  const STEP = 0.03;
   const crossings = [];
   let prevT = tStart, prevV = curveValueAt(tStart);
   for (let t = tStart + STEP; t <= tEnd + 1e-9; t += STEP) {
@@ -920,25 +918,21 @@ function findZeroCrossings() {
 // point in at every zero crossing so the blue/red color boundary can land
 // precisely on each crossing — Chart.js only changes a segment's color AT
 // a data point, never mid-segment, so a crossing needs a real point on it.
-//
-// Two passes are required and unavoidable: findZeroCrossings() reads the
-// RENDERED curve, which can't be read until the raw data has actually been
-// plotted. So: (1) plot raw data → the smooth curve now exists, (2) read
-// its true crossings, (3) splice those in. Because the crossings come from
-// the real curve, each inserted point already lies essentially ON it — the
-// shape barely changes and no spike forms (unlike the old straight-line
-// crossing estimate, which pulled inserted points off the curve). Distance
-// mode does a single pass; it never has crossings.
+// Draws `data` onto the chart. In speed mode it splices an exact (t_c, 0)
+// point in at every zero crossing so the blue/red color boundary lands
+// precisely on each crossing — Chart.js only changes a segment's color AT
+// a data point, never mid-segment, so a crossing needs a real point on it.
+// Crossings come from findZeroCrossings(), which reads the same dense
+// `data` array this renders, so the spliced points sit exactly on the line
+// (no spike) and the coloring, markers, and curve all agree by construction.
+// Distance mode renders straight through; it never has crossings.
 function renderData() {
   const base = data.map(([t, v]) => ({ x: t, y: v }));
+  if (graphMode === 'speed' && data.length >= 2) {
+    for (const tc of findZeroCrossings()) base.push({ x: tc, y: 0 });
+    base.sort((a, b) => a.x - b.x);
+  }
   chart.data.datasets[0].data = base;
-  if (graphMode !== 'speed' || data.length < 2) { chart.update('none'); return; }
-  chart.update('none'); // pass 1: curve must exist before its crossings can be read
-  const crossings = findZeroCrossings();
-  if (!crossings.length) return;
-  for (const tc of crossings) base.push({ x: tc, y: 0 });
-  base.sort((a, b) => a.x - b.x);
-  chart.data.datasets[0].data = base; // pass 2: crossings spliced in as color-boundary anchors
   chart.update('none');
 }
 
@@ -1436,7 +1430,7 @@ startBtn.onclick = () => {
 };
 
 function beginRecording(){
-  data=[]; recording=true; cachedDistanceData=null; pinnedPoints=[]; hoverPreview=null; // stale cache/points from a prior mode or run must not survive into a fresh take
+  data=[]; recording=true; recordedDistance=null; recordedSpeed=null; pinnedPoints=[]; hoverPreview=null; // stale snapshots/points from a prior mode or run must not survive into a fresh take
   startTime=Date.now(); lastRecordTime=-Infinity; // startTime = button press (T0); recordPoint subtracts GO_DELAY
   smooth=MotionTracker.createSmoother(); calcSlope=MotionTracker.createSlopeCalc();
   dataTableBody.innerHTML='';
@@ -1468,6 +1462,12 @@ function stopRecording(){
   statusDot.classList.remove('recording');
   statusDot.classList.add('active');
   startBtn.textContent = '▶ Start';
+  // Save the completed run as the canonical snapshot for its capture mode,
+  // so the graph-type toggle can switch back and forth without data loss.
+  if (data.length >= 2) {
+    if (graphMode === 'speed') recordedSpeed = data.slice();
+    else recordedDistance = data.slice();
+  }
   // Live recording pushed raw points frame-by-frame; now that it's done,
   // re-render so speed mode splices in its zero crossings (color anchors +
   // markers). Distance mode just redraws unchanged.
@@ -1561,8 +1561,11 @@ function setUnit(unit) {
     chart.data.datasets[i].data = chart.data.datasets[i].data.map(
       pt => ({ x: pt.x, y: convertDist(pt.y, prevUnit, currentUnit) }));
   }
-  if (cachedDistanceData) {
-    cachedDistanceData = cachedDistanceData.map(([t,d]) => [t, convertDist(d, prevUnit, currentUnit)]);
+  if (recordedDistance) {
+    recordedDistance = recordedDistance.map(([t,d]) => [t, convertDist(d, prevUnit, currentUnit)]);
+  }
+  if (recordedSpeed) {
+    recordedSpeed = recordedSpeed.map(([t,d]) => [t, convertDist(d, prevUnit, currentUnit)]);
   }
   pinnedPoints = []; hoverPreview = null; // these weren't unit-converted, so clear rather than leave them off the line
   updateTableHeader();
@@ -1574,25 +1577,33 @@ unitsBtn.onclick = () => setUnit(currentUnit === 'ft' ? 'm' : 'ft');
 
 function setGraphMode(mode) {
   if (mode === graphMode) return;
-  const prevMode = graphMode;
   graphMode = mode;
   graphModeBtnValue.textContent = mode === 'speed' ? 'Speed' : 'Dist';
 
-  if (mode === 'speed' && prevMode === 'distance' && data.length >= 2) {
-    // Redraw as speed, derived from the distance data just recorded —
-    // cache the original first so switching back is a lossless restore,
-    // not an attempt to integrate speed back into distance (which would
-    // compound tracking noise rather than undo it).
-    cachedDistanceData = data;
-    data = deriveSpeedFromDistance(cachedDistanceData, tableInterval);
-  } else if (mode === 'distance' && prevMode === 'speed' && cachedDistanceData) {
-    data = cachedDistanceData;
-    cachedDistanceData = null;
-  } else {
-    // Nothing sensible to derive/restore (empty data, or a fresh start
-    // directly in this mode) — same clean-slate behavior as before.
-    data = [];
-    cachedDistanceData = null;
+  // recordedDistance is the canonical snapshot of the most recent DISTANCE
+  // recording; it persists across any number of toggles so switching back
+  // and forth never loses data. Speed is always re-derived from it (never
+  // integrated back, which would compound noise). recordedSpeed handles
+  // the other origin: a run captured directly in speed mode, which has no
+  // distance source to restore from.
+  if (mode === 'speed') {
+    if (recordedDistance && recordedDistance.length >= 2) {
+      data = deriveSpeedFromDistance(recordedDistance);
+    } else if (recordedSpeed) {
+      data = recordedSpeed; // was recorded directly as speed; nothing to derive
+    } else {
+      data = [];
+    }
+  } else { // → distance
+    if (recordedDistance) {
+      data = recordedDistance;
+    } else {
+      // Only a direct speed recording exists — there's no honest distance
+      // curve to show (integrating speed back would fabricate one), so the
+      // distance view is legitimately empty here. The speed data is NOT
+      // lost: it's still in recordedSpeed and returns on the next toggle.
+      data = [];
+    }
   }
 
   dataTableBody.innerHTML = '';
@@ -1612,7 +1623,7 @@ distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
 
 clearBtn.onclick=()=>{
   if(countingDown){clearTimeout(preDelayTimer);clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
-  recording=false; startBtn.disabled=false; startBtn.textContent='▶ Start'; data=[]; cachedDistanceData=null;
+  recording=false; startBtn.disabled=false; startBtn.textContent='▶ Start'; data=[]; recordedDistance=null; recordedSpeed=null;
   dataTableBody.innerHTML='';
   chart.options.scales.x.max = recordingDuration;
   chart.options.scales.x.min = negTimeOn ? NEG_TIME_MIN : 0;
