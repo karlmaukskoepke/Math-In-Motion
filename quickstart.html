@@ -97,6 +97,7 @@
       transition: border-color 0.25s, box-shadow 0.25s;
     }
     #video   { width: 100%; height: 100%; object-fit: cover; display: block; }
+    #video.debug-full-frame { object-fit: contain; background: #000; }
     #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
     #distBadge {
       position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
@@ -191,6 +192,7 @@
     <div class="status-dot" id="statusDot"></div>
     <button class="hdr-btn stacked" id="unitsBtn" type="button"><span>Units</span><b>ft</b></button>
     <button class="hdr-btn stacked" id="gaugeBtn" type="button"><span>Distance</span><b>Off</b></button>
+    <button class="hdr-btn stacked" id="frameDebugBtn" type="button" title="Debug: show the full uncropped camera frame"><span>Frame</span><b>Crop</b></button>
     <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
     <a class="hdr-btn help-btn" href="help.html" target="_blank" rel="noopener" title="Help & resources">?</a>
   </div>
@@ -602,6 +604,21 @@ gaugeBtn.onclick = () => {
   gaugeOn = !gaugeOn;
   gaugeBtnValue.textContent = gaugeOn ? 'On' : 'Off';
   distOverlay.style.display = gaugeOn ? 'flex' : 'none';
+};
+
+// ── DEBUG: FULL FRAME TOGGLE — temporary diagnostic to check whether
+// markers "lost" at the edge of the visible video are actually still
+// within the camera's captured frame (just cropped from view) or are
+// truly outside the camera's physical field of view. Detection already
+// runs on the full native frame regardless of this toggle — this only
+// changes what's DISPLAYED. Safe to remove once the FOV question is settled.
+const frameDebugBtn      = document.getElementById('frameDebugBtn');
+const frameDebugBtnValue = frameDebugBtn.querySelector('b');
+let fullFrameDebug = false;
+frameDebugBtn.onclick = () => {
+  fullFrameDebug = !fullFrameDebug;
+  frameDebugBtnValue.textContent = fullFrameDebug ? 'Full' : 'Crop';
+  video.classList.toggle('debug-full-frame', fullFrameDebug);
 };
 
 // ── THEME: dark/light, session-persisted (same pattern as mm_tracking,

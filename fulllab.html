@@ -107,6 +107,7 @@
       transition: border-color 0.25s, box-shadow 0.25s;
     }
     #video   { width: 100%; height: 100%; object-fit: cover; display: block; }
+    #video.debug-full-frame { object-fit: contain; background: #000; }
     #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
     #distBadge {
       position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
@@ -271,6 +272,7 @@
       <span class="hdr-group-label">Display</span>
       <div class="hdr-group-btns">
         <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
+        <button class="hdr-btn stacked" id="frameDebugBtn" type="button" title="Debug: show the full uncropped camera frame"><span>Frame</span><b>Crop</b></button>
       </div>
     </div>
     <a class="hdr-btn help-btn" href="help.html" target="_blank" rel="noopener" title="Help & resources">?</a>
@@ -569,6 +571,17 @@ gaugeBtn.onclick = () => {
   gaugeOn = !gaugeOn;
   gaugeBtnValue.textContent = gaugeOn ? 'On' : 'Off';
   distOverlay.style.display = gaugeOn ? 'flex' : 'none';
+};
+
+// ── DEBUG: FULL FRAME TOGGLE — see quickstart.html for full explanation.
+// Temporary diagnostic; safe to remove once the camera FOV question is settled.
+const frameDebugBtn      = document.getElementById('frameDebugBtn');
+const frameDebugBtnValue = frameDebugBtn.querySelector('b');
+let fullFrameDebug = false;
+frameDebugBtn.onclick = () => {
+  fullFrameDebug = !fullFrameDebug;
+  frameDebugBtnValue.textContent = fullFrameDebug ? 'Full' : 'Crop';
+  video.classList.toggle('debug-full-frame', fullFrameDebug);
 };
 
 // ── DRAGGABLE OVERLAYS: distance gauge + slope gauge, both movable

@@ -36,7 +36,7 @@
       position: fixed;
       inset: 0;
       pointer-events: none;
-      opacity: 0.07;
+      opacity: 0.13;
       z-index: 0;
     }
 
@@ -133,6 +133,32 @@
       line-height: 1.65;
       max-width: 520px;
       margin: 0 auto;
+    }
+
+    .partner-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+      border: 1px solid var(--border);
+      padding: 6px 14px;
+      border-radius: 20px;
+      margin-top: 24px;
+      text-decoration: none;
+      transition: border-color 0.2s, color 0.2s;
+    }
+
+    .partner-badge:hover {
+      border-color: rgba(0,229,255,0.4);
+      color: var(--text);
+    }
+
+    .partner-badge strong {
+      color: var(--accent);
+      font-weight: 700;
     }
 
     /* ── SECTION LABEL ── */
@@ -433,16 +459,16 @@
   <div class="page">
     <header>
       <div class="logo">Motion<span>//</span>Math</div>
-      <div class="header-tag">Algebra 1 · 8th Grade</div>
     </header>
 
     <section class="hero">
       <div class="hero-eyebrow">Make math physical</div>
       <h1>Your <em>motion</em><br>IS the <em>math</em></h1>
       <p>Real-time motion tracking tools that connect how you move to the math you're learning. Walk the graph. Beat the graph. Match the graph.</p>
+      <a class="partner-badge" href="https://www.mathisfigureoutable.com" target="_blank" rel="noopener">Built in partnership with <strong>Math is Figureoutable</strong> ↗</a>
     </section>
 
-    <div class="section-label">Tools</div>
+    <div class="section-label">Grapher</div>
 
     <div class="cards">
 
@@ -546,7 +572,7 @@
     </div>
 
     <footer>
-      <p>Built for Algebra 1 & 8th Grade math · Liljedahl BTC + Pam Harris frameworks</p>
+      <p>Built on Liljedahl BTC + Pam Harris frameworks</p>
       <p><a href="https://github.com/mauksk-cloud/LinearMotionMotionGrapher" target="_blank">GitHub ↗</a></p>
     </footer>
   </div>
@@ -602,7 +628,7 @@
         }
 
         ctx.strokeStyle = line.color;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 2;
         ctx.stroke();
       }
 

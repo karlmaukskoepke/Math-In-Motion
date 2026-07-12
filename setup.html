@@ -236,6 +236,12 @@
       color: var(--accent3);
     }
 
+    .top-card .rec-badge.coming-soon-badge {
+      background: rgba(255,215,64,0.08);
+      border: 1px solid rgba(255,215,64,0.3);
+      color: var(--accent4);
+    }
+
     /* ── DETAIL PANEL ── */
     .detail-panel {
       width: 100%;
@@ -567,13 +573,14 @@
 
       <div class="top-card ball" id="cardBall" onclick="selectTop('ball')">
         <div class="card-icon">🎱</div>
-        <div class="rec-badge">★ Recommended</div>
+        <div class="rec-badge coming-soon-badge">Coming Soon</div>
         <h2>Colored Ball</h2>
         <p>Use a brightly colored foam ball held by the student. One laptop required. Works with multiple groups using different ball colors simultaneously.</p>
       </div>
 
       <div class="top-card aruco" id="cardAruco" onclick="selectTop('aruco')">
         <div class="card-icon">⬛</div>
+        <div class="rec-badge">★ Recommended</div>
         <h2>ArUco Marker</h2>
         <p>Use a printed or screen-displayed ArUco marker. Higher precision tracking. Requires either a printed marker or a second laptop.</p>
       </div>
@@ -655,7 +662,7 @@
             <li>Marker size: 14 cm × 14 cm</li>
             <li>Laminate for durability</li>
           </ul>
-          <a class="dl-link" href="assets/aruco_marker.pdf" target="_blank" onclick="event.stopPropagation()">
+          <a class="dl-link" href="assets/aruco-marker.pdf" target="_blank" onclick="event.stopPropagation()">
             ↓ Download PDF
           </a>
         </div>
