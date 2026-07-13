@@ -809,7 +809,7 @@ startBtn.onclick = () => {
       if(!detector) detector=new AR.Detector();
     }
     startBtn.disabled=true;
-    navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720}}})
+    navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:960}}})
       .then(stream=>{
         video.srcObject=stream; video.style.display='block';
         camPlaceholder.style.display='none';
