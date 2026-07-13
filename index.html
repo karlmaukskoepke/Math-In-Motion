@@ -36,7 +36,7 @@
       position: fixed;
       inset: 0;
       pointer-events: none;
-      opacity: 0.13;
+      opacity: 0.17;
       z-index: 0;
     }
 
@@ -164,8 +164,9 @@
     /* ── SECTION LABEL ── */
     .section-label {
       font-family: 'Space Mono', monospace;
-      font-size: 0.65rem;
-      color: var(--muted);
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text);
       letter-spacing: 2px;
       text-transform: uppercase;
       margin-bottom: 28px;
@@ -465,7 +466,7 @@
       <div class="hero-eyebrow">Make math physical</div>
       <h1>Your <em>motion</em><br>IS the <em>math</em></h1>
       <p>Real-time motion tracking tools that connect how you move to the math you're learning. Walk the graph. Beat the graph. Match the graph.</p>
-      <a class="partner-badge" href="https://www.mathisfigureoutable.com" target="_blank" rel="noopener">Built in partnership with <strong>Math is Figureoutable</strong> ↗</a>
+      <a class="partner-badge" href="https://www.mathisfigureoutable.com/bplf-wait" target="_blank" rel="noopener">Inspired by Pam Harris at <strong>Math is Figureoutable</strong> ↗</a>
     </section>
 
     <div class="section-label">Grapher</div>
@@ -572,8 +573,7 @@
     </div>
 
     <footer>
-      <p>Built on Liljedahl BTC + Pam Harris frameworks</p>
-      <p><a href="https://github.com/mauksk-cloud/LinearMotionMotionGrapher" target="_blank">GitHub ↗</a></p>
+      <p>Motion//Math</p>
     </footer>
   </div>
 
@@ -604,7 +604,8 @@
         lines.push({
           pts,
           color: ['#00e5ff','#ff4081','#69f0ae','#ffd740'][i],
-          offset: Math.random() * 1000
+          offset: Math.random() * 1000,
+          flash: 0
         });
       }
     }
@@ -613,6 +614,11 @@
       ctx.clearRect(0, 0, w, h);
 
       for (const line of lines) {
+        // Occasional "power surge" — a line randomly brightens then decays back down,
+        // like a pulse of current passing through it. ~once every 15-20s per line on average.
+        if (Math.random() < 0.0006) line.flash = 1;
+        line.flash *= 0.96;
+
         const pts = line.pts.map((p, i) => ({
           x: p.x,
           y: p.y + Math.sin(t * 0.0003 + line.offset + i * 0.8) * 30
@@ -627,9 +633,14 @@
           ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
         }
 
+        ctx.globalAlpha = 0.55 + line.flash * 0.45;
         ctx.strokeStyle = line.color;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2 + line.flash * 2.5;
+        ctx.shadowColor = line.color;
+        ctx.shadowBlur = line.flash * 18;
         ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
       }
 
       requestAnimationFrame(draw);
