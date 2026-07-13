@@ -184,6 +184,104 @@
       background: var(--border);
     }
 
+    /* ── CATEGORY CARDS (Grapher / Games top-level choice) ── */
+    .category-grid {
+      width: 100%;
+      max-width: 960px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .category-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 36px 32px;
+      cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 14px;
+      transition: border-color 0.2s, transform 0.2s, background 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .category-card:hover {
+      border-color: var(--card-hover-border);
+      transform: translateY(-3px);
+      background: var(--surface2);
+    }
+
+    .category-card .stripe {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      border-radius: 16px 16px 0 0;
+    }
+
+    .cat-grapher .stripe { background: var(--accent); }
+    .cat-games   .stripe { background: var(--accent2); }
+
+    .category-icon {
+      width: 56px;
+      height: 56px;
+    }
+
+    .category-card h2 {
+      font-family: 'Space Mono', monospace;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .category-card p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .category-card .card-arrow {
+      align-self: flex-end;
+      margin-top: -8px;
+    }
+
+    .category-card:hover .card-arrow {
+      color: var(--accent);
+      transform: translateX(4px);
+    }
+
+    .cat-games:hover .card-arrow {
+      color: var(--accent2);
+      transform: translateY(2px);
+    }
+
+    .games-detail {
+      width: 100%;
+      max-width: 960px;
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height 0.35s ease;
+      margin-bottom: 20px;
+    }
+
+    .games-detail.open {
+      max-height: 900px;
+    }
+
+    .games-detail .cards {
+      margin-bottom: 0;
+      padding-top: 4px;
+    }
+
+    @media (max-width: 700px) {
+      .category-grid { grid-template-columns: 1fr; }
+    }
+
     /* ── CARDS ── */
     .cards {
       width: 100%;
@@ -469,114 +567,132 @@
       <a class="partner-badge" href="https://www.mathisfigureoutable.com/bplf-wait" target="_blank" rel="noopener">Inspired by Pam Harris at <strong>Math is Figureoutable</strong> ↗</a>
     </section>
 
-    <div class="section-label">Grapher</div>
 
-    <div class="cards">
+    <div class="section-label">Choose Your Path</div>
 
-      <!-- ── MOTION GRAPHER (expanded with sub-cards) ── -->
-      <div class="card card-cyan grapher-card">
+    <div class="category-grid">
+
+      <!-- ── GRAPHER: streamlined single entry, goes straight into Quick Start ── -->
+      <a class="category-card cat-grapher" href="setup.html?from=quickstart.html">
         <div class="stripe"></div>
-        <div class="card-tag"><span class="tag-dot"></span>Motion Grapher</div>
-
-        <div>
-          <div class="card-icon">📡</div>
-          <h2 style="margin-top: 12px;">Distance vs. Time</h2>
-          <p style="margin-top: 8px;">Track your motion with an ArUco marker or colored ball. Plot it live. Overlay functions. See how well your walk matches the math.</p>
-        </div>
-
-        <div class="sub-cards">
-          <a class="sub-card" href="setup.html?from=quickstart.html">
-            <div class="sub-card-label">Simplified</div>
-            <h3>Quick Start</h3>
-            <ul>
-              <li>Camera + track</li>
-              <li>Plot your walk</li>
-              <li>Slope gauge</li>
-            </ul>
-          </a>
-          <a class="sub-card" href="setup.html?from=fulllab.html">
-            <div class="sub-card-label">Full Featured</div>
-            <h3>Full Lab</h3>
-            <ul>
-              <li>Function overlay</li>
-              <li>Match scoring</li>
-              <li>Challenge mode</li>
-              <li>CSV export</li>
-            </ul>
-          </a>
-        </div>
-
+        <svg class="category-icon" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M8 8 V56 H56" stroke="#7986cb" stroke-width="2" stroke-linecap="round"/>
+          <path d="M8 44 C 20 44, 22 20, 34 20 C 46 20, 44 34, 56 12" stroke="#00e5ff" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <circle cx="56" cy="12" r="3" fill="#00e5ff"/>
+        </svg>
+        <h2>Grapher</h2>
+        <p>Track your motion in real time with an ArUco marker or colored ball. Walk the graph — see the math.</p>
         <div class="card-pills">
-          <span class="pill">ArUco</span>
-          <span class="pill">Ball tracking</span>
+          <span class="pill">Live tracking</span>
           <span class="pill">Chart.js</span>
         </div>
+        <span class="card-arrow">→</span>
+      </a>
+
+      <!-- ── GAMES: inert placeholder, expands in place to show previews ── -->
+      <div class="category-card cat-games" id="gamesCard" onclick="toggleGames()">
+        <div class="stripe"></div>
+        <div class="coming-soon-badge">Coming Soon</div>
+        <svg class="category-icon" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M8 8 V56 H56" stroke="#7986cb" stroke-width="2" stroke-linecap="round"/>
+          <path d="M8 46 L20 40 L30 24 L40 26 L52 10" stroke="#ff4081" stroke-width="2.5" stroke-dasharray="4 3" fill="none" stroke-linecap="round"/>
+          <text x="44" y="16" font-family="Space Mono" font-size="12" fill="#ffd740">✈</text>
+        </svg>
+        <h2>Games</h2>
+        <p>Turn movement into play — fly, dodge, and match your way through the math. In development.</p>
+        <span class="card-arrow" id="gamesArrow">↓</span>
       </div>
-
-      <!-- ── FLIGHT GAME ── -->
-      <a class="card card-pink coming-soon" href="#" onclick="return false;">
-        <div class="stripe"></div>
-        <div class="coming-soon-badge">Coming soon</div>
-        <div class="card-tag"><span class="tag-dot"></span>Game</div>
-
-        <div class="card-icon">✈️</div>
-        <h2>Motion Flight</h2>
-        <p>Fly a side-scrolling plane by walking toward and away from the camera. Your distance from the camera controls your altitude — trace the path to survive.</p>
-
-        <svg class="graph-preview" viewBox="0 0 300 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <polyline points="0,45 30,40 60,20 90,22 120,38 150,15 180,12 210,28 240,30 270,10 300,8"
-            stroke="#ff4081" stroke-width="2" stroke-dasharray="5 3" fill="none" opacity="0.5"/>
-          <circle cx="220" cy="29" r="6" fill="none" stroke="#ffd740" stroke-width="1.5"/>
-          <text x="228" y="33" fill="#ffd740" font-family="Space Mono" font-size="8">✈</text>
-          <line x1="0" y1="50" x2="300" y2="50" stroke="#2e3356" stroke-width="1"/>
-        </svg>
-
-        <div class="card-footer">
-          <div class="card-pills">
-            <span class="pill">Real-time</span>
-            <span class="pill">Side-scrolling</span>
-          </div>
-          <span class="card-arrow">→</span>
-        </div>
-      </a>
-
-      <!-- ── MATCH THE GRAPH ── -->
-      <a class="card card-green coming-soon" href="#" onclick="return false;">
-        <div class="stripe"></div>
-        <div class="coming-soon-badge">Coming soon</div>
-        <div class="card-tag"><span class="tag-dot"></span>Game</div>
-
-        <div class="card-icon">🎯</div>
-        <h2>Match the Graph</h2>
-        <p>A target graph appears on screen. Walk to recreate it as closely as possible. Score is based on how well your motion matches — compete with your class.</p>
-
-        <svg class="graph-preview" viewBox="0 0 300 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <polyline points="0,50 60,35 120,20 180,20 240,35 300,50"
-            stroke="#2e3356" stroke-width="2" fill="none"/>
-          <polyline points="0,50 60,36 120,22 185,19 242,33 300,49"
-            stroke="#69f0ae" stroke-width="2" fill="none"/>
-          <text x="4" y="12" fill="#7986cb" font-family="Space Mono" font-size="7">target</text>
-          <text x="4" y="22" fill="#69f0ae" font-family="Space Mono" font-size="7">you</text>
-          <rect x="4" y="4" width="4" height="4" fill="#7986cb"/>
-          <rect x="4" y="14" width="4" height="4" fill="#69f0ae"/>
-        </svg>
-
-        <div class="card-footer">
-          <div class="card-pills">
-            <span class="pill">RMSE scoring</span>
-            <span class="pill">Multiplayer</span>
-          </div>
-          <span class="card-arrow">→</span>
-        </div>
-      </a>
 
     </div>
 
+    <div class="games-detail" id="gamesDetail">
+      <div class="cards">
+
+        <!-- ── FLIGHT GAME ── -->
+        <a class="card card-pink coming-soon" href="#" onclick="return false;">
+          <div class="stripe"></div>
+          <div class="card-tag"><span class="tag-dot"></span>Game</div>
+
+          <div class="card-icon">✈️</div>
+          <h2>Motion Flight</h2>
+          <p>Fly a side-scrolling plane by walking toward and away from the camera. Your distance from the camera controls your altitude — trace the path to survive.</p>
+
+          <svg class="graph-preview" viewBox="0 0 300 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <polyline points="0,45 30,40 60,20 90,22 120,38 150,15 180,12 210,28 240,30 270,10 300,8"
+              stroke="#ff4081" stroke-width="2" stroke-dasharray="5 3" fill="none" opacity="0.5"/>
+            <circle cx="220" cy="29" r="6" fill="none" stroke="#ffd740" stroke-width="1.5"/>
+            <text x="228" y="33" fill="#ffd740" font-family="Space Mono" font-size="8">✈</text>
+            <line x1="0" y1="50" x2="300" y2="50" stroke="#2e3356" stroke-width="1"/>
+          </svg>
+
+          <div class="card-footer">
+            <div class="card-pills">
+              <span class="pill">Real-time</span>
+              <span class="pill">Side-scrolling</span>
+            </div>
+            <span class="card-arrow">→</span>
+          </div>
+        </a>
+
+        <!-- ── MATCH THE GRAPH ── -->
+        <a class="card card-green coming-soon" href="#" onclick="return false;">
+          <div class="stripe"></div>
+          <div class="card-tag"><span class="tag-dot"></span>Game</div>
+
+          <div class="card-icon">🎯</div>
+          <h2>Match the Graph</h2>
+          <p>A target graph appears on screen. Walk to recreate it as closely as possible. Score is based on how well your motion matches — compete with your class.</p>
+
+          <svg class="graph-preview" viewBox="0 0 300 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <polyline points="0,50 60,35 120,20 180,20 240,35 300,50"
+              stroke="#2e3356" stroke-width="2" fill="none"/>
+            <polyline points="0,50 60,36 120,22 185,19 242,33 300,49"
+              stroke="#69f0ae" stroke-width="2" fill="none"/>
+            <text x="4" y="12" fill="#7986cb" font-family="Space Mono" font-size="7">target</text>
+            <text x="4" y="22" fill="#69f0ae" font-family="Space Mono" font-size="7">you</text>
+            <rect x="4" y="4" width="4" height="4" fill="#7986cb"/>
+            <rect x="4" y="14" width="4" height="4" fill="#69f0ae"/>
+          </svg>
+
+          <div class="card-footer">
+            <div class="card-pills">
+              <span class="pill">RMSE scoring</span>
+              <span class="pill">Multiplayer</span>
+            </div>
+            <span class="card-arrow">→</span>
+          </div>
+        </a>
+
+      </div>
+    </div>
+
+
     <footer>
       <p>Motion//Math</p>
+      <p>Created by Karl Mauks-Koepke, Math Educator</p>
     </footer>
   </div>
 
+  <script>
+    function toggleGames() {
+      const detail = document.getElementById('gamesDetail');
+      const arrow  = document.getElementById('gamesArrow');
+      const open   = detail.classList.toggle('open');
+      arrow.textContent = open ? '↑' : '↓';
+    }
+
+    // Remember whichever tool (Quick Start or Full Lab) was last used, so a
+    // returning visitor lands back where they left off instead of always
+    // defaulting to Quick Start.
+    (function () {
+      let lastTool = null;
+      try { lastTool = sessionStorage.getItem('mm_last_tool'); } catch (e) {}
+      if (lastTool === 'fulllab') {
+        const grapherLink = document.querySelector('.cat-grapher');
+        if (grapherLink) grapherLink.setAttribute('href', 'setup.html?from=fulllab.html');
+      }
+    })();
+  </script>
   <script>
     const canvas = document.getElementById('bg-canvas');
     const ctx = canvas.getContext('2d');

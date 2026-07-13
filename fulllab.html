@@ -70,7 +70,7 @@
       background: none; border: 1px solid var(--border); color: var(--muted);
       border-radius: 7px; padding: 5px 12px; font-size: 0.72rem; font-family: 'Space Mono', monospace;
       cursor: pointer; display: flex; align-items: center; gap: 5px;
-      transition: all 0.15s; flex-shrink: 0; letter-spacing: 0.5px;
+      transition: all 0.15s; flex-shrink: 0; letter-spacing: 0.5px; text-decoration: none;
     }
     .hdr-btn:hover { border-color: var(--accent); color: var(--accent); }
     .hdr-btn.back  { color: var(--muted); }
@@ -273,6 +273,7 @@
       <div class="hdr-group-btns">
         <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
         <button class="hdr-btn stacked" id="frameDebugBtn" type="button" title="Debug: show the full uncropped camera frame"><span>Frame</span><b>Crop</b></button>
+        <a class="hdr-btn stacked" href="quickstart.html" title="Switch to the simplified quick-start view"><span>Mode</span><b>→ Quick Start</b></a>
       </div>
     </div>
     <a class="hdr-btn help-btn" href="help.html" target="_blank" rel="noopener" title="Help & resources">?</a>
@@ -351,6 +352,10 @@
 const tracking = (() => {
   try { return JSON.parse(sessionStorage.getItem('mm_tracking')); } catch(e) { return null; }
 })();
+
+// Remember this as the last tool actually used, so the landing page's
+// Grapher card can send a returning visitor straight back here.
+try { sessionStorage.setItem('mm_last_tool', 'fulllab'); } catch(e) {}
 
 const noSetupBanner  = document.getElementById('noSetupBanner');
 
