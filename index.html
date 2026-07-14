@@ -33,117 +33,70 @@
     }
 
     /* ══════════════════════════════════════════════
-       LAYOUT — 60/40 split, fixed to viewport height
+       LAYOUT — content area on top, wave band framing the bottom
        ══════════════════════════════════════════════ */
     .page-flex {
       display: flex;
+      flex-direction: column;
       width: 100vw;
       height: 100vh;
     }
 
-    /* ── LEFT: HERO ANIMATION (60%) ── */
-    .hero-visual {
+    /* ── MAIN CONTENT ── */
+    .main-content {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 2.6vh 4vw 1.6vh;
       position: relative;
-      width: 60%;
-      height: 100%;
-      overflow: hidden;
-      border-right: 1px solid var(--border);
-      background: radial-gradient(ellipse at 50% 50%, rgba(0,229,255,0.04), transparent 70%);
     }
 
-    #bg-canvas {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
+    .top-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
 
-    .hero-visual-logo {
-      position: absolute;
-      top: 3vh;
-      left: 3vh;
+    .logo {
       font-family: 'Space Mono', monospace;
       font-size: 0.85rem;
       color: var(--accent);
       letter-spacing: 3px;
       text-transform: uppercase;
-      z-index: 2;
     }
 
-    .hero-visual-logo span { color: var(--muted); }
+    .logo span { color: var(--muted); }
 
-    /* ── RIGHT: TITLE + CHOICES (40%) ── */
-    .right-panel {
-      width: 40%;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-      padding: 3.5vh 3vw;
-      gap: 1.6vh;
-      overflow: hidden;
-    }
-
-    .hero-text h1 {
-      font-family: 'Space Mono', monospace;
-      font-weight: 700;
-      font-size: clamp(1.3rem, 2.6vw, 2.3rem);
-      line-height: 1.15;
-      white-space: nowrap;
-      color: var(--text);
-    }
-
-    .hero-text h1 .is-accent {
-      color: var(--accent);
-    }
-
-    .hero-text .tagline {
-      margin-top: 0.6vh;
-      font-size: clamp(0.8rem, 1.1vw, 0.98rem);
-      color: var(--muted);
-    }
-
-    /* ── SECTION LABEL ── */
     .section-label {
       font-family: 'Space Mono', monospace;
-      font-size: 0.72rem;
-      font-weight: 700;
-      color: var(--text);
+      font-size: 0.68rem;
+      color: var(--muted);
       letter-spacing: 2px;
       text-transform: uppercase;
-      margin: 1.4vh 0 0.4vh;
-      display: flex;
-      align-items: center;
-      gap: 12px;
     }
 
-    .section-label::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: var(--border);
-    }
-
-    /* ── CATEGORY CARDS (Grapher / Games) — stacked, fills remaining height ── */
+    /* ── CATEGORY CARDS — big, side by side, image-first ── */
     .category-stack {
       flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 1.6vh;
       min-height: 0;
+      display: flex;
+      gap: 2.2vw;
+      margin: 2vh 0;
     }
 
     .category-card {
       flex: 1;
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 2vh 1.8vw;
+      border-radius: 18px;
+      padding: 2.2vh 2vw;
       cursor: pointer;
       text-decoration: none;
       color: inherit;
       display: flex;
       flex-direction: column;
-      justify-content: center;
-      gap: 0.8vh;
+      gap: 1vh;
       transition: border-color 0.2s, transform 0.2s, background 0.2s;
       position: relative;
       overflow: hidden;
@@ -152,14 +105,14 @@
 
     .category-card:hover {
       border-color: var(--card-hover-border);
-      transform: translateX(4px);
+      transform: translateY(-4px);
       background: var(--surface2);
     }
 
     .category-card .stripe {
       position: absolute;
-      top: 0; left: 0; bottom: 0;
-      width: 3px;
+      top: 0; left: 0; right: 0;
+      height: 3px;
     }
 
     .cat-grapher .stripe { background: var(--accent); }
@@ -168,33 +121,17 @@
     .category-card-head {
       display: flex;
       align-items: center;
-      gap: 14px;
-    }
-
-    .category-icon {
-      width: clamp(32px, 4vh, 44px);
-      height: clamp(32px, 4vh, 44px);
-      flex-shrink: 0;
+      justify-content: space-between;
     }
 
     .category-card h2 {
       font-family: 'Space Mono', monospace;
-      font-size: clamp(1.05rem, 1.7vw, 1.4rem);
+      font-size: clamp(1.1rem, 1.8vw, 1.5rem);
       font-weight: 700;
       color: var(--text);
     }
 
-    .category-card p {
-      font-size: clamp(0.72rem, 0.95vw, 0.86rem);
-      color: var(--muted);
-      line-height: 1.5;
-    }
-
     .category-card .card-arrow {
-      position: absolute;
-      right: 1.6vw;
-      top: 50%;
-      transform: translateY(-50%);
       color: var(--muted);
       font-size: 1.3rem;
       transition: color 0.2s, transform 0.2s;
@@ -202,20 +139,65 @@
 
     .category-card:hover .card-arrow {
       color: var(--accent);
-      transform: translateY(-50%) translateX(4px);
+      transform: translateX(4px);
     }
 
     .cat-games:hover .card-arrow { color: var(--accent2); }
 
-    /* ── FOOTER STRIP ── */
-    footer {
+    .category-card-art {
+      flex: 1;
+      min-height: 0;
       display: flex;
       align-items: center;
+      justify-content: center;
+    }
+
+    .category-card-art svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── COMING SOON BADGE ── */
+    .coming-soon-badge {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.55rem;
+      letter-spacing: 1px;
+      color: var(--accent4);
+      border: 1px solid rgba(255,215,64,0.3);
+      background: rgba(255,215,64,0.08);
+      padding: 3px 8px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      z-index: 2;
+    }
+
+    /* ── BOTTOM ROW: title left, credits right — sits just above the wave band ── */
+    .bottom-row {
+      display: flex;
+      align-items: flex-end;
       justify-content: space-between;
       gap: 12px;
-      padding-top: 1.2vh;
-      border-top: 1px solid var(--border);
-      flex-shrink: 0;
+    }
+
+    .hero-title h1 {
+      font-family: 'Space Mono', monospace;
+      font-weight: 700;
+      font-size: clamp(1.1rem, 2.4vw, 1.9rem);
+      line-height: 1.1;
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    .hero-title h1 .is-accent { color: var(--accent); }
+
+    .footer-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
     }
 
     .partner-badge {
@@ -233,32 +215,31 @@
     .partner-badge:hover { color: var(--text); }
     .partner-badge strong { color: var(--accent); font-weight: 700; }
 
-    footer .credit {
+    .footer-meta .credit {
       font-family: 'Space Mono', monospace;
-      font-size: 0.6rem;
+      font-size: 0.58rem;
       color: var(--muted);
       letter-spacing: 0.4px;
-      text-align: right;
     }
 
-    /* ── COMING SOON BADGE ── */
-    .coming-soon-badge {
+    /* ── WAVE BAND — frames the bottom of the screen like a horizon ── */
+    .wave-band {
+      position: relative;
+      width: 100%;
+      height: 20vh;
+      overflow: hidden;
+      border-top: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(0,229,255,0.02), rgba(0,229,255,0.05));
+      flex-shrink: 0;
+    }
+
+    #bg-canvas {
       position: absolute;
-      top: 12px;
-      right: 12px;
-      font-family: 'Space Mono', monospace;
-      font-size: 0.55rem;
-      letter-spacing: 1px;
-      color: var(--accent4);
-      border: 1px solid rgba(255,215,64,0.3);
-      background: rgba(255,215,64,0.08);
-      padding: 3px 8px;
-      border-radius: 10px;
-      text-transform: uppercase;
+      inset: 0;
     }
 
     /* ══════════════════════════════════════════════
-       GAMES OVERLAY — floats over everything, page never scrolls
+       GAMES OVERLAY
        ══════════════════════════════════════════════ */
     .games-overlay {
       position: fixed;
@@ -272,10 +253,7 @@
       transition: opacity 0.2s;
     }
 
-    .games-overlay.open {
-      opacity: 1;
-      pointer-events: auto;
-    }
+    .games-overlay.open { opacity: 1; pointer-events: auto; }
 
     .games-overlay-backdrop {
       position: absolute;
@@ -297,9 +275,7 @@
       transition: transform 0.2s;
     }
 
-    .games-overlay.open .games-overlay-panel {
-      transform: translateY(0) scale(1);
-    }
+    .games-overlay.open .games-overlay-panel { transform: translateY(0) scale(1); }
 
     .overlay-close {
       position: absolute;
@@ -321,7 +297,6 @@
 
     .overlay-close:hover { border-color: var(--accent); color: var(--accent); }
 
-    /* ── GAME PREVIEW CARDS (inside overlay) ── */
     .cards {
       width: 100%;
       display: grid;
@@ -344,27 +319,15 @@
       overflow: hidden;
     }
 
-    .card .stripe {
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 3px;
-    }
-
+    .card .stripe { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
     .card-pink  .stripe { background: var(--accent2); }
     .card-green .stripe { background: var(--accent3); }
 
     .card-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-family: 'Space Mono', monospace;
-      font-size: 0.6rem;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      padding: 4px 10px;
-      border-radius: 20px;
-      border: 1px solid;
-      width: fit-content;
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: 'Space Mono', monospace; font-size: 0.6rem;
+      letter-spacing: 1.5px; text-transform: uppercase;
+      padding: 4px 10px; border-radius: 20px; border: 1px solid; width: fit-content;
     }
 
     .card-pink  .card-tag { color: var(--accent2); border-color: rgba(255,64,129,0.3); background: rgba(255,64,129,0.06); }
@@ -375,48 +338,25 @@
     .card-green .tag-dot { background: var(--accent3); }
 
     .card-icon { font-size: 1.8rem; line-height: 1; }
-
-    .card h2 {
-      font-family: 'Space Mono', monospace;
-      font-size: 1rem;
-      font-weight: 700;
-      color: var(--text);
-    }
-
-    .card p {
-      font-size: 0.85rem;
-      color: var(--muted);
-      line-height: 1.55;
-    }
-
-    .card-footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
+    .card h2 { font-family: 'Space Mono', monospace; font-size: 1rem; font-weight: 700; color: var(--text); }
+    .card p { font-size: 0.85rem; color: var(--muted); line-height: 1.55; }
+    .card-footer { display: flex; align-items: center; justify-content: space-between; }
     .card-pills { display: flex; flex-wrap: wrap; gap: 6px; }
-
     .pill {
-      font-size: 0.68rem;
-      color: var(--muted);
-      background: rgba(255,255,255,0.04);
-      border: 1px solid var(--border);
-      padding: 2px 8px;
-      border-radius: 10px;
+      font-size: 0.68rem; color: var(--muted); background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border); padding: 2px 8px; border-radius: 10px;
       font-family: 'Space Mono', monospace;
     }
-
     .card-arrow { color: var(--muted); font-size: 1.1rem; }
-
     .graph-preview { width: 100%; height: 56px; margin: 2px 0; }
 
     @media (max-width: 800px) {
-      .page-flex { flex-direction: column; overflow-y: auto; height: auto; min-height: 100vh; }
       html, body { overflow: auto; }
-      .hero-visual { width: 100%; height: 32vh; }
-      .right-panel { width: 100%; height: auto; }
-      .hero-text h1 { white-space: normal; }
+      .page-flex { height: auto; min-height: 100vh; }
+      .category-stack { flex-direction: column; }
+      .hero-title h1 { white-space: normal; }
+      .bottom-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+      .footer-meta { align-items: flex-start; }
     }
   </style>
 </head>
@@ -424,63 +364,90 @@
 
   <div class="page-flex">
 
-    <!-- LEFT: HERO ANIMATION -->
-    <div class="hero-visual" id="heroVisual">
-      <div class="hero-visual-logo">Motion<span>//</span>Math</div>
-      <canvas id="bg-canvas"></canvas>
-    </div>
-
-    <!-- RIGHT: TITLE + CHOICES -->
-    <div class="right-panel">
-
-      <div class="hero-text">
-        <h1>Your Motion <span class="is-accent">IS</span> the Math</h1>
-        <div class="tagline">Walk it. Watch it graph.</div>
+    <div class="main-content">
+      <div class="top-row">
+        <div class="logo">Motion<span>//</span>Math</div>
+        <div class="section-label">Choose Your Path</div>
       </div>
-
-      <div class="section-label">Choose Your Path</div>
 
       <div class="category-stack">
 
-        <!-- GRAPHER: streamlined single entry, goes straight into Quick Start (or last-used tool) -->
+        <!-- GRAPHER: streamlined single entry -->
         <a class="category-card cat-grapher" href="setup.html?from=quickstart.html">
           <div class="stripe"></div>
           <div class="category-card-head">
-            <svg class="category-icon" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M8 8 V56 H56" stroke="#7986cb" stroke-width="2" stroke-linecap="round"/>
-              <path d="M8 44 C 20 44, 22 20, 34 20 C 46 20, 44 34, 56 12" stroke="#00e5ff" stroke-width="2.5" fill="none" stroke-linecap="round"/>
-              <circle cx="56" cy="12" r="3" fill="#00e5ff"/>
-            </svg>
             <h2>Grapher</h2>
+            <span class="card-arrow">→</span>
           </div>
-          <p>Track your motion in real time with an ArUco marker or colored ball. Walk the graph — see the math.</p>
-          <span class="card-arrow">→</span>
+          <div class="category-card-art">
+            <svg viewBox="0 0 200 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M14 10 V126 H190" stroke="#7986cb" stroke-width="2" stroke-linecap="round"/>
+              <path d="M14 108 C 50 108, 60 40, 100 40 C 130 40, 140 62, 178 18"
+                stroke="#00e5ff" stroke-width="3" fill="none" stroke-linecap="round"/>
+              <circle cx="70" cy="61" r="4.5" fill="#00e5ff"/>
+              <circle cx="140" cy="35" r="4.5" fill="#00e5ff"/>
+              <path d="M70 61 L140 61 L140 35" stroke="#ffd740" stroke-width="2" stroke-dasharray="4 3" fill="none"/>
+              <text x="98" y="76" fill="#ffd740" font-family="Space Mono" font-size="11">run</text>
+              <text x="146" y="52" fill="#ffd740" font-family="Space Mono" font-size="11">rise</text>
+            </svg>
+          </div>
         </a>
 
-        <!-- GAMES: inert, opens an overlay preview -->
+        <!-- GAMES: inert, opens overlay preview -->
         <div class="category-card cat-games" id="gamesCard" onclick="openGames()">
-          <div class="stripe"></div>
           <div class="coming-soon-badge">Coming Soon</div>
+          <div class="stripe"></div>
           <div class="category-card-head">
-            <svg class="category-icon" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M8 8 V56 H56" stroke="#7986cb" stroke-width="2" stroke-linecap="round"/>
-              <path d="M8 46 L20 40 L30 24 L40 26 L52 10" stroke="#ff4081" stroke-width="2.5" stroke-dasharray="4 3" fill="none" stroke-linecap="round"/>
-              <text x="44" y="16" font-family="Space Mono" font-size="12" fill="#ffd740">✈</text>
-            </svg>
             <h2>Games</h2>
+            <span class="card-arrow">↗</span>
           </div>
-          <p>Turn movement into play — fly, dodge, and match your way through the math.</p>
-          <span class="card-arrow">↗</span>
+          <div class="category-card-art">
+            <svg viewBox="0 0 200 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <!-- ground -->
+              <line x1="6" y1="126" x2="194" y2="126" stroke="#2e3356" stroke-width="2"/>
+              <!-- buildings -->
+              <rect x="16" y="86" width="24" height="40" fill="#22263a" stroke="#7986cb" stroke-width="1.5"/>
+              <rect x="22" y="94" width="5" height="5" fill="#7986cb"/>
+              <rect x="31" y="94" width="5" height="5" fill="#7986cb"/>
+              <rect x="22" y="106" width="5" height="5" fill="#7986cb"/>
+              <rect x="31" y="106" width="5" height="5" fill="#7986cb"/>
+              <rect x="46" y="66" width="26" height="60" fill="#22263a" stroke="#7986cb" stroke-width="1.5"/>
+              <rect x="52" y="76" width="5" height="5" fill="#7986cb"/>
+              <rect x="62" y="76" width="5" height="5" fill="#7986cb"/>
+              <rect x="52" y="88" width="5" height="5" fill="#7986cb"/>
+              <rect x="62" y="88" width="5" height="5" fill="#7986cb"/>
+              <rect x="52" y="100" width="5" height="5" fill="#7986cb"/>
+              <rect x="62" y="100" width="5" height="5" fill="#7986cb"/>
+              <!-- hot air balloon, up high -->
+              <ellipse cx="150" cy="34" rx="20" ry="24" fill="none" stroke="#ffd740" stroke-width="2"/>
+              <path d="M138 54 L144 66 H156 L162 54" stroke="#ffd740" stroke-width="1.5" fill="none"/>
+              <rect x="144" y="66" width="12" height="8" fill="none" stroke="#ffd740" stroke-width="1.5"/>
+              <!-- flight path weaving between buildings and balloon -->
+              <path d="M10 118 L44 100 L70 108 L96 60 L124 88 L150 74 L188 22"
+                stroke="#ff4081" stroke-width="2.5" stroke-dasharray="5 4" fill="none" stroke-linecap="round"/>
+              <circle cx="188" cy="22" r="7" fill="none" stroke="#ff4081" stroke-width="2"/>
+              <text x="180" y="26" font-family="Space Mono" font-size="10">✈</text>
+            </svg>
+          </div>
         </div>
 
       </div>
 
-      <footer>
-        <a class="partner-badge" href="https://www.mathisfigureoutable.com/bplf-wait" target="_blank" rel="noopener">Inspired by Pam Harris at <strong>Math is Figureoutable</strong> ↗</a>
-        <div class="credit">Created by Karl Mauks-Koepke, Math Educator</div>
-      </footer>
-
+      <div class="bottom-row">
+        <div class="hero-title">
+          <h1>Your Motion <span class="is-accent">IS</span> the Math</h1>
+        </div>
+        <div class="footer-meta">
+          <a class="partner-badge" href="https://www.mathisfigureoutable.com/bplf-wait" target="_blank" rel="noopener">Inspired by Pam Harris at <strong>Math is Figureoutable</strong> ↗</a>
+          <div class="credit">Created by Karl Mauks-Koepke, Math Educator</div>
+        </div>
+      </div>
     </div>
+
+    <div class="wave-band" id="waveBand">
+      <canvas id="bg-canvas"></canvas>
+    </div>
+
   </div>
 
   <!-- GAMES OVERLAY -->
@@ -488,11 +455,9 @@
     <div class="games-overlay-backdrop" onclick="closeGames()"></div>
     <div class="games-overlay-panel">
       <button class="overlay-close" onclick="closeGames()" aria-label="Close">✕</button>
-      <div class="section-label" style="margin-top:0;">Games — Coming Soon</div>
+      <div class="section-label" style="margin-bottom:8px;">Games — Coming Soon</div>
 
       <div class="cards">
-
-        <!-- FLIGHT GAME -->
         <div class="card card-pink">
           <div class="stripe"></div>
           <div class="card-tag"><span class="tag-dot"></span>Game</div>
@@ -507,15 +472,11 @@
             <line x1="0" y1="50" x2="300" y2="50" stroke="#2e3356" stroke-width="1"/>
           </svg>
           <div class="card-footer">
-            <div class="card-pills">
-              <span class="pill">Real-time</span>
-              <span class="pill">Side-scrolling</span>
-            </div>
+            <div class="card-pills"><span class="pill">Real-time</span><span class="pill">Side-scrolling</span></div>
             <span class="card-arrow">→</span>
           </div>
         </div>
 
-        <!-- MATCH THE GRAPH -->
         <div class="card card-green">
           <div class="stripe"></div>
           <div class="card-tag"><span class="tag-dot"></span>Game</div>
@@ -523,42 +484,27 @@
           <h2>Match the Graph</h2>
           <p>A target graph appears on screen. Walk to recreate it as closely as possible. Score is based on how well your motion matches — compete with your class.</p>
           <svg class="graph-preview" viewBox="0 0 300 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <polyline points="0,50 60,35 120,20 180,20 240,35 300,50"
-              stroke="#2e3356" stroke-width="2" fill="none"/>
-            <polyline points="0,50 60,36 120,22 185,19 242,33 300,49"
-              stroke="#69f0ae" stroke-width="2" fill="none"/>
+            <polyline points="0,50 60,35 120,20 180,20 240,35 300,50" stroke="#2e3356" stroke-width="2" fill="none"/>
+            <polyline points="0,50 60,36 120,22 185,19 242,33 300,49" stroke="#69f0ae" stroke-width="2" fill="none"/>
             <text x="4" y="12" fill="#7986cb" font-family="Space Mono" font-size="7">target</text>
             <text x="4" y="22" fill="#69f0ae" font-family="Space Mono" font-size="7">you</text>
             <rect x="4" y="4" width="4" height="4" fill="#7986cb"/>
             <rect x="4" y="14" width="4" height="4" fill="#69f0ae"/>
           </svg>
           <div class="card-footer">
-            <div class="card-pills">
-              <span class="pill">RMSE scoring</span>
-              <span class="pill">Multiplayer</span>
-            </div>
+            <div class="card-pills"><span class="pill">RMSE scoring</span><span class="pill">Multiplayer</span></div>
             <span class="card-arrow">→</span>
           </div>
         </div>
-
       </div>
     </div>
   </div>
 
   <script>
-    function openGames() {
-      document.getElementById('gamesOverlay').classList.add('open');
-    }
-    function closeGames() {
-      document.getElementById('gamesOverlay').classList.remove('open');
-    }
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeGames();
-    });
+    function openGames() { document.getElementById('gamesOverlay').classList.add('open'); }
+    function closeGames() { document.getElementById('gamesOverlay').classList.remove('open'); }
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeGames(); });
 
-    // Remember whichever tool (Quick Start or Full Lab) was last used, so a
-    // returning visitor lands back where they left off instead of always
-    // defaulting to Quick Start.
     (function () {
       let lastTool = null;
       try { lastTool = localStorage.getItem('mm_last_tool'); } catch (e) {}
@@ -570,15 +516,14 @@
   </script>
 
   <script>
-    // ── HERO ANIMATION — confined to the left 60% pane, brighter, each
-    // line drifting at its own slightly different speed.
-    const heroVisual = document.getElementById('heroVisual');
+    // ── WAVE BAND — now a horizontal strip across the bottom, full width.
+    const waveBand = document.getElementById('waveBand');
     const canvas = document.getElementById('bg-canvas');
     const ctx = canvas.getContext('2d');
     let w, h, lines;
 
     function resize() {
-      const rect = heroVisual.getBoundingClientRect();
+      const rect = waveBand.getBoundingClientRect();
       w = canvas.width  = rect.width;
       h = canvas.height = rect.height;
       buildLines();
@@ -589,18 +534,15 @@
       const count = 5;
       for (let i = 0; i < count; i++) {
         const pts = [];
-        const segments = 12;
+        const segments = 24; // more segments — band is now full page width
         for (let j = 0; j <= segments; j++) {
-          pts.push({
-            x: (j / segments) * w,
-            y: h * (0.15 + 0.7 * Math.random())
-          });
+          pts.push({ x: (j / segments) * w, y: h * (0.15 + 0.7 * Math.random()) });
         }
         lines.push({
           pts,
           color: ['#00e5ff','#ff4081','#69f0ae','#ffd740','#b388ff'][i],
           offset: Math.random() * 1000,
-          speed: 0.65 + Math.random() * 0.7, // each line drifts at its own pace
+          speed: 0.65 + Math.random() * 0.7,
           flash: 0
         });
       }
@@ -610,14 +552,12 @@
       ctx.clearRect(0, 0, w, h);
 
       for (const line of lines) {
-        // Occasional "power surge" — a line randomly brightens then decays,
-        // like a pulse of current passing through it.
         if (Math.random() < 0.0008) line.flash = 1;
         line.flash *= 0.96;
 
         const pts = line.pts.map((p, i) => ({
           x: p.x,
-          y: p.y + Math.sin(t * 0.0003 * line.speed + line.offset + i * 0.8) * (h * 0.045)
+          y: p.y + Math.sin(t * 0.0003 * line.speed + line.offset + i * 0.8) * (h * 0.16)
         }));
 
         ctx.beginPath();
