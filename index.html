@@ -33,6 +33,151 @@
     }
 
     /* ══════════════════════════════════════════════
+       SPLASH SCREEN — plays hero video, freezes, flickers title
+       ══════════════════════════════════════════════ */
+    .splash {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      transition: opacity 0.6s ease;
+    }
+
+    .splash.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .splash video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Title words positioned in the open corners the S-curve leaves:
+       Motion upper-left, Math lower-right. */
+    .splash-title {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .splash-word {
+      position: absolute;
+      font-family: 'Space Mono', monospace;
+      font-weight: 700;
+      font-size: clamp(2.2rem, 7vw, 5.5rem);
+      letter-spacing: 2px;
+      opacity: 0;
+    }
+
+    .splash-word.motion {
+      top: 12%;
+      left: 7%;
+      color: var(--accent);
+    }
+
+    .splash-word.math {
+      bottom: 12%;
+      right: 7%;
+      color: var(--accent2);
+    }
+
+    /* Arcade power-on flicker: a few erratic flashes, then settle to lit. */
+    @keyframes flicker-cyan {
+      0%   { opacity: 0;   text-shadow: none; }
+      10%  { opacity: 0.8; text-shadow: 0 0 18px var(--accent); }
+      12%  { opacity: 0.1; text-shadow: none; }
+      16%  { opacity: 0.9; text-shadow: 0 0 22px var(--accent); }
+      18%  { opacity: 0.2; text-shadow: none; }
+      24%  { opacity: 1;   text-shadow: 0 0 26px var(--accent); }
+      26%  { opacity: 0.5; text-shadow: 0 0 8px var(--accent); }
+      100% { opacity: 1;   text-shadow: 0 0 26px var(--accent), 0 0 48px rgba(0,229,255,0.5); }
+    }
+
+    @keyframes flicker-pink {
+      0%   { opacity: 0;   text-shadow: none; }
+      10%  { opacity: 0.8; text-shadow: 0 0 18px var(--accent2); }
+      12%  { opacity: 0.1; text-shadow: none; }
+      16%  { opacity: 0.9; text-shadow: 0 0 22px var(--accent2); }
+      18%  { opacity: 0.2; text-shadow: none; }
+      24%  { opacity: 1;   text-shadow: 0 0 26px var(--accent2); }
+      26%  { opacity: 0.5; text-shadow: 0 0 8px var(--accent2); }
+      100% { opacity: 1;   text-shadow: 0 0 26px var(--accent2), 0 0 48px rgba(255,64,129,0.5); }
+    }
+
+    .splash-word.motion.lit { animation: flicker-cyan 1.1s steps(1, end) forwards; }
+    .splash-word.math.lit   { animation: flicker-pink 1.1s steps(1, end) forwards; animation-delay: 0.5s; }
+
+    /* Subtle scanline overlay for CRT/arcade texture */
+    .splash-scanlines {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(0,0,0,0) 0px,
+        rgba(0,0,0,0) 2px,
+        rgba(0,0,0,0.12) 3px,
+        rgba(0,0,0,0.12) 3px
+      );
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+
+    .splash-scanlines.on { opacity: 1; }
+
+    .splash-enter {
+      position: absolute;
+      bottom: 6%;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Space Mono', monospace;
+      font-size: 0.8rem;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--text);
+      background: rgba(0,0,0,0.4);
+      border: 1px solid var(--accent);
+      border-radius: 30px;
+      padding: 12px 32px;
+      cursor: pointer;
+      pointer-events: auto;
+      opacity: 0;
+      transition: opacity 0.5s, background 0.2s, box-shadow 0.2s;
+      animation: none;
+    }
+
+    .splash-enter.show { opacity: 1; animation: enter-pulse 2s ease-in-out infinite; }
+    .splash-enter:hover { background: var(--accent); color: #000; box-shadow: 0 0 24px var(--accent); }
+
+    @keyframes enter-pulse {
+      0%, 100% { box-shadow: 0 0 8px rgba(0,229,255,0.3); }
+      50%      { box-shadow: 0 0 20px rgba(0,229,255,0.6); }
+    }
+
+    .splash-skip {
+      position: absolute;
+      top: 5%;
+      right: 5%;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 1px;
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      pointer-events: auto;
+      transition: color 0.2s;
+    }
+
+    .splash-skip:hover { color: var(--text); }
+
+    /* ══════════════════════════════════════════════
        LAYOUT — content area on top, wave band framing the bottom
        ══════════════════════════════════════════════ */
     .page-flex {
@@ -362,6 +507,20 @@
 </head>
 <body>
 
+  <!-- SPLASH SCREEN — hero video, freezes on final frame, title flickers on -->
+  <div class="splash" id="splash">
+    <video id="splashVideo" muted playsinline autoplay>
+      <source src="assets/motion-math-hero.mp4" type="video/mp4">
+    </video>
+    <div class="splash-scanlines" id="splashScanlines"></div>
+    <div class="splash-title">
+      <div class="splash-word motion" id="wordMotion">Motion</div>
+      <div class="splash-word math" id="wordMath">Math</div>
+    </div>
+    <button class="splash-skip" id="splashSkip">Skip →</button>
+    <button class="splash-enter" id="splashEnter">Enter</button>
+  </div>
+
   <div class="page-flex">
 
     <div class="main-content">
@@ -499,6 +658,58 @@
       </div>
     </div>
   </div>
+
+  <script>
+    // ── SPLASH SEQUENCE ──
+    // Video plays once → freezes on its final frame (which IS the grid+curve
+    // image) → title words flicker on like an arcade sign → Enter appears.
+    (function () {
+      const splash     = document.getElementById('splash');
+      const video      = document.getElementById('splashVideo');
+      const scanlines  = document.getElementById('splashScanlines');
+      const wordMotion = document.getElementById('wordMotion');
+      const wordMath   = document.getElementById('wordMath');
+      const enterBtn   = document.getElementById('splashEnter');
+      const skipBtn    = document.getElementById('splashSkip');
+
+      let dismissed = false;
+
+      function dismiss() {
+        if (dismissed) return;
+        dismissed = true;
+        splash.classList.add('hidden');
+        // fully remove after fade so it can't trap clicks
+        setTimeout(() => { splash.style.display = 'none'; }, 650);
+      }
+
+      function revealTitle() {
+        // freeze on the final frame
+        try { video.pause(); } catch (e) {}
+        scanlines.classList.add('on');
+        wordMotion.classList.add('lit');
+        wordMath.classList.add('lit');
+        // Enter button appears after the flicker settles (~1.7s covers both words)
+        setTimeout(() => enterBtn.classList.add('show'), 1700);
+      }
+
+      // When the video finishes, reveal the title over its frozen last frame.
+      video.addEventListener('ended', revealTitle);
+
+      // Safety net: if the video errors or can't load, don't trap the user on
+      // a black screen — jump straight to the title reveal.
+      video.addEventListener('error', revealTitle);
+
+      // Second safety net: if 'ended' never fires for some reason, force it.
+      video.addEventListener('loadedmetadata', () => {
+        if (video.duration && isFinite(video.duration)) {
+          setTimeout(() => { if (!dismissed) revealTitle(); }, (video.duration + 0.5) * 1000);
+        }
+      });
+
+      enterBtn.addEventListener('click', dismiss);
+      skipBtn.addEventListener('click', dismiss);
+    })();
+  </script>
 
   <script>
     function openGames() { document.getElementById('gamesOverlay').classList.add('open'); }
