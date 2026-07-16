@@ -35,123 +35,80 @@
     /* ══════════════════════════════════════════════
        FULLSCREEN SPLASH — first visit only
        ══════════════════════════════════════════════ */
-    .splash {
-      position: fixed;
-      inset: 0;
-      z-index: 100;
-      background: #000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      transition: opacity 0.6s ease;
-    }
-
-    .splash.hidden { opacity: 0; pointer-events: none; }
-
-    .splash video { width: 100%; height: 100%; object-fit: cover; }
-
-    .splash-title { position: absolute; inset: 0; pointer-events: none; }
-
-    .splash-word {
+    /* ══════════════════════════════════════════════
+       HERO PANE VIDEO — plays confined to the pane, first visit only
+       ══════════════════════════════════════════════ */
+    .hero-video {
       position: absolute;
-      font-family: 'Space Mono', monospace;
-      font-weight: 700;
-      font-style: italic;
-      text-transform: uppercase;
-      letter-spacing: 4px;
-      opacity: 0;
-      background-size: 300% 100%;
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 1;
     }
 
-    .splash-word.motion {
-      top: 10%;
-      left: 6%;
-      font-size: clamp(2.8rem, 8vw, 6.5rem);
-      background-image: linear-gradient(100deg, #00e5ff 40%, #ffffff 50%, #00e5ff 60%);
-    }
+    .hero-video.done { display: none; }
 
-    .splash-word.math {
-      bottom: 10%;
-      right: 6%;
-      font-size: clamp(2.8rem, 8vw, 6.5rem);
-      background-image: linear-gradient(100deg, #ff4081 40%, #ffffff 50%, #ff4081 60%);
-    }
-
-    @keyframes flicker-in {
-      0%   { opacity: 0; }
-      10%  { opacity: 0.8; }
-      12%  { opacity: 0.1; }
-      16%  { opacity: 0.9; }
-      18%  { opacity: 0.2; }
-      24%  { opacity: 1; }
-      26%  { opacity: 0.5; }
-      100% { opacity: 1; }
-    }
-
-    @keyframes shine {
-      0%   { background-position: 200% 0; }
-      60%  { background-position: -100% 0; }
-      100% { background-position: -100% 0; }
-    }
-
-    .splash-word.motion.lit {
-      animation: flicker-in 1.1s steps(1, end) forwards,
-                 shine 4s ease-in-out 1.1s infinite;
-      filter: drop-shadow(0 0 18px rgba(0,229,255,0.85)) drop-shadow(0 0 44px rgba(0,229,255,0.45));
-    }
-
-    .splash-word.math.lit {
-      animation: flicker-in 1.1s steps(1, end) 0.5s forwards,
-                 shine 4s ease-in-out 1.6s infinite;
-      filter: drop-shadow(0 0 18px rgba(255,64,129,0.85)) drop-shadow(0 0 44px rgba(255,64,129,0.45));
-    }
-
-    .splash-scanlines {
+    .hero-scanlines {
       position: absolute;
       inset: 0;
       pointer-events: none;
+      z-index: 3;
       background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px, rgba(0,0,0,0.12) 3px, rgba(0,0,0,0.12) 3px);
       opacity: 0;
       transition: opacity 0.4s;
     }
 
-    .splash-scanlines.on { opacity: 1; }
+    .hero-scanlines.on { opacity: 1; }
 
-    .splash-skip {
+    /* Brief glitch burst at the moment the video freezes into the title
+       reveal — masks the handoff and gives it a "power settling" beat. */
+    @keyframes glitch-burst {
+      0%   { filter: brightness(1) contrast(1) saturate(1); transform: translateX(0); }
+      8%   { filter: brightness(2.2) contrast(1.5) saturate(1.3); transform: translateX(-8px); }
+      16%  { filter: brightness(0.5) contrast(1.2); transform: translateX(6px); }
+      24%  { filter: brightness(1.9) contrast(1.4); transform: translateX(-4px); }
+      32%  { filter: brightness(0.6); transform: translateX(3px); }
+      44%  { filter: brightness(1.5); transform: translateX(-2px); }
+      58%  { filter: brightness(0.85); transform: translateX(0); }
+      72%  { filter: brightness(1.15); }
+      100% { filter: brightness(1) contrast(1) saturate(1); transform: translateX(0); }
+    }
+
+    .hero-pane.glitching { animation: glitch-burst 0.45s steps(2, end); }
+
+    .hero-skip {
       position: absolute;
-      bottom: 5%;
+      bottom: 3vh;
       left: 50%;
       transform: translateX(-50%);
       font-family: 'Space Mono', monospace;
-      font-size: 0.72rem;
-      letter-spacing: 2px;
+      font-size: 0.64rem;
+      letter-spacing: 1.5px;
       text-transform: uppercase;
-      color: var(--muted);
-      background: rgba(0,0,0,0.35);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 8px 18px;
+      color: rgba(232,234,246,0.7);
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(232,234,246,0.2);
+      border-radius: 18px;
+      padding: 7px 16px;
       cursor: pointer;
-      pointer-events: auto;
+      z-index: 4;
       transition: color 0.2s, border-color 0.2s;
     }
 
-    .splash-skip kbd {
+    .hero-skip kbd {
       font-family: 'Space Mono', monospace;
-      border: 1px solid var(--muted);
+      border: 1px solid rgba(232,234,246,0.4);
       border-radius: 4px;
       padding: 0 5px;
       margin-left: 4px;
     }
 
-    .splash-skip:hover { color: var(--text); border-color: var(--accent); }
+    .hero-skip:hover { color: var(--text); border-color: var(--accent); }
+    .hero-skip.gone { display: none; }
 
     /* ══════════════════════════════════════════════
-       PERSISTENT PAGE — 60/40, always live underneath the splash
+       LAYOUT — content area on top, wave band framing the bottom
        ══════════════════════════════════════════════ */
     .page-flex {
       display: flex;
@@ -190,28 +147,72 @@
       font-style: italic;
       text-transform: uppercase;
       letter-spacing: 3px;
+      z-index: 3;
+      opacity: 0;
+    }
+
+    .hero-word.revealed { opacity: 1; }
+
+    @keyframes shine {
+      0%   { background-position: 200% 0; }
+      60%  { background-position: -100% 0; }
+      100% { background-position: -100% 0; }
+    }
+
+    /* MOTION — a breathing scale+brightness pulse: bigger & brighter reads as
+       "toward the camera," smaller & dimmer reads as "away" — the same
+       toward/away axis the tool itself measures. */
+    @keyframes motion-pulse {
+      0%   { transform: scale(0.9);  filter: drop-shadow(0 0 10px rgba(0,229,255,0.5)) drop-shadow(0 0 20px rgba(0,229,255,0.25)) brightness(0.88); }
+      50%  { transform: scale(1.12); filter: drop-shadow(0 0 26px rgba(0,229,255,1))   drop-shadow(0 0 56px rgba(0,229,255,0.6))  brightness(1.15); }
+      100% { transform: scale(0.9);  filter: drop-shadow(0 0 10px rgba(0,229,255,0.5)) drop-shadow(0 0 20px rgba(0,229,255,0.25)) brightness(0.88); }
+    }
+
+    .hero-word.motion {
+      top: 10%;
+      left: 5%;
+      font-size: clamp(3.4rem, 11.5vw, 9rem);
+      color: var(--accent);
+      transform-origin: left center;
+      animation: motion-pulse 2.8s ease-in-out infinite;
+    }
+
+    /* MATH — stark, metallic, electric: a bright white-hot highlight sweeping
+       through solid pink, not moving in space, just alive. */
+    .hero-word.math {
+      bottom: 10%;
+      right: 5%;
+      font-size: clamp(3.4rem, 11.5vw, 9rem);
+      background-image: linear-gradient(100deg, #ff4081 35%, #ffffff 50%, #ff4081 65%);
       background-size: 300% 100%;
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
-      animation: shine 5s ease-in-out infinite;
+      filter: drop-shadow(0 0 16px rgba(255,64,129,0.85)) drop-shadow(0 0 40px rgba(255,64,129,0.45));
+      animation: shine 3.5s ease-in-out infinite;
     }
 
-    .hero-word.motion {
-      top: 12%;
-      left: 6%;
-      font-size: clamp(1.8rem, 5vw, 3.6rem);
-      background-image: linear-gradient(100deg, #00e5ff 40%, #ffffff 50%, #00e5ff 60%);
-      filter: drop-shadow(0 0 12px rgba(0,229,255,0.8)) drop-shadow(0 0 30px rgba(0,229,255,0.4));
+    @keyframes flicker-in {
+      0%   { opacity: 0; }
+      10%  { opacity: 0.8; }
+      12%  { opacity: 0.1; }
+      16%  { opacity: 0.9; }
+      18%  { opacity: 0.2; }
+      24%  { opacity: 1; }
+      26%  { opacity: 0.5; }
+      100% { opacity: 1; }
     }
 
-    .hero-word.math {
-      bottom: 12%;
-      right: 6%;
-      font-size: clamp(1.8rem, 5vw, 3.6rem);
-      background-image: linear-gradient(100deg, #ff4081 40%, #ffffff 50%, #ff4081 60%);
-      filter: drop-shadow(0 0 12px rgba(255,64,129,0.8)) drop-shadow(0 0 30px rgba(255,64,129,0.4));
-      animation-delay: 0.5s;
+    /* First-time reveal: flicker on, then settle into the ongoing ambient
+       animation. Repeat visits skip straight to .revealed (plain fade). */
+    .hero-word.motion.powering {
+      animation: flicker-in 1.1s steps(1, end) forwards,
+                 motion-pulse 2.8s ease-in-out 1.1s infinite;
+    }
+
+    .hero-word.math.powering {
+      animation: flicker-in 1.1s steps(1, end) 0.5s forwards,
+                 shine 3.5s ease-in-out 1.6s infinite;
     }
 
     .replay-intro {
@@ -463,26 +464,17 @@
 </head>
 <body>
 
-  <!-- FULLSCREEN SPLASH — first visit only -->
-  <div class="splash" id="splash">
-    <video id="splashVideo" muted playsinline autoplay>
-      <source src="assets/motion-math-hero.mp4" type="video/mp4">
-    </video>
-    <div class="splash-scanlines" id="splashScanlines"></div>
-    <div class="splash-title">
-      <div class="splash-word motion" id="wordMotion">Motion</div>
-      <div class="splash-word math" id="wordMath">Math</div>
-    </div>
-    <button class="splash-skip" id="splashSkip">Press <kbd>Space</kbd> to skip</button>
-  </div>
-
-  <!-- PERSISTENT PAGE — always here underneath the splash -->
   <div class="page-flex">
 
-    <div class="hero-pane">
+    <div class="hero-pane" id="heroPane">
       <div class="hero-pane-logo">Motion<span>//</span>Math</div>
-      <div class="hero-word motion">Motion</div>
-      <div class="hero-word math">Math</div>
+      <video class="hero-video" id="heroVideo" muted playsinline>
+        <source src="assets/motion-math-hero.mp4" type="video/mp4">
+      </video>
+      <div class="hero-scanlines" id="heroScanlines"></div>
+      <div class="hero-word motion" id="wordMotion">Motion</div>
+      <div class="hero-word math" id="wordMath">Math</div>
+      <button class="hero-skip" id="heroSkip">Press <kbd>Space</kbd> to skip</button>
       <button class="replay-intro" id="replayIntro">↻ Replay Intro</button>
     </div>
 
@@ -608,70 +600,78 @@
   </div>
 
   <script>
-    // ── SPLASH SEQUENCE — first visit only, remembered via localStorage ──
+    // ── HERO PANE VIDEO — first visit only, confined to the pane, remembered ──
     (function () {
-      const splash     = document.getElementById('splash');
-      const video      = document.getElementById('splashVideo');
-      const scanlines  = document.getElementById('splashScanlines');
+      const pane       = document.getElementById('heroPane');
+      const video      = document.getElementById('heroVideo');
+      const scanlines  = document.getElementById('heroScanlines');
       const wordMotion = document.getElementById('wordMotion');
-      const wordMath    = document.getElementById('wordMath');
-      const skipBtn    = document.getElementById('splashSkip');
+      const wordMath   = document.getElementById('wordMath');
+      const skipBtn    = document.getElementById('heroSkip');
       const replayBtn  = document.getElementById('replayIntro');
 
       let seen = false;
       try { seen = localStorage.getItem('mm_intro_seen') === '1'; } catch (e) {}
 
-      let dismissed = false;
+      function showTitleInstantly() {
+        video.classList.add('done');
+        scanlines.classList.add('on');
+        wordMotion.classList.add('revealed');
+        wordMath.classList.add('revealed');
+        skipBtn.classList.add('gone');
+      }
 
-      function dismiss() {
-        if (dismissed) return;
-        dismissed = true;
-        splash.classList.add('hidden');
-        setTimeout(() => { splash.style.display = 'none'; }, 650);
+      function hideTitle() {
+        wordMotion.classList.remove('revealed', 'powering');
+        wordMath.classList.remove('revealed', 'powering');
+        scanlines.classList.remove('on');
+      }
+
+      function revealWithGlitch() {
+        try { video.pause(); } catch (e) {}
+        pane.classList.add('glitching');
+        setTimeout(() => {
+          pane.classList.remove('glitching');
+          video.classList.add('done');
+          scanlines.classList.add('on');
+          wordMotion.classList.add('powering');
+          wordMath.classList.add('powering');
+          skipBtn.classList.add('gone');
+        }, 450);
+      }
+
+      function markSeen() {
         try { localStorage.setItem('mm_intro_seen', '1'); } catch (e) {}
       }
 
-      function revealTitle() {
-        try { video.pause(); } catch (e) {}
-        scanlines.classList.add('on');
-        wordMotion.classList.add('lit');
-        wordMath.classList.add('lit');
-      }
-
-      function playSplash() {
-        dismissed = false;
-        splash.style.display = 'flex';
-        // force reflow so the 'hidden' transition can re-apply cleanly
-        void splash.offsetWidth;
-        splash.classList.remove('hidden');
-        scanlines.classList.remove('on');
-        wordMotion.classList.remove('lit');
-        wordMath.classList.remove('lit');
-        try { video.currentTime = 0; video.play(); } catch (e) {}
+      function skip() {
+        markSeen();
+        revealWithGlitch();
       }
 
       if (seen) {
-        // Skip the fullscreen splash entirely — go straight to the persistent page.
-        splash.style.display = 'none';
+        showTitleInstantly();
       } else {
-        video.addEventListener('ended', revealTitle);
-        video.addEventListener('error', revealTitle);
-        video.addEventListener('loadedmetadata', () => {
-          if (video.duration && isFinite(video.duration)) {
-            setTimeout(() => { if (!dismissed) revealTitle(); }, (video.duration + 0.5) * 1000);
-          }
-        });
+        video.play().catch(() => { /* autoplay blocked — fall back to static title */ showTitleInstantly(); markSeen(); });
+        video.addEventListener('ended', () => { markSeen(); revealWithGlitch(); });
+        video.addEventListener('error', () => { markSeen(); showTitleInstantly(); });
       }
 
-      skipBtn.addEventListener('click', dismiss);
+      skipBtn.addEventListener('click', skip);
       document.addEventListener('keydown', (e) => {
-        if (e.code === 'Space' && splash.style.display !== 'none') {
+        if (e.code === 'Space' && !skipBtn.classList.contains('gone')) {
           e.preventDefault();
-          dismiss();
+          skip();
         }
       });
 
-      replayBtn.addEventListener('click', playSplash);
+      replayBtn.addEventListener('click', () => {
+        hideTitle();
+        video.classList.remove('done');
+        skipBtn.classList.remove('gone');
+        try { video.currentTime = 0; video.play(); } catch (e) {}
+        video.addEventListener('ended', revealWithGlitch, { once: true });
+      });
     })();
   </script>
 
