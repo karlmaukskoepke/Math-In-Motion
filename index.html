@@ -378,48 +378,35 @@
       animation: tip-fade 1.25s ease-in-out infinite;
     }
 
-    /* ── GAMES SCENE: plane arcs over a scrolling building ──
-       At rest: building sits center, faint trail arc, plane parked at the
-       apex — so the card reads even without hovering. On hover: building
-       scrolls right-to-left, trail draws, plane flies the arc. */
-    .games-buildings { transform: translateX(0); }
+    /* ── GAMES SCENE: plane threads a scrolling tunnel ──
+       At rest the tunnel and plane sit in view. On hover the tunnel scrolls
+       right-to-left and the plane bobs up-and-down to thread the gap between
+       stalactites and stalagmites. The plane holds a fixed x (world scrolls
+       under it), so it never collides with the graph line elsewhere. */
+    .games-tunnel { transform: translateX(0); }
+    .games-plane { transform: translate(64px, 68px); }
 
-    @keyframes bldg-scroll {
+    @keyframes tunnel-scroll {
       0%   { transform: translateX(0); }
       100% { transform: translateX(-200px); }
     }
 
-    @keyframes trail-redraw {
-      0%   { stroke-dashoffset: 300; }
-      55%  { stroke-dashoffset: 0; }
-      100% { stroke-dashoffset: 0; }
+    /* Plane bobs to follow the tunnel's throat: dips as the ceiling is high,
+       rises as the floor humps up. Timed to the 3s scroll cycle. */
+    @keyframes plane-bob {
+      0%   { transform: translate(64px, 60px) rotate(6deg); }
+      25%  { transform: translate(64px, 78px) rotate(-5deg); }
+      50%  { transform: translate(64px, 64px) rotate(5deg); }
+      75%  { transform: translate(64px, 80px) rotate(-4deg); }
+      100% { transform: translate(64px, 60px) rotate(6deg); }
     }
 
-    /* Plane flies the identical arc via offset-path. If a browser lacks
-       offset-path support, the plane simply stays parked at its x/y apex
-       (still a valid resting scene) rather than disappearing. */
-    .games-plane {
-      offset-path: path('M4 82 C 44 82, 70 26, 100 26 C 130 26, 156 82, 200 82');
-      offset-rotate: auto;
-      offset-distance: 50%;   /* parked at the apex at rest */
-    }
-
-    @keyframes plane-fly {
-      0%   { offset-distance: 0%; }
-      100% { offset-distance: 100%; }
-    }
-
-    .category-card:hover .games-buildings {
-      animation: bldg-scroll 3s linear infinite;
-    }
-
-    .category-card:hover .games-trail {
-      stroke-dasharray: 300;
-      animation: trail-redraw 3s ease-in-out infinite;
+    .category-card:hover .games-tunnel {
+      animation: tunnel-scroll 3s linear infinite;
     }
 
     .category-card:hover .games-plane {
-      animation: plane-fly 3s ease-in-out infinite;
+      animation: plane-bob 3s ease-in-out infinite;
     }
 
     .coming-soon-badge {
@@ -697,37 +684,40 @@
               <rect x="0" y="0" width="200" height="140" fill="url(#cardGridPink)"/>
 
               <g clip-path="url(#gamesClip)">
-                <!-- Building scrolls right-to-left on hover; two copies for a
-                     seamless loop. Visible at rest so the card reads even
-                     without hovering. -->
-                <g class="games-buildings">
-                  <g class="bldg">
-                    <rect x="86" y="80" width="34" height="60" fill="#3a1c2a" stroke="#ff4081" stroke-width="2"/>
-                    <rect x="93" y="88" width="6" height="6" fill="#ff87b0"/>
-                    <rect x="107" y="88" width="6" height="6" fill="#ff87b0"/>
-                    <rect x="93" y="101" width="6" height="6" fill="#ff87b0"/>
-                    <rect x="107" y="101" width="6" height="6" fill="#ff87b0"/>
-                    <rect x="93" y="114" width="6" height="6" fill="#ff87b0"/>
-                    <rect x="107" y="114" width="6" height="6" fill="#ff87b0"/>
+                <!-- The tunnel scrolls right-to-left; two copies for a seamless
+                     loop. Ceiling descends from upper area then levels; floor
+                     rises then levels — the plane threads the gap between. -->
+                <g class="games-tunnel">
+                  <g class="tunnel-seg">
+                    <!-- ceiling -->
+                    <path d="M0 4 C 55 4, 85 34, 200 38 L200 0 L0 0 Z" fill="#3a1c2a" stroke="#ff4081" stroke-width="1.5"/>
+                    <!-- floor -->
+                    <path d="M0 136 C 65 136, 105 104, 200 100 L200 140 L0 140 Z" fill="#3a1c2a" stroke="#ff4081" stroke-width="1.5"/>
+                    <!-- stalactites -->
+                    <polygon points="70,34 77,34 73,50" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
+                    <polygon points="120,38 127,38 123,54" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
+                    <polygon points="165,40 172,40 168,56" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
+                    <!-- stalagmites -->
+                    <polygon points="95,120 102,120 98,102" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
+                    <polygon points="142,110 149,110 145,92" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
                   </g>
-                  <g class="bldg" transform="translate(200,0)">
-                    <rect x="86" y="80" width="34" height="60" fill="#3a1c2a" stroke="#ff4081" stroke-width="2"/>
-                    <rect x="93" y="88" width="6" height="6" fill="#ff87b0"/>
-                    <rect x="107" y="88" width="6" height="6" fill="#ff87b0"/>
-                    <rect x="93" y="101" width="6" height="6" fill="#ff87b0"/>
-                    <rect x="107" y="101" width="6" height="6" fill="#ff87b0"/>
-                    <rect x="93" y="114" width="6" height="6" fill="#ff87b0"/>
-                    <rect x="107" y="114" width="6" height="6" fill="#ff87b0"/>
+                  <g class="tunnel-seg" transform="translate(200,0)">
+                    <path d="M0 4 C 55 4, 85 34, 200 38 L200 0 L0 0 Z" fill="#3a1c2a" stroke="#ff4081" stroke-width="1.5"/>
+                    <path d="M0 136 C 65 136, 105 104, 200 100 L200 140 L0 140 Z" fill="#3a1c2a" stroke="#ff4081" stroke-width="1.5"/>
+                    <polygon points="70,34 77,34 73,50" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
+                    <polygon points="120,38 127,38 123,54" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
+                    <polygon points="165,40 172,40 168,56" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
+                    <polygon points="95,120 102,120 98,102" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
+                    <polygon points="142,110 149,110 145,92" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
                   </g>
                 </g>
 
-                <!-- Trail arc, drawn on hover via stroke-dash. Visible faint
-                     at rest so the arc reads as part of the scene. -->
-                <path class="games-trail" d="M4 82 C 44 82, 70 26, 100 26 C 130 26, 156 82, 200 82"
-                  stroke="#ff4081" stroke-width="2.5" fill="none" stroke-linecap="round"
-                  filter="url(#cardGlowPink)"/>
-                <!-- Plane sits at the arc apex at rest; flies the arc on hover. -->
-                <text class="games-plane" x="100" y="26" font-size="17" text-anchor="middle" dominant-baseline="central">✈️</text>
+                <!-- Plane holds a fixed x near the left; the tunnel scrolls
+                     under it. It bobs up and down to thread the gap. A clean
+                     paper-jet triangle so it's unmistakably a plane. -->
+                <g class="games-plane" filter="url(#cardGlowPink)">
+                  <polygon points="-9,-6 12,0 -9,6 -3,0" fill="#ffffff"/>
+                </g>
               </g>
             </svg>
           </div>

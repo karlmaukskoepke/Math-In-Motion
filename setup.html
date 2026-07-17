@@ -202,8 +202,41 @@
       max-width: 22ch;
     }
 
+    .privacy-note {
+      font-size: clamp(0.6rem, 0.8vw, 0.72rem);
+      color: var(--accent3);
+      margin-top: 1vh;
+      line-height: 1.4;
+      max-width: 24ch;
+      opacity: 0.85;
+    }
+
     .marker.disabled .marker-art svg { opacity: 0.45; }
     .marker.disabled h2 { color: var(--muted); }
+
+    /* ── MARKER ICON HOVER ANIMATIONS ── */
+    /* ArUco: hands rock the marker gently back and forth */
+    .aruco-icon-group { transform-box: fill-box; transform-origin: center; }
+    @keyframes aruco-rock {
+      0%, 100% { transform: rotate(-5deg); }
+      50%      { transform: rotate(5deg); }
+    }
+    .marker:hover .aruco-icon-group { animation: aruco-rock 1.6s ease-in-out infinite; }
+
+    /* Ball: bounces up and down */
+    .ball-icon-group { transform-box: fill-box; transform-origin: center bottom; }
+    @keyframes ball-bounce {
+      0%, 100% { transform: translateY(0) scaleY(1); }
+      45%      { transform: translateY(-18px) scaleY(1.02); }
+      55%      { transform: translateY(-18px) scaleY(1.02); }
+      80%      { transform: translateY(0) scaleY(0.94); }
+    }
+    .marker:hover .ball-icon-group { animation: ball-bounce 1.3s ease-in-out infinite; }
+
+    /* Face: the wireframe-mesh half fades in over the cartoony half on hover,
+       so it goes half-normal / half-scanned. */
+    .face-wire { opacity: 0; transition: opacity 0.4s; }
+    .marker:hover .face-wire { opacity: 1; }
 
     /* ── FLOATING SUB-OPTION OVERLAY (ArUco) ──
        Appears on hover/focus as an absolutely-positioned popover so it never
@@ -349,42 +382,43 @@
         <div class="marker-badge soon">Coming Soon</div>
         <div class="marker-art">
           <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <g stroke="#7986cb" stroke-width="0.9" fill="none" opacity="0.85">
-              <polygon points="60,18 44,28 60,34"/>
-              <polygon points="60,18 76,28 60,34"/>
-              <polygon points="44,28 36,44 60,34"/>
-              <polygon points="76,28 84,44 60,34"/>
-              <polygon points="36,44 60,34 48,52"/>
-              <polygon points="84,44 60,34 72,52"/>
-              <polygon points="60,34 48,52 60,50"/>
-              <polygon points="60,34 72,52 60,50"/>
-              <polygon points="36,44 48,52 38,66"/>
-              <polygon points="84,44 72,52 82,66"/>
-              <polygon points="48,52 60,50 52,68"/>
-              <polygon points="72,52 60,50 68,68"/>
-              <polygon points="48,52 38,66 52,68"/>
-              <polygon points="72,52 82,66 68,68"/>
-              <polygon points="60,50 52,68 60,66"/>
-              <polygon points="60,50 68,68 60,66"/>
-              <polygon points="52,68 60,66 68,68"/>
-              <polygon points="38,66 52,68 46,82"/>
-              <polygon points="82,66 68,68 74,82"/>
-              <polygon points="52,68 60,66 60,80"/>
-              <polygon points="68,68 60,66 60,80"/>
-              <polygon points="52,68 46,82 60,80"/>
-              <polygon points="68,68 74,82 60,80"/>
-              <polygon points="46,82 60,80 60,96"/>
-              <polygon points="74,82 60,80 60,96"/>
+            <defs>
+              <clipPath id="faceRightHalf"><rect x="60" y="0" width="60" height="120"/></clipPath>
+            </defs>
+            <!-- cartoony face base -->
+            <circle cx="60" cy="58" r="42" fill="#22263a" stroke="#7986cb" stroke-width="2.5"/>
+            <circle cx="45" cy="50" r="5.5" fill="#7986cb"/>
+            <circle cx="75" cy="50" r="5.5" fill="#7986cb"/>
+            <path d="M44 74 Q60 86 76 74" stroke="#7986cb" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <path d="M60 46 L60 62 L54 62" stroke="#7986cb" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <!-- wireframe mesh, revealed on the RIGHT half on hover -->
+            <g class="face-wire" clip-path="url(#faceRightHalf)">
+              <g stroke="#00e5ff" stroke-width="0.9" fill="none" opacity="0.9">
+                <polygon points="60,18 76,28 60,34"/>
+                <polygon points="76,28 84,44 60,34"/>
+                <polygon points="84,44 60,34 72,52"/>
+                <polygon points="60,34 72,52 60,50"/>
+                <polygon points="84,44 72,52 82,66"/>
+                <polygon points="72,52 60,50 68,68"/>
+                <polygon points="72,52 82,66 68,68"/>
+                <polygon points="60,50 68,68 60,66"/>
+                <polygon points="82,66 68,68 74,82"/>
+                <polygon points="68,68 60,66 60,80"/>
+                <polygon points="68,68 74,82 60,80"/>
+                <polygon points="74,82 60,80 60,96"/>
+              </g>
+              <g fill="#00e5ff">
+                <circle cx="72" cy="52" r="3"/>
+                <circle cx="60" cy="50" r="2"/><circle cx="60" cy="66" r="2"/><circle cx="60" cy="80" r="2"/>
+              </g>
             </g>
-            <g fill="#7986cb">
-              <circle cx="48" cy="52" r="3"/><circle cx="72" cy="52" r="3"/>
-              <circle cx="60" cy="50" r="2"/><circle cx="60" cy="66" r="2"/><circle cx="60" cy="80" r="2"/>
-            </g>
+            <!-- tracking reticle corners -->
             <path d="M14 22 h-4 v-6 M106 22 h4 v-6 M14 98 h-4 v6 M106 98 h4 v6" stroke="#00e5ff" stroke-width="2" opacity="0.55" fill="none"/>
           </svg>
         </div>
         <h2>Face</h2>
         <div class="tagline">The quickest start — no supplies needed.</div>
+        <div class="privacy-note">🔒 Runs entirely on your device — no face data ever leaves the Chromebook.</div>
       </div>
 
       <!-- ARUCO — center, recommended, the only live option -->
@@ -398,16 +432,18 @@
                 <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
               </filter>
             </defs>
-            <!-- marker card with glowing cyan edge -->
-            <rect x="30" y="24" width="60" height="60" rx="3" fill="#0a0c12" stroke="#00e5ff" stroke-width="2.5" filter="url(#arucoGlow)"/>
-            <rect x="38" y="32" width="11" height="11" fill="#e8eaf6"/>
-            <rect x="60" y="32" width="11" height="11" fill="#e8eaf6"/>
-            <rect x="49" y="43" width="11" height="11" fill="#e8eaf6"/>
-            <rect x="71" y="43" width="11" height="11" fill="#e8eaf6"/>
-            <rect x="38" y="54" width="11" height="11" fill="#e8eaf6"/>
-            <rect x="60" y="54" width="11" height="11" fill="#e8eaf6"/>
-            <rect x="49" y="65" width="11" height="11" fill="#e8eaf6"/>
-            <!-- hands -->
+            <!-- marker card with glowing cyan edge, rocks on hover -->
+            <g class="aruco-icon-group">
+              <rect x="30" y="24" width="60" height="60" rx="3" fill="#0a0c12" stroke="#00e5ff" stroke-width="2.5" filter="url(#arucoGlow)"/>
+              <rect x="38" y="32" width="11" height="11" fill="#e8eaf6"/>
+              <rect x="60" y="32" width="11" height="11" fill="#e8eaf6"/>
+              <rect x="49" y="43" width="11" height="11" fill="#e8eaf6"/>
+              <rect x="71" y="43" width="11" height="11" fill="#e8eaf6"/>
+              <rect x="38" y="54" width="11" height="11" fill="#e8eaf6"/>
+              <rect x="60" y="54" width="11" height="11" fill="#e8eaf6"/>
+              <rect x="49" y="65" width="11" height="11" fill="#e8eaf6"/>
+            </g>
+            <!-- hands hold from behind, static -->
             <path d="M24 88 q6 -10 16 -8 l6 4" stroke="#7986cb" stroke-width="3" fill="none" stroke-linecap="round"/>
             <path d="M96 88 q-6 -10 -16 -8 l-6 4" stroke="#7986cb" stroke-width="3" fill="none" stroke-linecap="round"/>
           </svg>
@@ -448,13 +484,14 @@
                 <stop offset="100%" stop-color="#a01048"/>
               </radialGradient>
             </defs>
-            <!-- cast shadow -->
+            <!-- cast shadow (static) -->
             <ellipse cx="60" cy="98" rx="26" ry="6" fill="#000" opacity="0.4"/>
-            <!-- sphere -->
-            <circle cx="60" cy="52" r="30" fill="url(#ballSphere)"/>
-            <!-- specular highlight -->
-            <ellipse cx="50" cy="40" rx="10" ry="7" fill="#ffffff" opacity="0.45"/>
-            <!-- cupped hand -->
+            <!-- sphere bounces on hover -->
+            <g class="ball-icon-group">
+              <circle cx="60" cy="52" r="30" fill="url(#ballSphere)"/>
+              <ellipse cx="50" cy="40" rx="10" ry="7" fill="#ffffff" opacity="0.45"/>
+            </g>
+            <!-- cupped hand (static) -->
             <path d="M26 84 q34 24 68 0" stroke="#7986cb" stroke-width="3.5" fill="none" stroke-linecap="round"/>
             <path d="M26 84 q-3 -9 5 -13 M94 84 q3 -9 -5 -13" stroke="#7986cb" stroke-width="3.5" fill="none" stroke-linecap="round"/>
           </svg>
