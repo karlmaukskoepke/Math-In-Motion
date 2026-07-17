@@ -213,14 +213,12 @@
       right: 8%;
       padding-left: 0.15em;
       font-size: clamp(3.8rem, 12.5vw, 10rem);
-      background-image: linear-gradient(112deg,
-        #6e0c30 0%, #ff4081 12%, #ffe3ec 22%, #ff4081 32%,
-        #8a1240 46%, #ff4081 60%, #ffffff 72%, #ff4081 84%, #b0154f 100%);
-      background-size: 260% 100%;
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
+      color: #d63268;
       cursor: default;
+      text-shadow:
+        1px 1px 0 #a01f48,
+        2px 2px 0 #7a1638,
+        3px 3px 2px rgba(0,0,0,0.6);
     }
 
     .hero-word.math:hover {
@@ -510,14 +508,28 @@
            hides, this is what's revealed underneath. -->
       <svg class="hero-static-art" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <!-- 35 x 17 lines, matching the actual counts measured from the
-               original video frame — non-square cells (36.57 x 42.35),
-               same as the source, just perfectly even instead of wobbly. -->
-          <pattern id="heroGridPattern" width="36.57" height="42.35" patternUnits="userSpaceOnUse">
-            <path d="M 36.57 0 L 0 0 0 42.35" fill="none" stroke="#dce4ed" stroke-width="1.6" opacity="0.55"/>
+          <!-- Minor grid: 35 x 17 thin lines. Major grid: every 5th line,
+               thicker & brighter — matching the graph-paper look measured
+               from the original frame. -->
+          <pattern id="gridMinor" width="36.57" height="42.35" patternUnits="userSpaceOnUse">
+            <path d="M 36.57 0 L 0 0 0 42.35" fill="none" stroke="#c8d6e5" stroke-width="2" opacity="0.5"/>
           </pattern>
-          <filter id="heroGlow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="3.5" result="blur"/>
+          <pattern id="gridMajor" width="182.85" height="211.75" patternUnits="userSpaceOnUse">
+            <path d="M 182.85 0 L 0 0 0 211.75" fill="none" stroke="#e0ecf7" stroke-width="3.5" opacity="0.75"/>
+          </pattern>
+          <!-- Blue-tinted glow, matching the cool halo bleeding off the
+               real grid lines. -->
+          <filter id="gridGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="2" result="blur"/>
+            <feFlood flood-color="#4da6ff" flood-opacity="0.5" result="tint"/>
+            <feComposite in="tint" in2="blur" operator="in" result="glow"/>
+            <feMerge>
+              <feMergeNode in="glow"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+          <filter id="curveGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="4" result="blur"/>
             <feMerge>
               <feMergeNode in="blur"/>
               <feMergeNode in="SourceGraphic"/>
@@ -525,14 +537,22 @@
           </filter>
         </defs>
         <rect width="1280" height="720" fill="#0a0c12"/>
-        <rect width="1280" height="720" fill="url(#heroGridPattern)" filter="url(#heroGlow)"/>
-        <!-- Curve traced from the real final video frame (color-isolated,
-             not hand-guessed): starts ~(0,650), rises through measured
-             midpoints, ends where the arrowhead sits (~1080,62). -->
-        <path d="M 0 650 C 220 605, 420 480, 610 350 C 800 220, 900 130, 1080 62"
-          stroke="#00e5ff" stroke-width="6" fill="none" stroke-linecap="round" filter="url(#heroGlow)"/>
-        <path d="M 1044 40 L 1092 62 L 1042 84"
-          stroke="#00e5ff" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#heroGlow)"/>
+        <g filter="url(#gridGlow)">
+          <rect width="1280" height="720" fill="url(#gridMinor)"/>
+          <rect width="1280" height="720" fill="url(#gridMajor)"/>
+        </g>
+        <!-- Stella — traced to hug the real S: flat left shoulder, steep
+             sweep through the middle, flattening again at the top. -->
+        <path d="M 0 648
+                 C 120 645, 200 630, 260 598
+                 C 360 545, 430 470, 560 385
+                 C 660 318, 740 220, 860 150
+                 C 930 108, 1000 92, 1120 72"
+          stroke="#00e5ff" stroke-width="6.5" fill="none" stroke-linecap="round" filter="url(#curveGlow)"/>
+        <!-- Arrowhead — points nearly straight right (~2deg up), matching
+             the curve's actual exit direction. -->
+        <path d="M 1095 52 L 1135 70 L 1092 90"
+          stroke="#00e5ff" stroke-width="6.5" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#curveGlow)"/>
       </svg>
 
       <video class="hero-video" id="heroVideo" muted playsinline>
@@ -708,16 +728,26 @@
         }
 
         if (wordMath) {
-          // Highlight band position follows cursor X; a soft shadow is cast
-          // away from an implied light source at the cursor position.
-          const bgPos = (mx * 220).toFixed(1);
-          const shadowX = ((0.5 - mx) * 14).toFixed(1);
-          const shadowY = ((0.5 - my) * 8).toFixed(1);
-          wordMath.style.backgroundPosition = `${bgPos}% 0`;
-          wordMath.style.filter =
-            `drop-shadow(${shadowX}px ${shadowY}px 6px rgba(0,0,0,0.5)) ` +
-            `drop-shadow(${(-shadowX*0.5).toFixed(1)}px ${(-shadowY*0.5).toFixed(1)}px 20px rgba(255,64,129,0.55)) ` +
-            `drop-shadow(0 0 34px rgba(255,64,129,0.3))`;
+          // Cursor = light source. Compute the direction FROM the word TO the
+          // light, then throw a bright highlight on the lit side and a carved
+          // dark shadow on the opposite side — so the letters read as stone
+          // lit from wherever the pointer is.
+          const rect = wordMath.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          let lx = targetX - cx;
+          let ly = targetY - cy;
+          const len = Math.hypot(lx, ly) || 1;
+          lx /= len; ly /= len;                 // unit vector toward the light
+          const hx = (lx * 3).toFixed(1);        // highlight offset (toward light)
+          const hy = (ly * 3).toFixed(1);
+          const sx = (-lx * 4).toFixed(1);       // shadow offset (away from light)
+          const sy = (-ly * 4).toFixed(1);
+          wordMath.style.textShadow =
+            `${hx}px ${hy}px 1px rgba(255,225,235,0.9), ` +   // lit bevel edge
+            `${(lx*1.5).toFixed(1)}px ${(ly*1.5).toFixed(1)}px 0 #ff6f9c, ` + // mid tone
+            `${sx}px ${sy}px 0 #7a1638, ` +                    // carved core shadow
+            `${(-lx*7).toFixed(1)}px ${(-ly*7).toFixed(1)}px 6px rgba(0,0,0,0.7)`; // cast shadow
         }
       }
 
