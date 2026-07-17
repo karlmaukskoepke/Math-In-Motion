@@ -213,12 +213,8 @@
       right: 8%;
       padding-left: 0.15em;
       font-size: clamp(3.8rem, 12.5vw, 10rem);
-      color: #d63268;
+      color: #2a0d18;
       cursor: default;
-      text-shadow:
-        1px 1px 0 #a01f48,
-        2px 2px 0 #7a1638,
-        3px 3px 2px rgba(0,0,0,0.6);
     }
 
     .hero-word.math:hover {
@@ -517,14 +513,18 @@
           <pattern id="gridMajor" width="182.85" height="211.75" patternUnits="userSpaceOnUse">
             <path d="M 182.85 0 L 0 0 0 211.75" fill="none" stroke="#e0ecf7" stroke-width="3.5" opacity="0.75"/>
           </pattern>
-          <!-- Blue-tinted glow, matching the cool halo bleeding off the
-               real grid lines. -->
-          <filter id="gridGlow" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="2" result="blur"/>
-            <feFlood flood-color="#4da6ff" flood-opacity="0.5" result="tint"/>
-            <feComposite in="tint" in2="blur" operator="in" result="glow"/>
+          <!-- Blue-tinted neon glow — layered wide+tight bloom, matching the
+               cool halo bleeding off the real grid lines. -->
+          <filter id="gridGlow" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="wide"/>
+            <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="tight"/>
+            <feFlood flood-color="#5cb3ff" flood-opacity="0.85" result="tint"/>
+            <feComposite in="tint" in2="wide" operator="in" result="wideGlow"/>
+            <feFlood flood-color="#a8d8ff" flood-opacity="0.9" result="tint2"/>
+            <feComposite in="tint2" in2="tight" operator="in" result="tightGlow"/>
             <feMerge>
-              <feMergeNode in="glow"/>
+              <feMergeNode in="wideGlow"/>
+              <feMergeNode in="tightGlow"/>
               <feMergeNode in="SourceGraphic"/>
             </feMerge>
           </filter>
@@ -541,16 +541,15 @@
           <rect width="1280" height="720" fill="url(#gridMinor)"/>
           <rect width="1280" height="720" fill="url(#gridMajor)"/>
         </g>
-        <!-- Stella — traced to hug the real S: flat left shoulder, steep
-             sweep through the middle, flattening again at the top. -->
+        <!-- Stella — a smooth, confident S. Low full hip on the left (dips
+             and holds low before the rise), a clean single inflection point
+             dead center, then a graceful flatten up to the top right.
+             Drawn for flow, not point-matched. -->
         <path d="M 0 648
-                 C 120 645, 200 630, 260 598
-                 C 360 545, 430 470, 560 385
-                 C 660 318, 740 220, 860 150
-                 C 930 108, 1000 92, 1120 72"
+                 C 210 690, 440 616, 600 380
+                 C 760 144, 950 78, 1120 72"
           stroke="#00e5ff" stroke-width="6.5" fill="none" stroke-linecap="round" filter="url(#curveGlow)"/>
-        <!-- Arrowhead — points nearly straight right (~2deg up), matching
-             the curve's actual exit direction. -->
+        <!-- Arrowhead — points nearly straight right, matching Stella's exit. -->
         <path d="M 1095 52 L 1135 70 L 1092 90"
           stroke="#00e5ff" stroke-width="6.5" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#curveGlow)"/>
       </svg>
@@ -720,18 +719,20 @@
           const cy = rect.top + rect.height / 2;
           const dx = (targetX - cx) / vw;
           const dy = (targetY - cy) / vh;
-          const rotateY = Math.max(-32, Math.min(32, dx * 55));
-          const rotateX = Math.max(-16, Math.min(16, -dy * 26));
-          const scale = 0.85 + mx * 0.45;
+          // Gentler than before: reduced rotation range and a tighter scale band.
+          const rotateY = Math.max(-18, Math.min(18, dx * 30));
+          const rotateX = Math.max(-9, Math.min(9, -dy * 15));
+          const scale = 0.92 + mx * 0.22;
           wordMotion.style.transform =
-            `perspective(700px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg) scale(${scale.toFixed(3)})`;
+            `perspective(800px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg) scale(${scale.toFixed(3)})`;
         }
 
         if (wordMath) {
-          // Cursor = light source. Compute the direction FROM the word TO the
-          // light, then throw a bright highlight on the lit side and a carved
-          // dark shadow on the opposite side — so the letters read as stone
-          // lit from wherever the pointer is.
+          // Cursor = a light source BEHIND the letters. Bright rim-light
+          // bleeds around the edge facing the light; body stays dark. The
+          // rim is tight and bright (backlight bloom), the far side falls
+          // into near-black silhouette. Starker and more dramatic than a
+          // front-lit sculpture.
           const rect = wordMath.getBoundingClientRect();
           const cx = rect.left + rect.width / 2;
           const cy = rect.top + rect.height / 2;
@@ -739,15 +740,13 @@
           let ly = targetY - cy;
           const len = Math.hypot(lx, ly) || 1;
           lx /= len; ly /= len;                 // unit vector toward the light
-          const hx = (lx * 3).toFixed(1);        // highlight offset (toward light)
-          const hy = (ly * 3).toFixed(1);
-          const sx = (-lx * 4).toFixed(1);       // shadow offset (away from light)
-          const sy = (-ly * 4).toFixed(1);
+          const rx = (lx * 2).toFixed(1);        // rim offset toward light
+          const ry = (ly * 2).toFixed(1);
           wordMath.style.textShadow =
-            `${hx}px ${hy}px 1px rgba(255,225,235,0.9), ` +   // lit bevel edge
-            `${(lx*1.5).toFixed(1)}px ${(ly*1.5).toFixed(1)}px 0 #ff6f9c, ` + // mid tone
-            `${sx}px ${sy}px 0 #7a1638, ` +                    // carved core shadow
-            `${(-lx*7).toFixed(1)}px ${(-ly*7).toFixed(1)}px 6px rgba(0,0,0,0.7)`; // cast shadow
+            `${rx}px ${ry}px 1px rgba(255,255,255,0.95), ` +          // hot white rim edge
+            `${(lx*4).toFixed(1)}px ${(ly*4).toFixed(1)}px 6px rgba(255,80,140,0.9), ` +  // pink backlight bloom
+            `${(lx*9).toFixed(1)}px ${(ly*9).toFixed(1)}px 22px rgba(255,64,129,0.7), ` + // wide halo
+            `${(-lx*3).toFixed(1)}px ${(-ly*3).toFixed(1)}px 2px rgba(0,0,0,0.9)`;        // dark far side
         }
       }
 
