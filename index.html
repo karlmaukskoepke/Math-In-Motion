@@ -357,7 +357,7 @@
       stroke-dashoffset: 210;
     }
 
-    .draw-dot, .draw-plane { opacity: 0; }
+    .draw-dot { opacity: 0; }
 
     @keyframes draw-loop {
       0%   { stroke-dashoffset: 210; }
@@ -374,9 +374,52 @@
       animation: draw-loop 1.25s ease-in-out infinite;
     }
 
-    .category-card:hover .draw-dot,
-    .category-card:hover .draw-plane {
+    .category-card:hover .draw-dot {
       animation: tip-fade 1.25s ease-in-out infinite;
+    }
+
+    /* ── GAMES SCENE: plane arcs over a scrolling building ──
+       At rest: building sits center, faint trail arc, plane parked at the
+       apex — so the card reads even without hovering. On hover: building
+       scrolls right-to-left, trail draws, plane flies the arc. */
+    .games-buildings { transform: translateX(0); }
+
+    @keyframes bldg-scroll {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-200px); }
+    }
+
+    @keyframes trail-redraw {
+      0%   { stroke-dashoffset: 300; }
+      55%  { stroke-dashoffset: 0; }
+      100% { stroke-dashoffset: 0; }
+    }
+
+    /* Plane flies the identical arc via offset-path. If a browser lacks
+       offset-path support, the plane simply stays parked at its x/y apex
+       (still a valid resting scene) rather than disappearing. */
+    .games-plane {
+      offset-path: path('M4 82 C 44 82, 70 26, 100 26 C 130 26, 156 82, 200 82');
+      offset-rotate: auto;
+      offset-distance: 50%;   /* parked at the apex at rest */
+    }
+
+    @keyframes plane-fly {
+      0%   { offset-distance: 0%; }
+      100% { offset-distance: 100%; }
+    }
+
+    .category-card:hover .games-buildings {
+      animation: bldg-scroll 3s linear infinite;
+    }
+
+    .category-card:hover .games-trail {
+      stroke-dasharray: 300;
+      animation: trail-redraw 3s ease-in-out infinite;
+    }
+
+    .category-card:hover .games-plane {
+      animation: plane-fly 3s ease-in-out infinite;
     }
 
     .coming-soon-badge {
@@ -612,20 +655,22 @@
           <div class="category-card-art">
             <svg class="card-svg" viewBox="0 0 200 140" fill="none" xmlns="http://www.w3.org/2000/svg">
               <defs>
-                <pattern id="cardGridCyan" width="16.6" height="16.6" patternUnits="userSpaceOnUse">
-                  <path d="M 16.6 0 L 0 0 0 16.6" fill="none" stroke="#3a4a7a" stroke-width="0.8" opacity="0.5"/>
+                <!-- Pattern offset (x/y) to the box origin (12,12) so cells
+                     tile evenly from the corner — no clipped partial squares. -->
+                <pattern id="cardGridCyan" width="16" height="16" patternUnits="userSpaceOnUse" x="12" y="12">
+                  <path d="M 16 0 L 0 0 0 16" fill="none" stroke="#3a4a7a" stroke-width="0.8" opacity="0.5"/>
                 </pattern>
                 <filter id="cardGlowCyan" x="-30%" y="-30%" width="160%" height="160%">
                   <feGaussianBlur stdDeviation="2" result="b"/>
                   <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
                 </filter>
               </defs>
-              <rect x="8" y="6" width="184" height="122" rx="4" fill="url(#cardGridCyan)"/>
-              <path d="M8 6 V128 H192" stroke="#4a5a8a" stroke-width="1.2"/>
-              <!-- a clean rising curve, hidden until hover draws it -->
-              <path class="draw-line cyan" d="M14 118 C 55 116, 70 96, 100 70 C 130 44, 150 30, 186 18"
+              <!-- box: 176 x 112 = exactly 11 x 7 cells of 16px -->
+              <rect x="12" y="12" width="176" height="112" fill="url(#cardGridCyan)"/>
+              <path d="M12 12 V124 H188" stroke="#4a5a8a" stroke-width="1.2"/>
+              <path class="draw-line cyan" d="M16 116 C 56 114, 72 94, 100 68 C 128 42, 148 30, 184 20"
                 stroke="#00e5ff" stroke-width="3" fill="none" stroke-linecap="round" filter="url(#cardGlowCyan)"/>
-              <circle class="draw-dot cyan" cx="186" cy="18" r="4" fill="#00e5ff" filter="url(#cardGlowCyan)"/>
+              <circle class="draw-dot cyan" cx="184" cy="20" r="4" fill="#00e5ff" filter="url(#cardGlowCyan)"/>
             </svg>
           </div>
         </a>
@@ -638,23 +683,52 @@
             <span class="card-arrow">↗</span>
           </div>
           <div class="category-card-art">
-            <svg class="card-svg" viewBox="0 0 200 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg class="card-svg games-scene" viewBox="0 0 200 140" fill="none" xmlns="http://www.w3.org/2000/svg">
               <defs>
-                <pattern id="cardGridPink" width="16.6" height="16.6" patternUnits="userSpaceOnUse">
-                  <path d="M 16.6 0 L 0 0 0 16.6" fill="none" stroke="#5a3a52" stroke-width="0.8" opacity="0.5"/>
+                <pattern id="cardGridPink" width="16" height="16" patternUnits="userSpaceOnUse">
+                  <path d="M 16 0 L 0 0 0 16" fill="none" stroke="#5a3a52" stroke-width="0.8" opacity="0.5"/>
                 </pattern>
                 <filter id="cardGlowPink" x="-30%" y="-30%" width="160%" height="160%">
                   <feGaussianBlur stdDeviation="2" result="b"/>
                   <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
                 </filter>
+                <clipPath id="gamesClip"><rect x="0" y="0" width="200" height="140"/></clipPath>
               </defs>
-              <rect x="8" y="6" width="184" height="122" rx="4" fill="url(#cardGridPink)"/>
-              <path d="M8 6 V128 H192" stroke="#7a4a6a" stroke-width="1.2"/>
-              <!-- a bouncy flight-path wave, hidden until hover draws it -->
-              <path class="draw-line pink" d="M14 96 C 45 60, 60 104, 92 78 C 120 56, 138 92, 186 40"
-                stroke="#ff4081" stroke-width="3" fill="none" stroke-linecap="round" filter="url(#cardGlowPink)"/>
-              <!-- plane rides the tip; positioned at the path end, JS keeps it on the tip -->
-              <text class="draw-plane" x="186" y="44" font-size="15" text-anchor="middle" filter="url(#cardGlowPink)">✈️</text>
+              <rect x="0" y="0" width="200" height="140" fill="url(#cardGridPink)"/>
+
+              <g clip-path="url(#gamesClip)">
+                <!-- Building scrolls right-to-left on hover; two copies for a
+                     seamless loop. Visible at rest so the card reads even
+                     without hovering. -->
+                <g class="games-buildings">
+                  <g class="bldg">
+                    <rect x="86" y="80" width="34" height="60" fill="#3a1c2a" stroke="#ff4081" stroke-width="2"/>
+                    <rect x="93" y="88" width="6" height="6" fill="#ff87b0"/>
+                    <rect x="107" y="88" width="6" height="6" fill="#ff87b0"/>
+                    <rect x="93" y="101" width="6" height="6" fill="#ff87b0"/>
+                    <rect x="107" y="101" width="6" height="6" fill="#ff87b0"/>
+                    <rect x="93" y="114" width="6" height="6" fill="#ff87b0"/>
+                    <rect x="107" y="114" width="6" height="6" fill="#ff87b0"/>
+                  </g>
+                  <g class="bldg" transform="translate(200,0)">
+                    <rect x="86" y="80" width="34" height="60" fill="#3a1c2a" stroke="#ff4081" stroke-width="2"/>
+                    <rect x="93" y="88" width="6" height="6" fill="#ff87b0"/>
+                    <rect x="107" y="88" width="6" height="6" fill="#ff87b0"/>
+                    <rect x="93" y="101" width="6" height="6" fill="#ff87b0"/>
+                    <rect x="107" y="101" width="6" height="6" fill="#ff87b0"/>
+                    <rect x="93" y="114" width="6" height="6" fill="#ff87b0"/>
+                    <rect x="107" y="114" width="6" height="6" fill="#ff87b0"/>
+                  </g>
+                </g>
+
+                <!-- Trail arc, drawn on hover via stroke-dash. Visible faint
+                     at rest so the arc reads as part of the scene. -->
+                <path class="games-trail" d="M4 82 C 44 82, 70 26, 100 26 C 130 26, 156 82, 200 82"
+                  stroke="#ff4081" stroke-width="2.5" fill="none" stroke-linecap="round"
+                  filter="url(#cardGlowPink)"/>
+                <!-- Plane sits at the arc apex at rest; flies the arc on hover. -->
+                <text class="games-plane" x="100" y="26" font-size="17" text-anchor="middle" dominant-baseline="central">✈️</text>
+              </g>
             </svg>
           </div>
         </div>

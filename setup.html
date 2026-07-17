@@ -108,23 +108,23 @@
     .marker-row {
       flex: 1;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
       gap: 2vw;
       min-height: 0;
-      padding: 2vh 0;
+      padding: 3vh 0 2vh;
     }
 
     .marker {
       position: relative;
       flex: 1;
       max-width: 30%;
-      height: 100%;
-      max-height: 62vh;
+      height: auto;
+      max-height: 48vh;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 18px;
-      padding: 3vh 1.6vw;
+      padding: 2.4vh 1.6vw;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -185,7 +185,7 @@
       margin-bottom: 1.4vh;
     }
 
-    .marker-art svg { width: 78%; height: 100%; max-height: 30vh; }
+    .marker-art svg { width: 82%; height: 100%; max-height: 22vh; }
 
     .marker h2 {
       font-family: 'Space Mono', monospace;
@@ -210,9 +210,9 @@
        pushes layout down — the page stays no-scroll. */
     .submenu {
       position: absolute;
-      bottom: calc(100% + 10px);
+      top: calc(100% + 10px);
       left: 50%;
-      transform: translateX(-50%) translateY(8px);
+      transform: translateX(-50%) translateY(-8px);
       width: min(340px, 30vw);
       background: var(--surface2);
       border: 1px solid var(--accent);
@@ -235,11 +235,11 @@
     .submenu::after {
       content: '';
       position: absolute;
-      top: 100%;
+      bottom: 100%;
       left: 50%;
       transform: translateX(-50%);
       border: 8px solid transparent;
-      border-top-color: var(--accent);
+      border-bottom-color: var(--accent);
     }
 
     .submenu-label {
@@ -349,13 +349,38 @@
         <div class="marker-badge soon">Coming Soon</div>
         <div class="marker-art">
           <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="60" cy="58" r="42" stroke="#7986cb" stroke-width="2.5"/>
-            <circle cx="45" cy="50" r="5" fill="#7986cb"/>
-            <circle cx="75" cy="50" r="5" fill="#7986cb"/>
-            <path d="M44 76 Q60 88 76 76" stroke="#7986cb" stroke-width="2.5" fill="none" stroke-linecap="round"/>
-            <path d="M60 44 L60 62 L54 62" stroke="#7986cb" stroke-width="2" fill="none" stroke-linecap="round"/>
-            <!-- tracking reticle corners -->
-            <path d="M18 24 h-6 v6 M102 24 h6 v6 M18 96 h-6 v-6 M102 96 h6 v-6" stroke="#00e5ff" stroke-width="2" opacity="0.6"/>
+            <g stroke="#7986cb" stroke-width="0.9" fill="none" opacity="0.85">
+              <polygon points="60,18 44,28 60,34"/>
+              <polygon points="60,18 76,28 60,34"/>
+              <polygon points="44,28 36,44 60,34"/>
+              <polygon points="76,28 84,44 60,34"/>
+              <polygon points="36,44 60,34 48,52"/>
+              <polygon points="84,44 60,34 72,52"/>
+              <polygon points="60,34 48,52 60,50"/>
+              <polygon points="60,34 72,52 60,50"/>
+              <polygon points="36,44 48,52 38,66"/>
+              <polygon points="84,44 72,52 82,66"/>
+              <polygon points="48,52 60,50 52,68"/>
+              <polygon points="72,52 60,50 68,68"/>
+              <polygon points="48,52 38,66 52,68"/>
+              <polygon points="72,52 82,66 68,68"/>
+              <polygon points="60,50 52,68 60,66"/>
+              <polygon points="60,50 68,68 60,66"/>
+              <polygon points="52,68 60,66 68,68"/>
+              <polygon points="38,66 52,68 46,82"/>
+              <polygon points="82,66 68,68 74,82"/>
+              <polygon points="52,68 60,66 60,80"/>
+              <polygon points="68,68 60,66 60,80"/>
+              <polygon points="52,68 46,82 60,80"/>
+              <polygon points="68,68 74,82 60,80"/>
+              <polygon points="46,82 60,80 60,96"/>
+              <polygon points="74,82 60,80 60,96"/>
+            </g>
+            <g fill="#7986cb">
+              <circle cx="48" cy="52" r="3"/><circle cx="72" cy="52" r="3"/>
+              <circle cx="60" cy="50" r="2"/><circle cx="60" cy="66" r="2"/><circle cx="60" cy="80" r="2"/>
+            </g>
+            <path d="M14 22 h-4 v-6 M106 22 h4 v-6 M14 98 h-4 v6 M106 98 h4 v6" stroke="#00e5ff" stroke-width="2" opacity="0.55" fill="none"/>
           </svg>
         </div>
         <h2>Face</h2>
@@ -367,9 +392,14 @@
         <div class="marker-badge rec">★ Recommended</div>
         <div class="marker-art">
           <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <!-- hands holding a marker -->
-            <rect x="30" y="24" width="60" height="60" rx="3" fill="#0a0c12" stroke="#00e5ff" stroke-width="2.5"/>
-            <!-- simplified aruco pattern -->
+            <defs>
+              <filter id="arucoGlow" x="-40%" y="-40%" width="180%" height="180%">
+                <feGaussianBlur stdDeviation="2.5" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <!-- marker card with glowing cyan edge -->
+            <rect x="30" y="24" width="60" height="60" rx="3" fill="#0a0c12" stroke="#00e5ff" stroke-width="2.5" filter="url(#arucoGlow)"/>
             <rect x="38" y="32" width="11" height="11" fill="#e8eaf6"/>
             <rect x="60" y="32" width="11" height="11" fill="#e8eaf6"/>
             <rect x="49" y="43" width="11" height="11" fill="#e8eaf6"/>
@@ -411,13 +441,22 @@
         <div class="marker-badge soon">Coming Soon</div>
         <div class="marker-art">
           <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <!-- ball in hand -->
-            <circle cx="60" cy="48" r="30" fill="#ff4081" opacity="0.18" stroke="#ff4081" stroke-width="2.5"/>
-            <path d="M40 40 q20 -14 40 0" stroke="#ff4081" stroke-width="2" fill="none" opacity="0.7"/>
-            <path d="M36 52 q24 12 48 0" stroke="#ff4081" stroke-width="2" fill="none" opacity="0.7"/>
+            <defs>
+              <radialGradient id="ballSphere" cx="40%" cy="35%" r="70%">
+                <stop offset="0%" stop-color="#ff9ec0"/>
+                <stop offset="45%" stop-color="#ff4081"/>
+                <stop offset="100%" stop-color="#a01048"/>
+              </radialGradient>
+            </defs>
+            <!-- cast shadow -->
+            <ellipse cx="60" cy="98" rx="26" ry="6" fill="#000" opacity="0.4"/>
+            <!-- sphere -->
+            <circle cx="60" cy="52" r="30" fill="url(#ballSphere)"/>
+            <!-- specular highlight -->
+            <ellipse cx="50" cy="40" rx="10" ry="7" fill="#ffffff" opacity="0.45"/>
             <!-- cupped hand -->
-            <path d="M28 82 q32 22 64 0" stroke="#7986cb" stroke-width="3" fill="none" stroke-linecap="round"/>
-            <path d="M28 82 q-2 -8 4 -12 M92 82 q2 -8 -4 -12" stroke="#7986cb" stroke-width="3" fill="none" stroke-linecap="round"/>
+            <path d="M26 84 q34 24 68 0" stroke="#7986cb" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+            <path d="M26 84 q-3 -9 5 -13 M94 84 q3 -9 -5 -13" stroke="#7986cb" stroke-width="3.5" fill="none" stroke-linecap="round"/>
           </svg>
         </div>
         <h2>Ball</h2>
