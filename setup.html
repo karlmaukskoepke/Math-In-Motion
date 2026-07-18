@@ -265,6 +265,24 @@
     /* ── FLOATING SUB-OPTION OVERLAY (ArUco) ──
        Appears on hover/focus as an absolutely-positioned popover so it never
        pushes layout down — the page stays no-scroll. */
+    /* ── HOVER BRIDGE ──
+       The dropdown sits 8px below the card, and that gap is a dead zone:
+       the pointer is over neither element, so :hover drops and the menu
+       vanishes mid-reach. This invisible pseudo-element is part of the CARD,
+       so hovering it keeps .marker:hover true. It's sized wider than the
+       dropdown and tall enough to overlap it, which also tolerates
+       diagonal mouse paths toward the menu's outer corners. */
+    #markerAruco::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(320px, 30vw);
+      height: 22px;
+      /* transparent — purely a hover target */
+    }
+
     .submenu {
       position: absolute;
       top: calc(100% + 8px);
@@ -411,6 +429,8 @@
       .marker { max-width: 90%; width: 90%; max-height: none; }
       .submenu { position: static; transform: none; width: 100%; opacity: 1; pointer-events: auto; margin-top: 12px; }
       .submenu::after { display: none; }
+      /* no floating dropdown on mobile, so no gap to bridge */
+      #markerAruco::after { display: none; }
       .marker.recommended { transform: none; }
     }
   </style>
