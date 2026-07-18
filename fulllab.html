@@ -231,6 +231,52 @@
       background: var(--accent); border-radius: 8px; padding: 10px 24px;
       text-decoration: none; letter-spacing: 1px;
     }
+    #markerBtn { position: relative; }
+
+    .marker-hint {
+      position: absolute;
+      top: calc(100% + 10px);
+      right: 0;
+      z-index: 50;
+      background: var(--accent);
+      color: #000;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 10px 14px;
+      border-radius: 10px;
+      max-width: 220px;
+      line-height: 1.4;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+    }
+
+    .marker-hint.show { opacity: 1; pointer-events: auto; }
+
+    .marker-hint::after {
+      content: '';
+      position: absolute;
+      bottom: 100%;
+      right: 20px;
+      border: 7px solid transparent;
+      border-bottom-color: var(--accent);
+    }
+
+    .marker-hint button {
+      display: block;
+      margin-top: 6px;
+      background: rgba(0,0,0,0.15);
+      border: none;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-family: inherit;
+      font-size: 0.65rem;
+      font-weight: 700;
+      cursor: pointer;
+      color: #000;
+    }
   </style>
 </head>
 <body>
@@ -274,7 +320,7 @@
         <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
         <button class="hdr-btn stacked" id="frameDebugBtn" type="button" title="Debug: show the full uncropped camera frame"><span>Frame</span><b>Crop</b></button>
         <a class="hdr-btn stacked" href="quickstart.html" title="Switch to the simplified quick-start view"><span>Mode</span><b>→ Quick Start</b></a>
-        <a class="hdr-btn" href="marker-display.html" title="Show a marker fullscreen for another laptop to track">📺 Turn Into Marker</a>
+        <a class="hdr-btn" id="markerBtn" href="marker-display.html" title="Show a marker fullscreen for another laptop to track">📺 Turn Into Marker</a>
       </div>
     </div>
     <a class="hdr-btn help-btn" href="help.html" target="_blank" rel="noopener" title="Help & resources">?</a>
@@ -1656,6 +1702,28 @@ clearBtn.onclick=()=>{
   slopeReadout.textContent='0.0'; slopeReadout.className='zero';
   slopeDirLabel.textContent='—';
 };
+
+// ── ONE-TIME MARKER-BUTTON HINT ──
+// Shown only when arriving via the two-laptop "This is the Camera" choice,
+// so first-time two-laptop users can find the reverse-role button.
+(function () {
+  let showHint = false;
+  try { showHint = sessionStorage.getItem('mm_show_marker_hint') === '1'; } catch (e) {}
+  if (!showHint) return;
+  try { sessionStorage.removeItem('mm_show_marker_hint'); } catch (e) {}
+
+  const btn = document.getElementById('markerBtn');
+  if (!btn) return;
+  const hint = document.createElement('div');
+  hint.className = 'marker-hint';
+  hint.innerHTML = 'Click here to switch this laptop between Marker and Grapher.<button type="button">Got it</button>';
+  btn.appendChild(hint);
+  requestAnimationFrame(() => hint.classList.add('show'));
+
+  function dismiss() { hint.classList.remove('show'); }
+  hint.querySelector('button').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); dismiss(); });
+  setTimeout(dismiss, 8000);
+})();
 </script>
 </body>
 </html>
