@@ -378,38 +378,43 @@
       animation: tip-fade 1.25s ease-in-out infinite;
     }
 
-    /* ── GAMES SCENE: plane threads a scrolling tunnel ──
-       At rest the tunnel and plane sit in view. On hover the tunnel scrolls
-       right-to-left and the plane bobs up-and-down to thread the gap between
-       stalactites and stalagmites. The plane holds a fixed x (world scrolls
-       under it), so it never collides with the graph line elsewhere. */
-    .games-tunnel { transform: translateX(0); }
-    .games-plane { transform: translate(64px, 68px); }
-
-    @keyframes tunnel-scroll {
-      0%   { transform: translateX(0); }
-      100% { transform: translateX(-200px); }
+    /* ── GAMES SCENE: plane threads a STATIC tunnel ──
+       The tunnel never moves — it stays put so the trail drawn behind the
+       plane reads as a graph plotted against a fixed backdrop. The plane
+       flies the tunnel's own centerline left-to-right (with the curve's
+       natural undulation standing in for "wobble"), via CSS offset-path so
+       it can never drift off the trail it's drawing. */
+    .games-trail {
+      stroke-dasharray: 220;
+      stroke-dashoffset: 220;
+      opacity: 0;
     }
 
-    /* Plane bobs to thread the valley's narrow pinch, which (given the fixed
-       plane x and the tunnel's scroll speed) passes under it early in each
-       cycle. Timing is approximate, not physically exact — fine for now,
-       worth tightening once this becomes the real game. */
-    @keyframes plane-bob {
-      0%   { transform: translate(64px, 70px) rotate(4deg); }
-      15%  { transform: translate(64px, 68px) rotate(0deg); }
-      30%  { transform: translate(64px, 76px) rotate(-6deg); }
-      55%  { transform: translate(64px, 60px) rotate(6deg); }
-      75%  { transform: translate(64px, 80px) rotate(-5deg); }
-      100% { transform: translate(64px, 70px) rotate(4deg); }
+    .games-plane {
+      offset-path: path('M-10 65 C 40 45, 70 90, 100 67 C 130 45, 160 90, 200 65');
+      offset-rotate: auto;
+      offset-distance: 0%;
+      opacity: 0;
     }
 
-    .category-card:hover .games-tunnel {
-      animation: tunnel-scroll 3s linear infinite;
+    @keyframes trail-reveal {
+      0%   { stroke-dashoffset: 220; opacity: 0.9; }
+      92%  { stroke-dashoffset: 0;   opacity: 0.9; }
+      100% { stroke-dashoffset: 0;   opacity: 0.9; }
+    }
+
+    @keyframes plane-cross {
+      0%   { offset-distance: 0%;   opacity: 1; }
+      92%  { offset-distance: 100%; opacity: 1; }
+      100% { offset-distance: 100%; opacity: 0; }
+    }
+
+    .category-card:hover .games-trail {
+      animation: trail-reveal 2.6s ease-in-out infinite;
     }
 
     .category-card:hover .games-plane {
-      animation: plane-bob 3s ease-in-out infinite;
+      animation: plane-cross 2.6s ease-in-out infinite;
     }
 
     .coming-soon-badge {
@@ -687,40 +692,31 @@
               <rect x="0" y="0" width="200" height="140" fill="url(#cardGridPink)"/>
 
               <g clip-path="url(#gamesClip)">
-                <!-- The tunnel scrolls right-to-left; two copies for a seamless
-                     loop. Ceiling descends from upper area then levels; floor
-                     rises then levels — the plane threads the gap between. -->
-                <g class="games-tunnel">
-                  <g class="tunnel-seg">
-                    <!-- ceiling: slants down then up (valley), filled to top of frame -->
-                    <path d="M0 0 L200 0 L200 12 C150 12, 140 58, 100 58 C60 58, 50 12, 0 12 Z"
-                      fill="#3a1c2a" stroke="#ff4081" stroke-width="1.5"/>
-                    <!-- floor: mirrors it, filled to bottom of frame -->
-                    <path d="M0 140 L200 140 L200 128 C150 128, 140 82, 100 82 C60 82, 50 128, 0 128 Z"
-                      fill="#3a1c2a" stroke="#ff4081" stroke-width="1.5"/>
-                    <!-- stalactites, base exactly on the ceiling curve -->
-                    <polygon points="47,36 54,36 50.5,52" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
-                    <polygon points="92,57.8 99,57.8 95.5,74" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
-                    <polygon points="142,36 149,36 145.5,52" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
-                    <!-- stalagmites, base exactly on the floor curve -->
-                    <polygon points="72,104 79,104 75.5,88" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
-                    <polygon points="172,123.5 179,123.5 175.5,107" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
-                  </g>
-                  <g class="tunnel-seg" transform="translate(200,0)">
-                    <path d="M0 0 L200 0 L200 12 C150 12, 140 58, 100 58 C60 58, 50 12, 0 12 Z"
-                      fill="#3a1c2a" stroke="#ff4081" stroke-width="1.5"/>
-                    <path d="M0 140 L200 140 L200 128 C150 128, 140 82, 100 82 C60 82, 50 128, 0 128 Z"
-                      fill="#3a1c2a" stroke="#ff4081" stroke-width="1.5"/>
-                    <polygon points="47,36 54,36 50.5,52" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
-                    <polygon points="92,57.8 99,57.8 95.5,74" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
-                    <polygon points="142,36 149,36 145.5,52" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
-                    <polygon points="72,104 79,104 75.5,88" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
-                    <polygon points="172,123.5 179,123.5 175.5,107" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
-                  </g>
-                </g>
+                <!-- The tunnel is completely static — it never moves, so the
+                     trail drawn behind the plane stays fixed against it, like
+                     a graph being plotted through the passage. Ceiling and
+                     floor are TRUE parallel curves: same control points,
+                     shifted by a constant 60px vertically — the gap between
+                     them never changes width (fixes the old "wide then
+                     narrow" bug, which came from using different curves that
+                     only looked parallel). -->
+                <path d="M-10 0 L200 0 L200 40 C160 20, 130 65, 100 42 C70 65, 40 20, -10 40 Z"
+                  fill="#3a1c2a" stroke="#ff4081" stroke-width="1.5"/>
+                <path d="M-10 140 L200 140 L200 100 C160 125, 130 80, 100 102 C70 80, 40 125, -10 100 Z"
+                  fill="#3a1c2a" stroke="#ff4081" stroke-width="1.5"/>
+                <!-- stalactites, base exactly on the ceiling curve -->
+                <polygon points="11.5,34.7 18.5,34.7 15,49.7" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
+                <polygon points="91.5,45.2 98.5,45.2 95,60.2" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
+                <polygon points="171.5,47.3 178.5,47.3 175,62.3" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
+                <!-- stalagmites, base exactly on the floor curve -->
+                <polygon points="51.5,103 58.5,103 55,88" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
+                <polygon points="131.5,98.7 138.5,98.7 135,83.7" fill="#4a2436" stroke="#ff87b0" stroke-width="1"/>
 
-                <!-- Plane holds a fixed x near the left; the tunnel scrolls
-                     under it. It bobs up and down to thread the gap. -->
+                <!-- Trail: the plane's actual flight path (same centerline
+                     the tunnel is built around), drawn behind it as it
+                     crosses left to right — this is the "graph left behind." -->
+                <path class="games-trail" d="M-10 65 C 40 45, 70 90, 100 67 C 130 45, 160 90, 200 65"
+                  stroke="#ff4081" stroke-width="2.5" fill="none" stroke-linecap="round" filter="url(#cardGlowPink)"/>
                 <g class="games-plane" filter="url(#cardGlowPink)">
                   <polygon points="-9,-6 12,0 -9,6 -3,0" fill="#ffffff"/>
                 </g>

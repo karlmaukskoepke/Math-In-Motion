@@ -206,35 +206,42 @@
     .marker.disabled h2 { color: var(--muted); }
 
     /* ── MARKER ICON HOVER ANIMATIONS ── */
-    /* ArUco: sits slightly shrunk at rest; on hover it rocks AND grows
-       forward, like it's being picked up and turned toward you. */
+    /* ArUco: sits slightly shrunk at rest. On hover it cycles through
+       receding (smaller, drifts one way) and advancing (larger, drifts the
+       other way), with a gentle rock layered on top throughout. */
     .aruco-icon-group { transform-box: fill-box; transform-origin: center; transform: scale(0.92); transition: transform 0.3s ease; }
-    .marker:hover .aruco-icon-group { animation: aruco-rock 1.6s ease-in-out infinite; }
-    @keyframes aruco-rock {
-      0%, 100% { transform: scale(1.08) rotate(-5deg); }
-      50%      { transform: scale(1.08) rotate(5deg); }
+    .marker:hover .aruco-icon-group { animation: aruco-bounce 2.2s ease-in-out infinite; }
+    @keyframes aruco-bounce {
+      0%   { transform: scale(0.82) translateX(-7px) rotate(-4deg); }
+      25%  { transform: scale(1.18) translateX(0px)  rotate(3deg); }
+      50%  { transform: scale(0.82) translateX(7px)  rotate(4deg); }
+      75%  { transform: scale(1.18) translateX(0px)  rotate(-3deg); }
+      100% { transform: scale(0.82) translateX(-7px) rotate(-4deg); }
     }
 
     /* Ball: bounces up and down */
     .ball-icon-group { transform-box: fill-box; transform-origin: center bottom; }
     @keyframes ball-bounce {
-      0%, 100% { transform: translateY(0) scaleY(1); }
-      45%      { transform: translateY(-18px) scaleY(1.02); }
-      55%      { transform: translateY(-18px) scaleY(1.02); }
-      80%      { transform: translateY(0) scaleY(0.94); }
+      0%   { transform: translate(0, 0)      scale(1, 1); }
+      45%  { transform: translate(11px, -30px) scale(1, 1.02); }
+      55%  { transform: translate(11px, -30px) scale(1, 1.02); }
+      80%  { transform: translate(0, 0)      scale(1, 0.92); }
+      100% { transform: translate(0, 0)      scale(1, 1); }
     }
-    .marker:hover .ball-icon-group { animation: ball-bounce 1.3s ease-in-out infinite; }
+    .marker:hover .ball-icon-group { animation: ball-bounce 1.4s ease-in-out infinite; }
 
-    /* Shadow mirrors the ball's height: small & faint when the ball is up,
-       full-size when it's down — same 1.3s cycle, same timing keys. */
+    /* Shadow tracks the ball's horizontal drift (like a real cast shadow
+       following the ball's ground projection) and shrinks/fades as the ball
+       gets higher, returning centered and full-size when it lands. */
     .ball-shadow { transform-box: fill-box; transform-origin: center; transition: opacity 0.3s, transform 0.3s; opacity: 0.45; }
     @keyframes ball-shadow-pulse {
-      0%, 100% { transform: scale(1);    opacity: 0.45; }
-      45%      { transform: scale(0.55); opacity: 0.2; }
-      55%      { transform: scale(0.55); opacity: 0.2; }
-      80%      { transform: scale(1.08); opacity: 0.5; }
+      0%   { transform: translateX(0)    scale(1);    opacity: 0.45; }
+      45%  { transform: translateX(11px) scale(0.5);  opacity: 0.18; }
+      55%  { transform: translateX(11px) scale(0.5);  opacity: 0.18; }
+      80%  { transform: translateX(0)    scale(1.1);  opacity: 0.5; }
+      100% { transform: translateX(0)    scale(1);    opacity: 0.45; }
     }
-    .marker:hover .ball-shadow { animation: ball-shadow-pulse 1.3s ease-in-out infinite; }
+    .marker:hover .ball-shadow { animation: ball-shadow-pulse 1.4s ease-in-out infinite; }
 
     /* Face wireframe tilt is JS-driven (mouse tracking) — see script below. */
 
@@ -384,40 +391,59 @@
         <div class="marker-badge soon">Coming Soon</div>
         <div class="marker-art">
           <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <!-- pure wireframe mesh — tilts toward the cursor on hover via JS -->
-            <g id="faceWireGroup" style="transform-box: fill-box; transform-origin: center;">
-              <g stroke="#00e5ff" stroke-width="1" fill="none" opacity="0.9">
-                <polygon points="60,16 44,26 60,32"/>
-                <polygon points="60,16 76,26 60,32"/>
-                <polygon points="44,26 34,44 60,32"/>
-                <polygon points="76,26 86,44 60,32"/>
-                <polygon points="34,44 60,32 46,52"/>
-                <polygon points="86,44 60,32 74,52"/>
-                <polygon points="60,32 46,52 60,50"/>
-                <polygon points="60,32 74,52 60,50"/>
-                <polygon points="34,44 46,52 36,66"/>
-                <polygon points="86,44 74,52 84,66"/>
-                <polygon points="46,52 60,50 50,68"/>
-                <polygon points="74,52 60,50 70,68"/>
-                <polygon points="46,52 36,66 50,68"/>
-                <polygon points="74,52 84,66 70,68"/>
-                <polygon points="60,50 50,68 60,66"/>
-                <polygon points="60,50 70,68 60,66"/>
-                <polygon points="50,68 60,66 70,68"/>
-                <polygon points="36,66 50,68 44,82"/>
-                <polygon points="84,66 70,68 76,82"/>
-                <polygon points="50,68 60,66 60,80"/>
-                <polygon points="70,68 60,66 60,80"/>
-                <polygon points="50,68 44,82 60,80"/>
-                <polygon points="70,68 76,82 60,80"/>
-                <polygon points="44,82 60,80 60,96"/>
-                <polygon points="76,82 60,80 60,96"/>
-              </g>
-              <g fill="#00e5ff">
-                <circle cx="46" cy="52" r="3"/><circle cx="74" cy="52" r="3"/>
-                <circle cx="60" cy="50" r="2"/><circle cx="60" cy="66" r="2"/><circle cx="60" cy="80" r="2"/>
-              </g>
+            <defs>
+              <!-- mesh defined once, reused 3x as back/mid/front layers so we
+                   don't triple the markup -->
+              <symbol id="faceMesh" viewBox="0 0 120 120">
+                <g stroke="#00e5ff" stroke-width="1" fill="none">
+                  <polygon points="60,16 44,26 60,32"/>
+                  <polygon points="60,16 76,26 60,32"/>
+                  <polygon points="44,26 34,44 60,32"/>
+                  <polygon points="76,26 86,44 60,32"/>
+                  <polygon points="34,44 60,32 46,52"/>
+                  <polygon points="86,44 60,32 74,52"/>
+                  <polygon points="60,32 46,52 60,50"/>
+                  <polygon points="60,32 74,52 60,50"/>
+                  <polygon points="34,44 46,52 36,66"/>
+                  <polygon points="86,44 74,52 84,66"/>
+                  <polygon points="46,52 60,50 50,68"/>
+                  <polygon points="74,52 60,50 70,68"/>
+                  <polygon points="46,52 36,66 50,68"/>
+                  <polygon points="74,52 84,66 70,68"/>
+                  <polygon points="60,50 50,68 60,66"/>
+                  <polygon points="60,50 70,68 60,66"/>
+                  <polygon points="50,68 60,66 70,68"/>
+                  <polygon points="36,66 50,68 44,82"/>
+                  <polygon points="84,66 70,68 76,82"/>
+                  <polygon points="50,68 60,66 60,80"/>
+                  <polygon points="70,68 60,66 60,80"/>
+                  <polygon points="50,68 44,82 60,80"/>
+                  <polygon points="70,68 76,82 60,80"/>
+                  <polygon points="44,82 60,80 60,96"/>
+                  <polygon points="76,82 60,80 60,96"/>
+                </g>
+                <g fill="#00e5ff">
+                  <circle cx="46" cy="52" r="3"/><circle cx="74" cy="52" r="3"/>
+                  <circle cx="60" cy="50" r="2"/><circle cx="60" cy="66" r="2"/><circle cx="60" cy="80" r="2"/>
+                </g>
+              </symbol>
+            </defs>
+
+            <!-- BACK layer: smaller, dimmer, rotates LESS (reads as farther away) -->
+            <g id="faceLayerBack" style="transform-box: fill-box; transform-origin: center;">
+              <use href="#faceMesh" x="0" y="0" width="120" height="120" opacity="0.28"
+                transform="translate(60,60) scale(0.86) translate(-60,-60)"/>
             </g>
+            <!-- MID layer: baseline -->
+            <g id="faceLayerMid" style="transform-box: fill-box; transform-origin: center;">
+              <use href="#faceMesh" x="0" y="0" width="120" height="120" opacity="0.6"/>
+            </g>
+            <!-- FRONT layer: larger, brightest, rotates MOST (reads as closest) -->
+            <g id="faceLayerFront" style="transform-box: fill-box; transform-origin: center;">
+              <use href="#faceMesh" x="0" y="0" width="120" height="120" opacity="1"
+                transform="translate(60,60) scale(1.14) translate(-60,-60)"/>
+            </g>
+
             <!-- tracking reticle corners -->
             <path d="M14 22 h-4 v-6 M106 22 h4 v-6 M14 98 h-4 v6 M106 98 h4 v6" stroke="#00e5ff" stroke-width="2" opacity="0.55" fill="none"/>
           </svg>
@@ -460,20 +486,39 @@
 
         <!-- floating sub-options -->
         <div class="submenu" id="arucoSubmenu">
-          <div class="submenu-label">Choose your method</div>
-          <div class="sub-option" onclick="chooseAruco('print', event)">
-            <div class="so-icon">🖨️</div>
-            <div class="so-text">
-              <h4>Printable Marker</h4>
-              <p>Print at 100% & laminate. 14 cm × 14 cm.</p>
-              <a class="dl-link" href="assets/aruco-marker.pdf" target="_blank" onclick="event.stopPropagation()">↓ Download PDF</a>
+          <div id="methodChoice">
+            <div class="submenu-label">Choose your method</div>
+            <div class="sub-option" onclick="chooseAruco('print', event)">
+              <div class="so-icon">🖨️</div>
+              <div class="so-text">
+                <h4>Printable Marker</h4>
+                <p>Print at 100% & laminate. 20 cm × 20 cm.</p>
+                <a class="dl-link" href="assets/aruco-marker.pdf" target="_blank" onclick="event.stopPropagation()">↓ Download PDF</a>
+              </div>
+            </div>
+            <div class="sub-option" onclick="showRoleChoice(event)">
+              <div class="so-icon">💻</div>
+              <div class="so-text">
+                <h4>Two-Laptop Setup</h4>
+                <p>One laptop shows the marker, the other tracks it.</p>
+              </div>
             </div>
           </div>
-          <div class="sub-option" onclick="chooseAruco('twolaptop', event)">
-            <div class="so-icon">💻</div>
-            <div class="so-text">
-              <h4>Two-Laptop Setup</h4>
-              <p>Show the marker on a second screen's display mode.</p>
+          <div id="roleChoice" style="display:none;">
+            <div class="submenu-label">Which laptop is this one?</div>
+            <div class="sub-option" onclick="chooseAruco('twolaptop', event)">
+              <div class="so-icon">📷</div>
+              <div class="so-text">
+                <h4>This is the Camera</h4>
+                <p>Tracks the other laptop's marker.</p>
+              </div>
+            </div>
+            <div class="sub-option" onclick="goToMarkerDisplay(event)">
+              <div class="so-icon">🖥️</div>
+              <div class="so-text">
+                <h4>This is the Marker</h4>
+                <p>Displays a marker fullscreen for the other laptop to track.</p>
+              </div>
             </div>
           </div>
         </div>
@@ -491,17 +536,15 @@
                 <stop offset="100%" stop-color="#a01048"/>
               </radialGradient>
             </defs>
-            <!-- true grey cast shadow — shrinks & fades when the ball is up,
-                 grows back when it's down, synced to the bounce cycle -->
+            <!-- true grey cast shadow — tracks sideways with the ball's
+                 horizontal drift, shrinks & fades when the ball is up,
+                 grows/centers back underneath when it's down -->
             <ellipse class="ball-shadow" cx="60" cy="98" rx="24" ry="6" fill="#8a8fa3"/>
             <!-- sphere bounces on hover -->
             <g class="ball-icon-group">
               <circle cx="60" cy="52" r="30" fill="url(#ballSphere)"/>
               <ellipse cx="50" cy="40" rx="10" ry="7" fill="#ffffff" opacity="0.45"/>
             </g>
-            <!-- cupped hand (static) -->
-            <path d="M26 84 q34 24 68 0" stroke="#7986cb" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-            <path d="M26 84 q-3 -9 5 -13 M94 84 q3 -9 -5 -13" stroke="#7986cb" stroke-width="3.5" fill="none" stroke-linecap="round"/>
           </svg>
         </div>
         <h2>Ball</h2>
@@ -536,6 +579,23 @@
       window.location.href = fromPage;
     }
 
+    /* "Two-Laptop Setup" swaps the submenu's content in place (no extra page
+       hop) to ask which role THIS laptop plays — least-friction way to make
+       the two-laptop flow legible instead of silently jumping to the
+       grapher with no explanation. */
+    function showRoleChoice(ev) {
+      if (ev) ev.stopPropagation();
+      document.getElementById('methodChoice').style.display = 'none';
+      document.getElementById('roleChoice').style.display = 'block';
+    }
+
+    function goToMarkerDisplay(ev) {
+      if (ev) ev.stopPropagation();
+      // This laptop is just a passive display — no tracking selection to
+      // store here. The marker size is locked in by the display page itself.
+      window.location.href = 'marker-display.html';
+    }
+
     /* Touch / no-hover devices: first tap on the ArUco card opens the
        submenu (instead of relying on hover); a second tap on an option
        commits. Face/Ball are disabled and do nothing on tap. */
@@ -561,14 +621,37 @@
       }
     });
 
-    /* ── FACE WIREFRAME: tilts toward the cursor while hovering the card ──
-       Same 3D-tracking idea used on the landing page's "Motion" word —
-       the wireframe turns to "look at" wherever the pointer is within the
-       card, as a hint of the actual face-tracking to come. */
+    // Reset the submenu back to the method-choice view whenever it closes
+    // (hover-out or click-outside), so it doesn't reopen mid-flow next time.
+    function resetSubmenu() {
+      document.getElementById('methodChoice').style.display = 'block';
+      document.getElementById('roleChoice').style.display = 'none';
+    }
+    arucoCard.addEventListener('mouseleave', resetSubmenu);
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#markerAruco')) resetSubmenu();
+    });
+
+    /* ── FACE WIREFRAME: dramatic multi-layer parallax tilt toward cursor ──
+       Three copies of the same mesh (back/mid/front, different scale &
+       opacity) rotate by DIFFERENT amounts for the same pointer position —
+       the back layer barely moves, the front layer swings hard. That
+       differential is what actually reads as depth/parallax, more reliably
+       than trying to get true CSS 3D (preserve-3d) working inside SVG,
+       which browsers handle inconsistently. Rotation range is intentionally
+       large — this should feel dramatic, not subtle. */
     (function () {
       const faceCard = document.getElementById('markerFace');
-      const wireGroup = document.getElementById('faceWireGroup');
-      if (!faceCard || !wireGroup) return;
+      const back  = document.getElementById('faceLayerBack');
+      const mid   = document.getElementById('faceLayerMid');
+      const front = document.getElementById('faceLayerFront');
+      if (!faceCard || !back || !mid || !front) return;
+
+      const layers = [
+        { el: back,  mult: 0.35 },
+        { el: mid,   mult: 0.75 },
+        { el: front, mult: 1.25 }
+      ];
 
       let raf = null;
 
@@ -577,12 +660,13 @@
         const rect = faceCard.getBoundingClientRect();
         const cx = rect.left + rect.width / 2;
         const cy = rect.top + rect.height / 2;
-        const dx = (clientX - cx) / rect.width;
-        const dy = (clientY - cy) / rect.height;
-        const rotateY = Math.max(-22, Math.min(22, dx * 40));
-        const rotateX = Math.max(-14, Math.min(14, -dy * 26));
-        wireGroup.style.transform =
-          `perspective(400px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg)`;
+        const dx = (clientX - cx) / (rect.width / 2);
+        const dy = (clientY - cy) / (rect.height / 2);
+        layers.forEach(({ el, mult }) => {
+          const rotateY = Math.max(-55, Math.min(55, dx * 55 * mult));
+          const rotateX = Math.max(-40, Math.min(40, -dy * 40 * mult));
+          el.style.transform = `perspective(260px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg)`;
+        });
       }
 
       function queue(e) {
@@ -590,7 +674,9 @@
       }
 
       function reset() {
-        wireGroup.style.transform = 'perspective(400px) rotateX(0deg) rotateY(0deg)';
+        layers.forEach(({ el }) => {
+          el.style.transform = 'perspective(260px) rotateX(0deg) rotateY(0deg)';
+        });
       }
 
       faceCard.addEventListener('mousemove', queue);

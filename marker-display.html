@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marker Display — Motion Math</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --accent: #00e5ff;
+      --text:   #e8eaf6;
+      --muted:  #7986cb;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+
+    .switch-btn {
+      position: fixed;
+      top: 3vh;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      font-family: 'Space Mono', monospace;
+      font-weight: 700;
+      font-size: clamp(0.8rem, 1.6vw, 1.05rem);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #000;
+      background: var(--accent);
+      border: none;
+      border-radius: 30px;
+      padding: 12px 28px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      box-shadow: 0 0 24px rgba(0,229,255,0.5);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    .switch-btn:hover {
+      transform: translateX(-50%) scale(1.05);
+      box-shadow: 0 0 34px rgba(0,229,255,0.7);
+    }
+
+    .marker-wrap {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12vh 6vw;
+    }
+
+    .marker-wrap img {
+      max-width: 100%;
+      max-height: 100%;
+      /* keep the marker crisp — no smoothing on a high-contrast pattern */
+      image-rendering: pixelated;
+    }
+
+    .hint {
+      position: fixed;
+      bottom: 3vh;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 1px;
+      color: var(--muted);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <a class="switch-btn" href="setup.html">Switch to Grapher</a>
+
+  <div class="marker-wrap">
+    <!-- Displayed marker — swap the src to show a different group's marker.
+         Files expected at assets/aruco-69.svg, aruco-84.svg, aruco-152.svg,
+         aruco-252.svg (one per group, for the dual-marker tracking work). -->
+    <img src="assets/aruco-69.svg" alt="ArUco tracking marker">
+  </div>
+
+  <div class="hint">Point the other laptop's camera at this screen</div>
+
+</body>
+</html>

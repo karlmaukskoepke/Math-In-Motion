@@ -274,6 +274,7 @@
         <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
         <button class="hdr-btn stacked" id="frameDebugBtn" type="button" title="Debug: show the full uncropped camera frame"><span>Frame</span><b>Crop</b></button>
         <a class="hdr-btn stacked" href="quickstart.html" title="Switch to the simplified quick-start view"><span>Mode</span><b>→ Quick Start</b></a>
+        <a class="hdr-btn" href="marker-display.html" title="Show a marker fullscreen for another laptop to track">📺 Turn Into Marker</a>
       </div>
     </div>
     <a class="hdr-btn help-btn" href="help.html" target="_blank" rel="noopener" title="Help & resources">?</a>
@@ -355,7 +356,7 @@ const tracking = (() => {
 
 // Remember this as the last tool actually used, so the landing page's
 // Grapher card can send a returning visitor straight back here.
-try { sessionStorage.setItem('mm_last_tool', 'fulllab'); } catch(e) {}
+try { localStorage.setItem('mm_last_tool', 'fulllab'); } catch(e) {}
 
 const noSetupBanner  = document.getElementById('noSetupBanner');
 
