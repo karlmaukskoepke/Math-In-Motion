@@ -120,11 +120,11 @@
       flex: 1;
       max-width: 30%;
       height: auto;
-      max-height: 48vh;
+      max-height: 36vh;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 18px;
-      padding: 2.4vh 1.6vw;
+      padding: 2vh 1.6vw;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -185,7 +185,7 @@
       margin-bottom: 1.4vh;
     }
 
-    .marker-art svg { width: 82%; height: 100%; max-height: 22vh; }
+    .marker-art svg { width: 82%; height: 100%; max-height: 15vh; }
 
     .marker h2 {
       font-family: 'Space Mono', monospace;
@@ -202,26 +202,18 @@
       max-width: 22ch;
     }
 
-    .privacy-note {
-      font-size: clamp(0.6rem, 0.8vw, 0.72rem);
-      color: var(--accent3);
-      margin-top: 1vh;
-      line-height: 1.4;
-      max-width: 24ch;
-      opacity: 0.85;
-    }
-
     .marker.disabled .marker-art svg { opacity: 0.45; }
     .marker.disabled h2 { color: var(--muted); }
 
     /* ── MARKER ICON HOVER ANIMATIONS ── */
-    /* ArUco: hands rock the marker gently back and forth */
-    .aruco-icon-group { transform-box: fill-box; transform-origin: center; }
-    @keyframes aruco-rock {
-      0%, 100% { transform: rotate(-5deg); }
-      50%      { transform: rotate(5deg); }
-    }
+    /* ArUco: sits slightly shrunk at rest; on hover it rocks AND grows
+       forward, like it's being picked up and turned toward you. */
+    .aruco-icon-group { transform-box: fill-box; transform-origin: center; transform: scale(0.92); transition: transform 0.3s ease; }
     .marker:hover .aruco-icon-group { animation: aruco-rock 1.6s ease-in-out infinite; }
+    @keyframes aruco-rock {
+      0%, 100% { transform: scale(1.08) rotate(-5deg); }
+      50%      { transform: scale(1.08) rotate(5deg); }
+    }
 
     /* Ball: bounces up and down */
     .ball-icon-group { transform-box: fill-box; transform-origin: center bottom; }
@@ -233,24 +225,34 @@
     }
     .marker:hover .ball-icon-group { animation: ball-bounce 1.3s ease-in-out infinite; }
 
-    /* Face: the wireframe-mesh half fades in over the cartoony half on hover,
-       so it goes half-normal / half-scanned. */
-    .face-wire { opacity: 0; transition: opacity 0.4s; }
-    .marker:hover .face-wire { opacity: 1; }
+    /* Shadow mirrors the ball's height: small & faint when the ball is up,
+       full-size when it's down — same 1.3s cycle, same timing keys. */
+    .ball-shadow { transform-box: fill-box; transform-origin: center; transition: opacity 0.3s, transform 0.3s; opacity: 0.45; }
+    @keyframes ball-shadow-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.45; }
+      45%      { transform: scale(0.55); opacity: 0.2; }
+      55%      { transform: scale(0.55); opacity: 0.2; }
+      80%      { transform: scale(1.08); opacity: 0.5; }
+    }
+    .marker:hover .ball-shadow { animation: ball-shadow-pulse 1.3s ease-in-out infinite; }
+
+    /* Face wireframe tilt is JS-driven (mouse tracking) — see script below. */
 
     /* ── FLOATING SUB-OPTION OVERLAY (ArUco) ──
        Appears on hover/focus as an absolutely-positioned popover so it never
        pushes layout down — the page stays no-scroll. */
     .submenu {
       position: absolute;
-      top: calc(100% + 10px);
+      top: calc(100% + 8px);
       left: 50%;
       transform: translateX(-50%) translateY(-8px);
-      width: min(340px, 30vw);
+      width: min(280px, 26vw);
+      max-height: 30vh;
+      overflow-y: auto;
       background: var(--surface2);
       border: 1px solid var(--accent);
-      border-radius: 14px;
-      padding: 14px;
+      border-radius: 12px;
+      padding: 10px;
       opacity: 0;
       pointer-events: none;
       transition: opacity 0.2s, transform 0.2s;
@@ -287,14 +289,14 @@
     .sub-option {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
+      gap: 8px;
+      padding: 7px 9px;
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 9px;
       background: var(--surface);
       cursor: pointer;
       transition: border-color 0.15s, background 0.15s;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       text-align: left;
     }
 
@@ -382,33 +384,37 @@
         <div class="marker-badge soon">Coming Soon</div>
         <div class="marker-art">
           <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <clipPath id="faceRightHalf"><rect x="60" y="0" width="60" height="120"/></clipPath>
-            </defs>
-            <!-- cartoony face base -->
-            <circle cx="60" cy="58" r="42" fill="#22263a" stroke="#7986cb" stroke-width="2.5"/>
-            <circle cx="45" cy="50" r="5.5" fill="#7986cb"/>
-            <circle cx="75" cy="50" r="5.5" fill="#7986cb"/>
-            <path d="M44 74 Q60 86 76 74" stroke="#7986cb" stroke-width="2.5" fill="none" stroke-linecap="round"/>
-            <path d="M60 46 L60 62 L54 62" stroke="#7986cb" stroke-width="2" fill="none" stroke-linecap="round"/>
-            <!-- wireframe mesh, revealed on the RIGHT half on hover -->
-            <g class="face-wire" clip-path="url(#faceRightHalf)">
-              <g stroke="#00e5ff" stroke-width="0.9" fill="none" opacity="0.9">
-                <polygon points="60,18 76,28 60,34"/>
-                <polygon points="76,28 84,44 60,34"/>
-                <polygon points="84,44 60,34 72,52"/>
-                <polygon points="60,34 72,52 60,50"/>
-                <polygon points="84,44 72,52 82,66"/>
-                <polygon points="72,52 60,50 68,68"/>
-                <polygon points="72,52 82,66 68,68"/>
-                <polygon points="60,50 68,68 60,66"/>
-                <polygon points="82,66 68,68 74,82"/>
-                <polygon points="68,68 60,66 60,80"/>
-                <polygon points="68,68 74,82 60,80"/>
-                <polygon points="74,82 60,80 60,96"/>
+            <!-- pure wireframe mesh — tilts toward the cursor on hover via JS -->
+            <g id="faceWireGroup" style="transform-box: fill-box; transform-origin: center;">
+              <g stroke="#00e5ff" stroke-width="1" fill="none" opacity="0.9">
+                <polygon points="60,16 44,26 60,32"/>
+                <polygon points="60,16 76,26 60,32"/>
+                <polygon points="44,26 34,44 60,32"/>
+                <polygon points="76,26 86,44 60,32"/>
+                <polygon points="34,44 60,32 46,52"/>
+                <polygon points="86,44 60,32 74,52"/>
+                <polygon points="60,32 46,52 60,50"/>
+                <polygon points="60,32 74,52 60,50"/>
+                <polygon points="34,44 46,52 36,66"/>
+                <polygon points="86,44 74,52 84,66"/>
+                <polygon points="46,52 60,50 50,68"/>
+                <polygon points="74,52 60,50 70,68"/>
+                <polygon points="46,52 36,66 50,68"/>
+                <polygon points="74,52 84,66 70,68"/>
+                <polygon points="60,50 50,68 60,66"/>
+                <polygon points="60,50 70,68 60,66"/>
+                <polygon points="50,68 60,66 70,68"/>
+                <polygon points="36,66 50,68 44,82"/>
+                <polygon points="84,66 70,68 76,82"/>
+                <polygon points="50,68 60,66 60,80"/>
+                <polygon points="70,68 60,66 60,80"/>
+                <polygon points="50,68 44,82 60,80"/>
+                <polygon points="70,68 76,82 60,80"/>
+                <polygon points="44,82 60,80 60,96"/>
+                <polygon points="76,82 60,80 60,96"/>
               </g>
               <g fill="#00e5ff">
-                <circle cx="72" cy="52" r="3"/>
+                <circle cx="46" cy="52" r="3"/><circle cx="74" cy="52" r="3"/>
                 <circle cx="60" cy="50" r="2"/><circle cx="60" cy="66" r="2"/><circle cx="60" cy="80" r="2"/>
               </g>
             </g>
@@ -418,7 +424,6 @@
         </div>
         <h2>Face</h2>
         <div class="tagline">The quickest start — no supplies needed.</div>
-        <div class="privacy-note">🔒 Runs entirely on your device — no face data ever leaves the Chromebook.</div>
       </div>
 
       <!-- ARUCO — center, recommended, the only live option -->
@@ -432,7 +437,12 @@
                 <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
               </filter>
             </defs>
-            <!-- marker card with glowing cyan edge, rocks on hover -->
+            <!-- static viewfinder brackets — echoes the Face card's tracking
+                 reticle, reads as "the camera is targeting this" instead of
+                 attempting hands -->
+            <path d="M20 30 h-4 v-6 M100 30 h4 v-6 M20 92 h-4 v6 M100 92 h4 v6"
+              stroke="#00e5ff" stroke-width="2" opacity="0.55" fill="none"/>
+            <!-- marker rocks + scales forward within the fixed viewfinder -->
             <g class="aruco-icon-group">
               <rect x="30" y="24" width="60" height="60" rx="3" fill="#0a0c12" stroke="#00e5ff" stroke-width="2.5" filter="url(#arucoGlow)"/>
               <rect x="38" y="32" width="11" height="11" fill="#e8eaf6"/>
@@ -443,9 +453,6 @@
               <rect x="60" y="54" width="11" height="11" fill="#e8eaf6"/>
               <rect x="49" y="65" width="11" height="11" fill="#e8eaf6"/>
             </g>
-            <!-- hands hold from behind, static -->
-            <path d="M24 88 q6 -10 16 -8 l6 4" stroke="#7986cb" stroke-width="3" fill="none" stroke-linecap="round"/>
-            <path d="M96 88 q-6 -10 -16 -8 l-6 4" stroke="#7986cb" stroke-width="3" fill="none" stroke-linecap="round"/>
           </svg>
         </div>
         <h2>ArUco Marker</h2>
@@ -484,8 +491,9 @@
                 <stop offset="100%" stop-color="#a01048"/>
               </radialGradient>
             </defs>
-            <!-- cast shadow (static) -->
-            <ellipse cx="60" cy="98" rx="26" ry="6" fill="#000" opacity="0.4"/>
+            <!-- true grey cast shadow — shrinks & fades when the ball is up,
+                 grows back when it's down, synced to the bounce cycle -->
+            <ellipse class="ball-shadow" cx="60" cy="98" rx="24" ry="6" fill="#8a8fa3"/>
             <!-- sphere bounces on hover -->
             <g class="ball-icon-group">
               <circle cx="60" cy="52" r="30" fill="url(#ballSphere)"/>
@@ -552,6 +560,42 @@
         arucoCard.classList.remove('submenu-open');
       }
     });
+
+    /* ── FACE WIREFRAME: tilts toward the cursor while hovering the card ──
+       Same 3D-tracking idea used on the landing page's "Motion" word —
+       the wireframe turns to "look at" wherever the pointer is within the
+       card, as a hint of the actual face-tracking to come. */
+    (function () {
+      const faceCard = document.getElementById('markerFace');
+      const wireGroup = document.getElementById('faceWireGroup');
+      if (!faceCard || !wireGroup) return;
+
+      let raf = null;
+
+      function apply(clientX, clientY) {
+        raf = null;
+        const rect = faceCard.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const dx = (clientX - cx) / rect.width;
+        const dy = (clientY - cy) / rect.height;
+        const rotateY = Math.max(-22, Math.min(22, dx * 40));
+        const rotateX = Math.max(-14, Math.min(14, -dy * 26));
+        wireGroup.style.transform =
+          `perspective(400px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg)`;
+      }
+
+      function queue(e) {
+        if (raf === null) raf = requestAnimationFrame(() => apply(e.clientX, e.clientY));
+      }
+
+      function reset() {
+        wireGroup.style.transform = 'perspective(400px) rotateX(0deg) rotateY(0deg)';
+      }
+
+      faceCard.addEventListener('mousemove', queue);
+      faceCard.addEventListener('mouseleave', reset);
+    })();
   </script>
 </body>
 </html>
