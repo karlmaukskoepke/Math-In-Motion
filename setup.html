@@ -210,7 +210,7 @@
        receding (smaller, drifts one way) and advancing (larger, drifts the
        other way), with a gentle rock layered on top throughout. */
     .aruco-icon-group { transform-box: fill-box; transform-origin: center; transform: scale(0.92); transition: transform 0.3s ease; }
-    .marker:hover .aruco-icon-group { animation: aruco-bounce 2.2s ease-in-out infinite; }
+    .marker:hover .aruco-icon-group { animation: aruco-bounce 3.8s ease-in-out infinite; }
     @keyframes aruco-bounce {
       0%   { transform: scale(0.82) translateX(-7px) rotate(-4deg); }
       25%  { transform: scale(1.18) translateX(0px)  rotate(3deg); }
@@ -221,24 +221,26 @@
 
     /* Ball: bounces up and down */
     .ball-icon-group { transform-box: fill-box; transform-origin: center bottom; }
+    /* Ball bounces STRAIGHT up and down — no horizontal drift. The shadow,
+       on the other hand, drifts sideways as the ball rises, since the light
+       source isn't directly overhead (same logic as a shadow lengthening
+       and shifting at low sun angle), and returns under the ball as it
+       lands. That's the realism cue — decoupling the two motions. */
     @keyframes ball-bounce {
-      0%   { transform: translate(0, 0)      scale(1, 1); }
-      45%  { transform: translate(11px, -30px) scale(1, 1.02); }
-      55%  { transform: translate(11px, -30px) scale(1, 1.02); }
-      80%  { transform: translate(0, 0)      scale(1, 0.92); }
-      100% { transform: translate(0, 0)      scale(1, 1); }
+      0%   { transform: translateY(0)    scale(1, 1); }
+      45%  { transform: translateY(-34px) scale(1, 1.02); }
+      55%  { transform: translateY(-34px) scale(1, 1.02); }
+      80%  { transform: translateY(0)    scale(1, 0.9); }
+      100% { transform: translateY(0)    scale(1, 1); }
     }
     .marker:hover .ball-icon-group { animation: ball-bounce 1.4s ease-in-out infinite; }
 
-    /* Shadow tracks the ball's horizontal drift (like a real cast shadow
-       following the ball's ground projection) and shrinks/fades as the ball
-       gets higher, returning centered and full-size when it lands. */
     .ball-shadow { transform-box: fill-box; transform-origin: center; transition: opacity 0.3s, transform 0.3s; opacity: 0.45; }
     @keyframes ball-shadow-pulse {
       0%   { transform: translateX(0)    scale(1);    opacity: 0.45; }
-      45%  { transform: translateX(11px) scale(0.5);  opacity: 0.18; }
-      55%  { transform: translateX(11px) scale(0.5);  opacity: 0.18; }
-      80%  { transform: translateX(0)    scale(1.1);  opacity: 0.5; }
+      45%  { transform: translateX(15px) scale(0.5);  opacity: 0.16; }
+      55%  { transform: translateX(15px) scale(0.5);  opacity: 0.16; }
+      80%  { transform: translateX(3px)  scale(1.1);  opacity: 0.5; }
       100% { transform: translateX(0)    scale(1);    opacity: 0.45; }
     }
     .marker:hover .ball-shadow { animation: ball-shadow-pulse 1.4s ease-in-out infinite; }
@@ -395,37 +397,41 @@
               <!-- mesh defined once, reused 3x as back/mid/front layers so we
                    don't triple the markup -->
               <symbol id="faceMesh" viewBox="0 0 120 120">
-                <g stroke="#00e5ff" stroke-width="1" fill="none">
-                  <polygon points="60,16 44,26 60,32"/>
-                  <polygon points="60,16 76,26 60,32"/>
-                  <polygon points="44,26 34,44 60,32"/>
-                  <polygon points="76,26 86,44 60,32"/>
-                  <polygon points="34,44 60,32 46,52"/>
-                  <polygon points="86,44 60,32 74,52"/>
-                  <polygon points="60,32 46,52 60,50"/>
-                  <polygon points="60,32 74,52 60,50"/>
-                  <polygon points="34,44 46,52 36,66"/>
-                  <polygon points="86,44 74,52 84,66"/>
-                  <polygon points="46,52 60,50 50,68"/>
-                  <polygon points="74,52 60,50 70,68"/>
-                  <polygon points="46,52 36,66 50,68"/>
-                  <polygon points="74,52 84,66 70,68"/>
-                  <polygon points="60,50 50,68 60,66"/>
-                  <polygon points="60,50 70,68 60,66"/>
-                  <polygon points="50,68 60,66 70,68"/>
-                  <polygon points="36,66 50,68 44,82"/>
-                  <polygon points="84,66 70,68 76,82"/>
-                  <polygon points="50,68 60,66 60,80"/>
-                  <polygon points="70,68 60,66 60,80"/>
-                  <polygon points="50,68 44,82 60,80"/>
-                  <polygon points="70,68 76,82 60,80"/>
-                  <polygon points="44,82 60,80 60,96"/>
-                  <polygon points="76,82 60,80 60,96"/>
+                <!-- head silhouette — the primary anchor that keeps this
+                     reading as a face even under heavy rotation -->
+                <path d="M60,14 C40,14 32,32 34,50 C36,70 42,92 50,102 C54,107 58,109 60,109
+                         C62,109 66,107 70,102 C78,92 84,70 86,50 C88,32 80,14 60,14 Z"
+                  stroke="#00e5ff" stroke-width="2" fill="none"/>
+                <!-- secondary triangulated scan-mesh texture, dimmer than the
+                     outline/features so it reads as overlay, not the subject -->
+                <g stroke="#00e5ff" stroke-width="0.6" fill="none" opacity="0.5">
+                  <polygon points="60,20 46,32 60,40"/>
+                  <polygon points="60,20 74,32 60,40"/>
+                  <polygon points="46,32 38,48 60,40"/>
+                  <polygon points="74,32 82,48 60,40"/>
+                  <polygon points="60,40 46,58 60,64"/>
+                  <polygon points="60,40 74,58 60,64"/>
+                  <polygon points="38,48 46,58 40,72"/>
+                  <polygon points="82,48 74,58 80,72"/>
+                  <polygon points="46,58 60,64 50,80"/>
+                  <polygon points="74,58 60,64 70,80"/>
+                  <polygon points="40,72 50,80 46,92"/>
+                  <polygon points="80,72 70,80 74,92"/>
+                  <polygon points="50,80 60,86 46,92"/>
+                  <polygon points="70,80 60,86 74,92"/>
+                  <polygon points="50,80 70,80 60,86"/>
                 </g>
-                <g fill="#00e5ff">
-                  <circle cx="46" cy="52" r="3"/><circle cx="74" cy="52" r="3"/>
-                  <circle cx="60" cy="50" r="2"/><circle cx="60" cy="66" r="2"/><circle cx="60" cy="80" r="2"/>
+                <!-- eyes: real almond shapes with a pupil, not abstract dots -->
+                <g>
+                  <ellipse cx="47" cy="52" rx="7" ry="5" stroke="#00e5ff" stroke-width="1.3" fill="#0a0c12"/>
+                  <ellipse cx="73" cy="52" rx="7" ry="5" stroke="#00e5ff" stroke-width="1.3" fill="#0a0c12"/>
+                  <circle cx="47" cy="52" r="2.4" fill="#00e5ff"/>
+                  <circle cx="73" cy="52" r="2.4" fill="#00e5ff"/>
                 </g>
+                <!-- nose bridge -->
+                <path d="M60,54 L57,72 L63,72" stroke="#00e5ff" stroke-width="1.3" fill="none"/>
+                <!-- mouth -->
+                <path d="M48,84 Q60,92 72,84" stroke="#00e5ff" stroke-width="1.6" fill="none"/>
               </symbol>
             </defs>
 
@@ -497,10 +503,24 @@
               </div>
             </div>
             <div class="sub-option" onclick="showRoleChoice(event)">
-              <div class="so-icon">💻</div>
+              <div class="so-icon">
+                <svg width="34" height="20" viewBox="0 0 80 48" xmlns="http://www.w3.org/2000/svg">
+                  <!-- laptop 1: the camera/grapher, wave graph on screen -->
+                  <rect x="2" y="4" width="30" height="20" rx="2" fill="#0a0c12" stroke="#00e5ff" stroke-width="2"/>
+                  <path d="M6 18 L12 12 L16 16 L22 8 L28 14" stroke="#00e5ff" stroke-width="1.5" fill="none"/>
+                  <path d="M-2 26 L36 26 L32 24 L2 24 Z" fill="#22263a" stroke="#7986cb" stroke-width="1"/>
+                  <!-- laptop 2: the marker display, checkerboard on screen -->
+                  <rect x="48" y="4" width="30" height="20" rx="2" fill="#0a0c12" stroke="#ff4081" stroke-width="2"/>
+                  <rect x="52" y="8" width="5" height="5" fill="#e8eaf6"/>
+                  <rect x="60" y="8" width="5" height="5" fill="#e8eaf6"/>
+                  <rect x="56" y="14" width="5" height="5" fill="#e8eaf6"/>
+                  <rect x="68" y="14" width="5" height="5" fill="#e8eaf6"/>
+                  <path d="M44 26 L82 26 L78 24 L48 24 Z" fill="#22263a" stroke="#7986cb" stroke-width="1"/>
+                </svg>
+              </div>
               <div class="so-text">
                 <h4>Two-Laptop Setup</h4>
-                <p>One laptop shows the marker, the other tracks it.</p>
+                <p>One laptop IS the Marker — the other tracks it.</p>
               </div>
             </div>
           </div>
@@ -553,7 +573,6 @@
 
     </div>
 
-    <div class="hint">Hover a marker to see its options · Tap to choose</div>
   </div>
 
   <script>
