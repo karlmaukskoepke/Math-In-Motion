@@ -54,11 +54,50 @@ const FaceTracker = (() => {
 
   // ── TUNABLE CONSTANTS ─────────────────────────────────────────────────
 
-  // Typical distance from a seated student's eyes to their Chromebook
-  // camera. 50cm / ~20in is the common ergonomic figure for laptop use.
-  // This is THE calibration assumption — every reported distance scales
-  // linearly with it.
-  const ASSUMED_SEATED_CM = 50;
+  /*
+    ── EMPIRICAL CORRECTION (fitted 2026-07-19 against tape-measure data) ──
+
+    The raw pinhole formula read systematically LOW, and increasingly so with
+    distance: 12.5in read as 11.2, but 46in read as 34. A pure scale error
+    can't do that — a wrong seated-distance assumption shifts every reading
+    by the SAME percentage. The error growing with distance means the
+    apparent-size measurement itself carries a bias.
+
+    Taking reciprocals shows why: 1/reported minus 1/actual came out roughly
+    constant across five measurements, which is the exact signature of a
+    CONSTANT ADDITIVE OFFSET in the pixel measurement. If the eye separation
+    reads as (true + e) pixels rather than true, then distance = K/(reading)
+    understates distance, mildly up close where the reading is large and
+    badly at range where it is small. So the fix is to subtract that offset
+    back out before dividing:
+
+        distance = assumedCm * (refPx - e) / (px - e),   e = PX_BIAS * refPx
+
+    Two constants, fitted together, then the seated distance pinned to a
+    round 60cm and the bias refitted around it. Residual RMS is 0.89in
+    against measurements whose own internal consistency is about +/-1.2in —
+    i.e. this is at the noise floor of the data, and chasing it further would
+    be fitting noise. Cross-validated (leave-one-out) as a genuine
+    improvement over a pure rescale, not just a better in-sample fit.
+
+    CAVEAT WORTH KEEPING IN VIEW: fitted from ONE person on ONE webcam.
+    If PX_BIAS is a MediaPipe landmark artifact it should carry over to other
+    faces; if it's specific to that camera or lighting, it won't, and it
+    could make other students slightly worse. Repeating the tape-measure
+    protocol with a second person is the check. Both constants are isolated
+    here precisely so that's a one-line adjustment.
+  */
+
+  // Assumed distance from a seated student's eyes to their laptop camera at
+  // the moment of auto-calibration. 60cm sits in the middle of the usual
+  // ergonomic guidance (50-70cm) and matched the measured seated distance
+  // during fitting. Every reported distance scales linearly with this.
+  const ASSUMED_SEATED_CM = 60;
+
+  // Additive bias in the apparent-size measurement, as a fraction of the
+  // calibration reading. Set to 0 to disable the correction entirely and
+  // recover the plain pinhole behaviour.
+  const PX_BIAS = 0.128;
 
   // Calibration needs this many consecutive good frames whose size agrees
   // within CAL_TOLERANCE, so we don't lock onto a mid-lean-in moment.
@@ -393,6 +432,7 @@ const FaceTracker = (() => {
   */
   function createCalibrator(opts = {}) {
     const assumedCm  = opts.assumedCm || ASSUMED_SEATED_CM;
+    const pxBias     = opts.pxBias != null ? opts.pxBias : PX_BIAS;
     // Frontality gate for calibration. Expressed as a foreshortening factor
     // rather than an angle: cos(12 degrees) is about 0.978.
     const frontalMin = opts.frontalMin || Math.cos((opts.frontalDeg || 12) * Math.PI / 180);
@@ -449,11 +489,23 @@ const FaceTracker = (() => {
         return true;
       },
 
-      // The whole payoff: focalLength and the student's real eye spacing
-      // both cancel, so this is a pure ratio.
+      /*
+        The whole payoff: focalLength and the student's real eye spacing both
+        cancel, so this stays a pure ratio even with the bias term — `bias`
+        is itself a fraction of refPx, so it scales with the student and the
+        camera rather than being a fixed pixel count.
+      */
       distanceCm(correctedPx) {
         if (refPx === null || !correctedPx) return null;
-        return assumedCm * (refPx / correctedPx);
+        const bias = pxBias * refPx;
+        const denom = correctedPx - bias;
+        // Guard the asymptote. With the fitted constants this corresponds to
+        // roughly 13 feet — far outside face tracking's usable range, and
+        // unreachable in practice since detection fails long before it — but
+        // an unguarded divide here would return negative or infinite
+        // distances rather than simply reporting nothing.
+        if (denom <= 0) return null;
+        return assumedCm * (refPx - bias) / denom;
       },
 
       reset() { win = []; refPx = null; refRatio = null; }
@@ -463,6 +515,6 @@ const FaceTracker = (() => {
   return {
     load, getLoadState, detect, createCalibrator,
     fingerprint, fingerprintDistance, setStrategy,
-    ASSUMED_SEATED_CM, LM
+    ASSUMED_SEATED_CM, PX_BIAS, LM
   };
 })();

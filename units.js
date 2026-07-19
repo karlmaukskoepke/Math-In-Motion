@@ -67,10 +67,16 @@ const Units = (() => {
   const AXIS = {
     ft: { max: 10.5, step: 0.5, label: v => Number.isInteger(v) ? String(v) : '' },
     m:  { max: 3.2,  step: 0.5, label: v => Number.isInteger(v) ? String(v) : '' },
-    // 6-inch gridlines land on half-foot marks, which students already have
-    // an intuition for; labels every foot.
-    in: { max: 42,   step: 3,   label: v => v % 6 === 0 ? String(v) : '' },
-    cm: { max: 105,  step: 5,   label: v => v % 25 === 0 ? String(v) : '' }
+    // Face mode is the solo, sitting-at-your-laptop tool: measured range runs
+    // to about 46in before detection drops out, so the ceiling is 48 (4ft)
+    // with a little headroom past the top label. Gridlines every 3in are
+    // half-foot marks, labels every 6in; students already read feet, so the
+    // axis stays legible as "two feet, three feet" while the graph resolves
+    // fine motion.
+    in: { max: 50,   step: 3,   label: v => v % 6 === 0 ? String(v) : '' },
+    // 30cm gridline labels are close enough to 1ft to carry the same
+    // intuition, at a spacing that doesn't crowd the axis.
+    cm: { max: 125,  step: 10,  label: v => v % 30 === 0 ? String(v) : '' }
   };
 
   // Fallback speed-axis ceilings, used only before a run exists to scale to.
