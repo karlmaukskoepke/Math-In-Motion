@@ -303,7 +303,8 @@ const FaceTracker = (() => {
   */
   function detect(videoEl, timestampMs, vw, vh, cal) {
     const empty = (reason) => ({
-      found: false, cx: null, cy: null, interocularPx: null, correctedPx: null,
+      found: false, cx: null, cy: null, interocularPx: null, eyeToChinPx: null,
+      correctedPx: null,
       rawRatio: null, yaw: null, foreshorten: null, yawConfidence: 0,
       fingerprint: null, faceCount: 0, reason
     });
@@ -361,6 +362,9 @@ const FaceTracker = (() => {
       cx: m.cxN * vw,
       cy: m.cyN * vh,
       interocularPx: m.interocularPx,
+      // Exposed for the Full Lab debug panel: the chin landmark is the soft
+      // one, so when distance readings drift this is the number to watch.
+      eyeToChinPx: m.eyeToChin * vw,
       correctedPx,
       // Raw interocular/eyeToChin. The calibrator stores this at the frontal
       // lock; every later frame divides by it to MEASURE foreshortening.

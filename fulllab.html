@@ -109,6 +109,21 @@
     }
     #video   { width: 100%; height: 100%; object-fit: cover; display: block; }
     #video.debug-full-frame { object-fit: contain; background: #000; }
+
+    /* FACE DIAGNOSTICS — a raw-numbers panel for calibration sessions.
+       Deliberately plain and monospaced: this is an instrument, not a
+       student-facing readout. */
+    #faceDebug {
+      position: absolute; top: 10px; left: 10px; z-index: 40;
+      display: none;
+      font-family: 'Space Mono', monospace; font-size: 0.68rem; line-height: 1.5;
+      color: #eaf2ff; background: rgba(8,10,16,0.86);
+      border: 1px solid rgba(0,229,255,0.35); border-radius: 8px;
+      padding: 8px 10px; pointer-events: none; white-space: pre;
+    }
+    #faceDebug.visible { display: block; }
+    #faceDebug b { color: var(--accent); font-weight: 700; }
+    #faceDebug .warn { color: #ffd740; }
     #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
     #distBadge {
       position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
@@ -320,6 +335,7 @@
       <div class="hdr-group-btns">
         <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
         <button class="hdr-btn stacked" id="frameDebugBtn" type="button" title="Debug: show the full uncropped camera frame"><span>Frame</span><b>Crop</b></button>
+        <button class="hdr-btn stacked" id="faceDebugBtn" type="button" title="Debug: live face-tracking numbers, for calibration against a tape measure"><span>Face Dbg</span><b>Off</b></button>
         <a class="hdr-btn stacked" href="quickstart.html" title="Switch to the simplified quick-start view"><span>Mode</span><b>→ Quick Start</b></a>
         <a class="hdr-btn" id="markerBtn" href="marker-display.html" title="Show a marker fullscreen for another laptop to track">📺 Turn Into Marker</a>
       </div>
@@ -372,6 +388,8 @@
           <div id="slopeDirLabel">—</div>
         </div>
       </div>
+      <!-- Face-mode diagnostics (toggled by the Face Debug header button) -->
+      <div id="faceDebug"></div>
       <!-- No-setup overlay -->
       <div id="noSetupBanner" class="visible">
         <h2>Setup required</h2>
@@ -406,6 +424,24 @@ const tracking = (() => {
 try { localStorage.setItem('mm_last_tool', 'fulllab'); } catch(e) {}
 
 const noSetupBanner  = document.getElementById('noSetupBanner');
+
+// Three-way mode. Previously this was a boolean (ball vs "everything else"),
+// which quietly made ArUco the default for any unrecognized value. Face mode
+// forced it to become explicit — an unknown topMode now still falls back to
+// ArUco, but deliberately rather than by accident.
+const topMode    = (tracking && tracking.topMode) || 'aruco';
+const ballModeOn = topMode === 'ball';
+const faceModeOn = topMode === 'face';
+const arucoMode  = !ballModeOn && !faceModeOn;
+
+// ── FACE MODE STATE ──
+// faceCal holds the auto-calibration (see faceTracker.js for why there's no
+// calibration UI). faceReady gates the render loop until MediaPipe's WASM +
+// model have actually downloaded.
+let faceCal      = faceModeOn ? FaceTracker.createCalibrator() : null;
+let faceReady    = false;
+let faceLoadFailed = false;
+let lastFaceFingerprint = null;
 
 if (tracking) {
   noSetupBanner.classList.remove('visible');
@@ -479,8 +515,18 @@ function formatSig(v) {
 
 // Same idea, but for DISTANCE/SPEED values — 2 decimals in meters
 // (matches centimeter precision), 1 decimal in feet.
+// Which y gridlines get a number. Returns '' for the unlabeled midlines,
+// so it doubles as the "is this a major line" test for grid emphasis.
+function yLabelFor(v) {
+  const cfg = Units.AXIS[currentUnit];
+  if (!cfg) return Number.isInteger(v) ? String(v) : '';
+  // Guard against float dust from Chart.js tick generation (e.g. 5.999999).
+  const snapped = Math.round(v * 1000) / 1000;
+  return cfg.label(snapped);
+}
+
 function formatDist(v) {
-  const places = currentUnit === 'm' ? 2 : 1;
+  const places = Units.PLACES[currentUnit] ?? 1;
   const factor = Math.pow(10, places);
   const rounded = Math.round(v * factor) / factor;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(places);
@@ -628,6 +674,58 @@ gaugeBtn.onclick = () => {
 
 // ── DEBUG: FULL FRAME TOGGLE — see quickstart.html for full explanation.
 // Temporary diagnostic; safe to remove once the camera FOV question is settled.
+/* FACE DIAGNOSTICS TOGGLE.
+   Exists so distance problems get MEASURED rather than re-guessed: it shows
+   the raw pixel measurements alongside BOTH distance figures — the one the
+   graph actually uses (turn-corrected) and the one it would use with the
+   correction disabled. If the uncorrected column tracks a tape measure
+   better than the corrected one, the correction is the problem. That is a
+   single-variable comparison read off one screen, with nothing to toggle
+   mid-test. Face mode only; the panel stays hidden otherwise. */
+const faceDebugBtn      = document.getElementById('faceDebugBtn');
+const faceDebugBtnValue = faceDebugBtn.querySelector('b');
+const faceDebugPanel    = document.getElementById('faceDebug');
+let faceDebugOn = false;
+// Safe to read faceModeOn here now that the mode flags are declared up with
+// the session handoff, well before this point.
+if (!faceModeOn) faceDebugBtn.style.display = 'none';
+faceDebugBtn.onclick = () => {
+  faceDebugOn = !faceDebugOn;
+  faceDebugBtnValue.textContent = faceDebugOn ? 'On' : 'Off';
+  faceDebugPanel.classList.toggle('visible', faceDebugOn && faceModeOn);
+  if (!faceDebugOn) faceDebugPanel.textContent = '';
+};
+
+function renderFaceDebug(result) {
+  if (!faceDebugOn || !faceModeOn) return;
+  const n = (v, d = 1) => (v == null || !isFinite(v)) ? '  —  ' : v.toFixed(d).padStart(7);
+  if (!result.found) {
+    faceDebugPanel.innerHTML =
+      `<b>FACE DEBUG</b>\nno reading: <span class="warn">${result.reason || 'unknown'}</span>` +
+      (result.faceCount ? `\nfaces in frame: ${result.faceCount}` : '');
+    return;
+  }
+  // Both distances, in the unit currently on the axis, so they can be read
+  // straight against a tape measure without converting anything by hand.
+  const toUnit = ft => Units.convert(ft, 'ft', currentUnit);
+  const cmToDisp = cm => cm == null ? null : toUnit(cm / 30.48);
+  const dCorr = cmToDisp(faceCal.distanceCm(result.correctedPx));
+  const dRaw  = cmToDisp(faceCal.distanceCm(result.interocularPx));
+  const conf  = result.yawConfidence === 1 ? 'good'
+              : result.yawConfidence === 0.5 ? 'weak' : 'IGNORED';
+  faceDebugPanel.innerHTML =
+`<b>FACE DEBUG</b>   faces: ${result.faceCount}
+eye-to-eye px  ${n(result.interocularPx)}
+eye-to-chin px ${n(result.eyeToChinPx)}
+ratio now      ${n(result.rawRatio, 4)}
+ratio at cal   ${n(faceCal.referenceRatio, 4)}
+foreshorten    ${n(result.foreshorten, 4)}  (${conf})
+implied turn   ${n(result.yaw * 180 / Math.PI)}°
+ref px at cal  ${n(faceCal.referencePx)}
+<b>dist CORRECTED ${n(dCorr)} ${currentUnit}</b>
+dist raw       ${n(dRaw)} ${currentUnit}`;
+}
+
 const frameDebugBtn      = document.getElementById('frameDebugBtn');
 const frameDebugBtnValue = frameDebugBtn.querySelector('b');
 let fullFrameDebug = false;
@@ -702,7 +800,14 @@ let   focalLength = 863;
 // against ft/s and are NOT re-tuned for m/s — real m/s values will be
 // smaller, so the arrow gauge will read "quieter" in meters. Flagging this
 // as a known simplification, not a bug.
-let currentUnit = Units.getPref().dist; // 'ft' | 'm'
+// Which unit PAIR this session offers depends on the tracking mode: face
+// mode works over roughly 10-40 inches, a range that feet would squash into
+// the bottom fifth of the axis. ArUco/ball keep ft/m. A saved preference is
+// only honoured if it belongs to this mode's pair.
+const UNIT_PAIR = Units.pairFor(topMode);
+let currentUnit = UNIT_PAIR.includes(Units.getPref().dist)
+  ? Units.getPref().dist
+  : UNIT_PAIR[0];
 let graphMode   = 'distance'; // 'distance' | 'speed'
 // Persistent snapshots of the most recent recording, kept so the graph-type
 // toggle can switch back and forth indefinitely without ever losing data.
@@ -716,12 +821,11 @@ let recordedSpeed    = null;
 // distance range is a fixed headroom guess; speed's max/min are now
 // computed dynamically from the derived data itself (see applyAxisConfig)
 // — this fallback only applies before anything's been recorded yet.
-const Y_MAX = {
-  distance: { ft: 10.5, m: 3.2 },  // labeled ceiling is 10ft/3m — this is
-                                     // headroom so a point AT the ceiling
-                                     // isn't jammed against the chart edge
-  speed:    { ft: 8,   m: 2.5 }
-};
+// Axis ceilings now live in units.js (Units.AXIS / Units.SPEED_MAX) so the
+// inches and centimetre axes stay in one place alongside their gridline
+// spacing, rather than being split across two files.
+const yDistMax  = () => Units.AXIS[currentUnit].max;
+const ySpeedMax = () => Units.SPEED_MAX[currentUnit];
 
 // ════════════════════════════════════════════════
 // STATE
@@ -745,24 +849,6 @@ let logging         = false;
 let logRows         = [];
 let logStartTime    = null;
 let mediaStreamTrack = null;
-
-// Three-way mode. Previously this was a boolean (ball vs "everything else"),
-// which quietly made ArUco the default for any unrecognized value. Face mode
-// forced it to become explicit — an unknown topMode now still falls back to
-// ArUco, but deliberately rather than by accident.
-const topMode    = (tracking && tracking.topMode) || 'aruco';
-const ballModeOn = topMode === 'ball';
-const faceModeOn = topMode === 'face';
-const arucoMode  = !ballModeOn && !faceModeOn;
-
-// ── FACE MODE STATE ──
-// faceCal holds the auto-calibration (see faceTracker.js for why there's no
-// calibration UI). faceReady gates the render loop until MediaPipe's WASM +
-// model have actually downloaded.
-let faceCal      = faceModeOn ? FaceTracker.createCalibrator() : null;
-let faceReady    = false;
-let faceLoadFailed = false;
-let lastFaceFingerprint = null;
 
 // ════════════════════════════════════════════════
 // CHART — bold, minimal, high-contrast
@@ -1094,20 +1180,24 @@ const chart = new Chart(document.getElementById('chart'), {
         }
       },
       y: {
-        min: graphMode === 'speed' ? -Y_MAX.speed[currentUnit] : 0,
-        max: Y_MAX[graphMode][currentUnit],
+        min: graphMode === 'speed' ? -ySpeedMax() : 0,
+        max: graphMode === 'speed' ? ySpeedMax() : yDistMax(),
         title: { display: true, text: graphMode === 'speed' ? `Speed (${currentUnit}/s)` : `Distance (${currentUnit})`, color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
         ticks: {
           color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
-          stepSize: 0.5,
-          // Only whole numbers get a label — half-point ticks still get a
-          // gridline (below) but no number, i.e. an unlabeled "midline".
-          callback: v => Number.isInteger(v) ? String(v) : ''
+          stepSize: Units.AXIS[currentUnit].step,
+          // Only "major" ticks get a label — the rest still get a gridline
+          // (below) but no number, i.e. an unlabeled midline. Which ticks
+          // count as major is per-unit: whole feet/metres, but every 6
+          // inches or 25 cm, since those axes span far more gridlines.
+          callback: v => yLabelFor(v)
         },
         grid: {
+          // Zero stays the emphasised line in speed mode — crossing it is
+          // the moment that matters most.
           color: c => c.tick.value === 0 ? 'rgba(255,255,255,0.9)'
-            : Number.isInteger(c.tick.value) ? 'rgba(160,180,255,0.45)' : 'rgba(160,180,255,0.15)',
-          lineWidth: c => c.tick.value === 0 ? 2.5 : Number.isInteger(c.tick.value) ? 2 : 0.8
+            : yLabelFor(c.tick.value) ? 'rgba(160,180,255,0.45)' : 'rgba(160,180,255,0.15)',
+          lineWidth: c => c.tick.value === 0 ? 2.5 : yLabelFor(c.tick.value) ? 2 : 0.8
         }
       }
     }
@@ -1241,7 +1331,7 @@ function drawArrow(angleDeg, slope) {
 drawArrow(0, 0);
 
 function updateGauges(distFt, slope) {
-  distReadout.textContent = distFt.toFixed(currentUnit === 'm' ? 2 : 1);
+  distReadout.textContent = distFt.toFixed(Units.PLACES[currentUnit] ?? 1);
   const clamped = Math.max(-4, Math.min(4, slope));
   const target  = -clamped * 20;
   arrowAngleDeg += (target - arrowAngleDeg) * 0.22;
@@ -1305,6 +1395,7 @@ function processVideo() {
     // faceCal is passed in so detect() can use the measured-foreshortening
     // method once a frontal reference exists (see faceTracker.js).
     const result = FaceTracker.detect(video, performance.now(), vw, vh, faceCal);
+    renderFaceDebug(result);
 
     if (result.found) {
       lastFaceFingerprint = result.fingerprint;
@@ -1336,8 +1427,8 @@ function processVideo() {
       } else {
         const distCm = smooth(faceCal.distanceCm(result.correctedPx));
         const distFt = distCm / 30.48;
-        const distDisplay = currentUnit === 'm' ? Units.ftToM(distFt) : distFt;
-        distBadge.innerText = distDisplay.toFixed(currentUnit === 'm' ? 2 : 1) + ' ' + currentUnit;
+        const distDisplay = Units.convert(distFt, 'ft', currentUnit);
+        distBadge.innerText = distDisplay.toFixed(Units.PLACES[currentUnit]) + ' ' + currentUnit;
         const now = (Date.now() - startTime) / 1000;
         const slope = calcSlope(now, distDisplay);
         updateGauges(distDisplay, slope);
@@ -1407,7 +1498,7 @@ function processVideo() {
       lastKnownPxW=diamPx;
       const distCm=smooth((BALL_DIAM*focalLength)/diamPx);
       const distFt=distCm/30.48;
-      const distDisplay = currentUnit==='m' ? Units.ftToM(distFt) : distFt;
+      const distDisplay = Units.convert(distFt, 'ft', currentUnit);
       const dispC=toDisplay(cxN,cyN);
       const dispR=Math.max(8,(diamPx/cropW)*dw/2);
       ctx.strokeStyle='#ffd740'; ctx.lineWidth=3;
@@ -1415,7 +1506,7 @@ function processVideo() {
       ctx.fillStyle='rgba(255,215,64,0.12)'; ctx.fill();
       ctx.beginPath(); ctx.arc(dispC.x,dispC.y,5,0,Math.PI*2);
       ctx.fillStyle='#ffd740'; ctx.fill();
-      distBadge.innerText=distDisplay.toFixed(currentUnit === 'm' ? 2 : 1)+' '+currentUnit;
+      distBadge.innerText=distDisplay.toFixed(Units.PLACES[currentUnit])+' '+currentUnit;
       const now=(Date.now()-startTime)/1000;
       const slope = calcSlope(now,distDisplay);
       updateGauges(distDisplay, slope);
@@ -1449,8 +1540,8 @@ function processVideo() {
     lastKnownPxW=widthPx;
     const distCm=smooth((MARKER_SIZE*focalLength)/widthPx);
     const distFt=distCm/30.48;
-    const distDisplay = currentUnit==='m' ? Units.ftToM(distFt) : distFt;
-    distBadge.innerText=distDisplay.toFixed(currentUnit === 'm' ? 2 : 1)+' '+currentUnit;
+    const distDisplay = Units.convert(distFt, 'ft', currentUnit);
+    distBadge.innerText=distDisplay.toFixed(Units.PLACES[currentUnit])+' '+currentUnit;
     const now=(Date.now()-startTime)/1000;
     const slope = calcSlope(now,distDisplay);
     updateGauges(distDisplay, slope);
@@ -1676,11 +1767,9 @@ downloadLogBtn.onclick = () => {
 // ════════════════════════════════════════════════
 // UNITS + GRAPH MODE
 // ════════════════════════════════════════════════
-function convertDist(val, fromU, toU) {
-  if (fromU === toU) return val;
-  const ft = fromU === 'm' ? Units.mToFt(val) : val;
-  return toU === 'm' ? Units.ftToM(ft) : ft;
-}
+// Any-to-any now that inches/centimetres exist, instead of the old ft<->m
+// special case. Routes through feet internally (see units.js).
+function convertDist(val, fromU, toU) { return Units.convert(val, fromU, toU); }
 
 function applyAxisConfig() {
   if (graphMode === 'speed' && data.length) {
@@ -1694,12 +1783,13 @@ function applyAxisConfig() {
     chart.options.scales.y.max = Math.max(dataMax + pad, 0.1);
     chart.options.scales.y.min = Math.min(dataMin - pad, -0.1); // keep zero visible — crossing it is the moment that matters most
   } else if (graphMode === 'speed') {
-    chart.options.scales.y.max = Y_MAX.speed[currentUnit]; // nothing recorded yet — fixed guess until there's real data to scale to
-    chart.options.scales.y.min = -Y_MAX.speed[currentUnit];
+    chart.options.scales.y.max = ySpeedMax(); // nothing recorded yet — fixed guess until there's real data to scale to
+    chart.options.scales.y.min = -ySpeedMax();
   } else {
-    chart.options.scales.y.max = Y_MAX.distance[currentUnit];
+    chart.options.scales.y.max = yDistMax();
     chart.options.scales.y.min = 0;
   }
+  chart.options.scales.y.ticks.stepSize = Units.AXIS[currentUnit].step;
   chart.options.scales.y.title.text = graphMode === 'speed'
     ? `Speed (${currentUnit}/s)` : `Distance (${currentUnit})`;
   chart.update();
@@ -1711,7 +1801,7 @@ function setUnit(unit) {
   currentUnit = unit;
   Units.setPref({ dist: currentUnit });
   unitsBtnValue.textContent = currentUnit;
-  distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
+  distUnit.textContent = Units.LONG_NAME[currentUnit];
   // Retroactively convert already-plotted points so the graph stays
   // consistent rather than showing a mix of units. Works for speed values
   // too — the ft→m conversion factor applies the same way since time is
@@ -1735,7 +1825,8 @@ function setUnit(unit) {
   renderData();      // rebuild dataset[0] (+ spliced crossings) from the converted data
   if (tableOn) rebuildTable();
 }
-unitsBtn.onclick = () => setUnit(currentUnit === 'ft' ? 'm' : 'ft');
+// Toggle within this mode's pair (in/cm for face, ft/m otherwise).
+unitsBtn.onclick = () => setUnit(currentUnit === UNIT_PAIR[0] ? UNIT_PAIR[1] : UNIT_PAIR[0]);
 
 function setGraphMode(mode) {
   if (mode === graphMode) return;
@@ -1781,7 +1872,7 @@ setGraphMode('distance'); // initialize button label state
 
 // Apply saved unit preference on load
 unitsBtnValue.textContent = currentUnit;
-distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
+distUnit.textContent = Units.LONG_NAME[currentUnit];
 
 clearBtn.onclick=()=>{
   if(countingDown){clearTimeout(preDelayTimer);clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}

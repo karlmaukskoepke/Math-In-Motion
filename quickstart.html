@@ -306,6 +306,24 @@ try { localStorage.setItem('mm_last_tool', 'quickstart'); } catch(e) {}
 
 const noSetupBanner  = document.getElementById('noSetupBanner');
 
+// Three-way mode. Previously this was a boolean (ball vs "everything else"),
+// which quietly made ArUco the default for any unrecognized value. Face mode
+// forced it to become explicit — an unknown topMode now still falls back to
+// ArUco, but deliberately rather than by accident.
+const topMode    = (tracking && tracking.topMode) || 'aruco';
+const ballModeOn = topMode === 'ball';
+const faceModeOn = topMode === 'face';
+const arucoMode  = !ballModeOn && !faceModeOn;
+
+// ── FACE MODE STATE ──
+// faceCal holds the auto-calibration (see faceTracker.js for why there's no
+// calibration UI). faceReady gates the render loop until MediaPipe's WASM +
+// model have actually downloaded.
+let faceCal      = faceModeOn ? FaceTracker.createCalibrator() : null;
+let faceReady    = false;
+let faceLoadFailed = false;
+let lastFaceFingerprint = null;
+
 if (tracking) {
   noSetupBanner.classList.remove('visible');
 }
@@ -349,8 +367,14 @@ let   focalLength = 863;
 // against ft/s and are NOT re-tuned for m/s — real m/s values will be
 // smaller, so the arrow gauge will read "quieter" in meters. Flagging this
 // as a known simplification, not a bug.
-let currentUnit = Units.getPref().dist; // 'ft' | 'm'
-const Y_MAX = { ft: 10.5, m: 3.2 }; // labeled ceiling is 10ft/3m — the rest is headroom so a point at the ceiling isn't jammed against the edge
+// Which unit PAIR this session offers depends on the tracking mode: face
+// mode works over roughly 10-40 inches, a range that feet would squash into
+// the bottom fifth of the axis. ArUco/ball keep ft/m. A saved preference is
+// only honoured if it belongs to this mode's pair.
+const UNIT_PAIR = Units.pairFor(topMode);
+let currentUnit = UNIT_PAIR.includes(Units.getPref().dist)
+  ? Units.getPref().dist
+  : UNIT_PAIR[0];
 
 // ════════════════════════════════════════════════
 // STATE
@@ -370,24 +394,6 @@ let countdownTimer  = null;
 let preDelayTimer   = null;
 let mediaStreamTrack = null;
 
-// Three-way mode. Previously this was a boolean (ball vs "everything else"),
-// which quietly made ArUco the default for any unrecognized value. Face mode
-// forced it to become explicit — an unknown topMode now still falls back to
-// ArUco, but deliberately rather than by accident.
-const topMode    = (tracking && tracking.topMode) || 'aruco';
-const ballModeOn = topMode === 'ball';
-const faceModeOn = topMode === 'face';
-const arucoMode  = !ballModeOn && !faceModeOn;
-
-// ── FACE MODE STATE ──
-// faceCal holds the auto-calibration (see faceTracker.js for why there's no
-// calibration UI). faceReady gates the render loop until MediaPipe's WASM +
-// model have actually downloaded.
-let faceCal      = faceModeOn ? FaceTracker.createCalibrator() : null;
-let faceReady    = false;
-let faceLoadFailed = false;
-let lastFaceFingerprint = null;
-
 // ════════════════════════════════════════════════
 // CHART — bold, minimal, high-contrast
 // ════════════════════════════════════════════════
@@ -405,8 +411,18 @@ function formatSig(v) {
 
 // Same idea, but for DISTANCE values — 2 decimals in meters (matches
 // centimeter precision), 1 decimal in feet.
+// Which y gridlines get a number. Returns '' for the unlabeled midlines,
+// so it doubles as the "is this a major line" test for grid emphasis.
+function yLabelFor(v) {
+  const cfg = Units.AXIS[currentUnit];
+  if (!cfg) return Number.isInteger(v) ? String(v) : '';
+  // Guard against float dust from Chart.js tick generation (e.g. 5.999999).
+  const snapped = Math.round(v * 1000) / 1000;
+  return cfg.label(snapped);
+}
+
 function formatDist(v) {
-  const places = currentUnit === 'm' ? 2 : 1;
+  const places = Units.PLACES[currentUnit] ?? 1;
   const factor = Math.pow(10, places);
   const rounded = Math.round(v * factor) / factor;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(places);
@@ -580,18 +596,20 @@ const chart = new Chart(document.getElementById('chart'), {
         }
       },
       y: {
-        min: 0, max: Y_MAX[currentUnit],
+        min: 0, max: Units.AXIS[currentUnit].max,
         title: { display: true, text: `Distance (${currentUnit})`, color: '#ffffff', font: { family: 'Space Mono', size: 14, weight: 'bold' } },
         ticks: {
           color: '#ffffff', font: { family: 'Space Mono', size: 13, weight: 'bold' },
-          stepSize: 0.5,
-          // Only whole numbers get a label — half-point ticks still get a
-          // gridline (below) but no number, i.e. an unlabeled "midline".
-          callback: v => Number.isInteger(v) ? String(v) : ''
+          stepSize: Units.AXIS[currentUnit].step,
+          // Only "major" ticks get a label — the rest still get a gridline
+          // (below) but no number, i.e. an unlabeled midline. Which ticks
+          // count as major is per-unit: whole feet/metres, but every 6
+          // inches or 25 cm, since those axes span far more gridlines.
+          callback: v => yLabelFor(v)
         },
         grid: {
-          color: c => Number.isInteger(c.tick.value) ? 'rgba(160,180,255,0.45)' : 'rgba(160,180,255,0.15)',
-          lineWidth: c => Number.isInteger(c.tick.value) ? 2 : 0.8
+          color: c => yLabelFor(c.tick.value) ? 'rgba(160,180,255,0.45)' : 'rgba(160,180,255,0.15)',
+          lineWidth: c => yLabelFor(c.tick.value) ? 2 : 0.8
         }
       }
     }
@@ -728,7 +746,7 @@ function interpolateAt(t) {
 }
 
 function updateGauges(distFt, slope) {
-  distReadout.textContent = distFt.toFixed(currentUnit === 'm' ? 2 : 1);
+  distReadout.textContent = distFt.toFixed(Units.PLACES[currentUnit]);
 }
 
 // ════════════════════════════════════════════════
@@ -802,8 +820,8 @@ function processVideo() {
       } else {
         const distCm = smooth(faceCal.distanceCm(result.correctedPx));
         const distFt = distCm / 30.48;
-        const distDisplay = currentUnit === 'm' ? Units.ftToM(distFt) : distFt;
-        distBadge.innerText = distDisplay.toFixed(currentUnit === 'm' ? 2 : 1) + ' ' + currentUnit;
+        const distDisplay = Units.convert(distFt, 'ft', currentUnit);
+        distBadge.innerText = distDisplay.toFixed(Units.PLACES[currentUnit]) + ' ' + currentUnit;
         const now = (Date.now() - startTime) / 1000;
         updateGauges(distDisplay, calcSlope(now, distDisplay));
         if (recording) recordPoint(distDisplay);
@@ -828,7 +846,7 @@ function processVideo() {
       lastKnownPxW=diamPx;
       const distCm=smooth((BALL_DIAM*focalLength)/diamPx);
       const distFt=distCm/30.48;
-      const distDisplay = currentUnit==='m' ? Units.ftToM(distFt) : distFt;
+      const distDisplay = Units.convert(distFt, 'ft', currentUnit);
       const dispC=toDisplay(cxN,cyN);
       const dispR=Math.max(8,(diamPx/cropW)*dw/2);
       ctx.strokeStyle='#ffd740'; ctx.lineWidth=3;
@@ -836,7 +854,7 @@ function processVideo() {
       ctx.fillStyle='rgba(255,215,64,0.12)'; ctx.fill();
       ctx.beginPath(); ctx.arc(dispC.x,dispC.y,5,0,Math.PI*2);
       ctx.fillStyle='#ffd740'; ctx.fill();
-      distBadge.innerText=distDisplay.toFixed(currentUnit === 'm' ? 2 : 1)+' '+currentUnit;
+      distBadge.innerText=distDisplay.toFixed(Units.PLACES[currentUnit])+' '+currentUnit;
       const now=(Date.now()-startTime)/1000;
       updateGauges(distDisplay, calcSlope(now,distDisplay));
       if(recording) recordPoint(distDisplay);
@@ -867,8 +885,8 @@ function processVideo() {
     lastKnownPxW=widthPx;
     const distCm=smooth((MARKER_SIZE*focalLength)/widthPx);
     const distFt=distCm/30.48;
-    const distDisplay = currentUnit==='m' ? Units.ftToM(distFt) : distFt;
-    distBadge.innerText=distDisplay.toFixed(currentUnit === 'm' ? 2 : 1)+' '+currentUnit;
+    const distDisplay = Units.convert(distFt, 'ft', currentUnit);
+    distBadge.innerText=distDisplay.toFixed(Units.PLACES[currentUnit])+' '+currentUnit;
     const now=(Date.now()-startTime)/1000;
     updateGauges(distDisplay, calcSlope(now,distDisplay));
     if(recording) recordPoint(distDisplay);
@@ -1037,11 +1055,9 @@ function stopRecording(){
 // ════════════════════════════════════════════════
 // UNITS
 // ════════════════════════════════════════════════
-function convertDist(val, fromU, toU) {
-  if (fromU === toU) return val;
-  const ft = fromU === 'm' ? Units.mToFt(val) : val;
-  return toU === 'm' ? Units.ftToM(ft) : ft;
-}
+// Any-to-any now that inches/centimetres exist, instead of the old ft<->m
+// special case. Routes through feet internally (see units.js).
+function convertDist(val, fromU, toU) { return Units.convert(val, fromU, toU); }
 
 function setUnit(unit) {
   if (unit === currentUnit) return;
@@ -1049,8 +1065,9 @@ function setUnit(unit) {
   currentUnit = unit;
   Units.setPref({ dist: currentUnit });
   unitsBtnValue.textContent = currentUnit;
-  distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
-  chart.options.scales.y.max = Y_MAX[currentUnit];
+  distUnit.textContent = Units.LONG_NAME[currentUnit];
+  chart.options.scales.y.max = Units.AXIS[currentUnit].max;
+  chart.options.scales.y.ticks.stepSize = Units.AXIS[currentUnit].step;
   chart.options.scales.y.title.text = `Distance (${currentUnit})`;
   // Retroactively convert already-plotted points so the graph stays
   // consistent rather than showing a mix of units
@@ -1061,11 +1078,12 @@ function setUnit(unit) {
   pinnedPoints = []; hoverPreview = null; // these weren't unit-converted, so clear rather than leave them off the line
   chart.update();
 }
-unitsBtn.onclick = () => setUnit(currentUnit === 'ft' ? 'm' : 'ft');
+// Toggle within this mode's pair (in/cm for face, ft/m otherwise).
+unitsBtn.onclick = () => setUnit(currentUnit === UNIT_PAIR[0] ? UNIT_PAIR[1] : UNIT_PAIR[0]);
 
 // Apply saved unit preference on load
 unitsBtnValue.textContent = currentUnit;
-distUnit.textContent = currentUnit === 'm' ? 'meters' : 'feet';
+distUnit.textContent = Units.LONG_NAME[currentUnit];
 
 clearBtn.onclick=()=>{
   if(countingDown){clearTimeout(preDelayTimer);clearInterval(countdownTimer);countdownOverlay.classList.remove('visible');countingDown=false;}
