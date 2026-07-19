@@ -169,6 +169,12 @@
       background: rgba(0,229,255,0.08);
     }
 
+    .marker-badge.new {
+      color: var(--accent3);
+      border: 1px solid rgba(105,240,174,0.35);
+      background: rgba(105,240,174,0.08);
+    }
+
     .marker-badge.soon {
       color: var(--accent4);
       border: 1px solid rgba(255,215,64,0.3);
@@ -460,8 +466,8 @@
     <div class="marker-row">
 
       <!-- FACE — leftmost, quickest, coming soon -->
-      <div class="marker disabled" id="markerFace">
-        <div class="marker-badge soon">Coming Soon</div>
+      <div class="marker" id="markerFace" tabindex="0">
+        <div class="marker-badge new">New</div>
         <div class="marker-art">
           <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
             <!-- TOPOGRAPHIC FACE — five layers, each a different anatomical
@@ -544,7 +550,7 @@
           </svg>
         </div>
         <h2>Face</h2>
-        <div class="tagline">The quickest start — no supplies needed.</div>
+        <div class="tagline">The quickest start — no supplies needed. Just sit and go.</div>
       </div>
 
       <!-- ARUCO — center, recommended, the only live option -->
@@ -627,8 +633,8 @@
     /* Commit an ArUco selection and hand off to the tool.
        IMPORTANT: the tools read sessionStorage 'mm_tracking' as
        { topMode, ballType, ballDiam, arucoType } — this shape must stay
-       intact or the grapher breaks. Face/Ball aren't live yet, so only
-       ArUco writes a real selection. */
+       intact or the grapher breaks. Ball isn't live yet; Face and ArUco both
+       write real selections. */
     function chooseAruco(type, ev) {
       if (ev) ev.stopPropagation();
       const selection = {
@@ -645,9 +651,32 @@
       window.location.href = fromPage;
     }
 
+    /* Face mode commits on a single click — no submenu, nothing to print,
+       no color to pick. Distance is auto-calibrated inside the tool from the
+       student's own face (see faceTracker.js), so there is genuinely nothing
+       to configure here. ballType/ballDiam/arucoType stay present-but-null to
+       keep the 'mm_tracking' shape identical for every mode. */
+    function chooseFace() {
+      const selection = {
+        topMode: 'face',
+        ballType: null,
+        ballDiam: null,
+        arucoType: null
+      };
+      try { sessionStorage.setItem('mm_tracking', JSON.stringify(selection)); } catch (e) {}
+      window.location.href = fromPage;
+    }
+
+    const faceCardEl = document.getElementById('markerFace');
+    faceCardEl.addEventListener('click', chooseFace);
+    faceCardEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.code === 'Space') { e.preventDefault(); chooseFace(); }
+    });
+
     /* Touch / no-hover devices: first tap on the ArUco card opens the
        submenu (instead of relying on hover); a second tap on an option
-       commits. Face/Ball are disabled and do nothing on tap. */
+       commits. Ball is disabled and does nothing on tap; Face commits
+       immediately (see chooseFace above). */
     const arucoCard = document.getElementById('markerAruco');
     arucoCard.addEventListener('click', (e) => {
       // if the click was on a sub-option, chooseAruco already handled it

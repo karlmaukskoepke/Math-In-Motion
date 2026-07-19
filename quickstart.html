@@ -9,6 +9,7 @@
   <script src="cv.js"></script>
   <script src="aruco.js"></script>
   <script src="motionTracker.js"></script>
+  <script src="faceTracker.js"></script>
   <script src="units.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
@@ -283,7 +284,7 @@
       <!-- No-setup overlay -->
       <div id="noSetupBanner" class="visible">
         <h2>Setup required</h2>
-        <p>Choose your tracking method before starting — colored ball or ArUco marker.</p>
+        <p>Choose your tracking method before starting — your face, a colored ball, or an ArUco marker.</p>
         <a href="setup.html?from=quickstart.html">Go to Setup →</a>
       </div>
     </div>
@@ -369,8 +370,23 @@ let countdownTimer  = null;
 let preDelayTimer   = null;
 let mediaStreamTrack = null;
 
-const ballModeOn = tracking && tracking.topMode === 'ball';
-const arucoMode  = !ballModeOn;
+// Three-way mode. Previously this was a boolean (ball vs "everything else"),
+// which quietly made ArUco the default for any unrecognized value. Face mode
+// forced it to become explicit — an unknown topMode now still falls back to
+// ArUco, but deliberately rather than by accident.
+const topMode    = (tracking && tracking.topMode) || 'aruco';
+const ballModeOn = topMode === 'ball';
+const faceModeOn = topMode === 'face';
+const arucoMode  = !ballModeOn && !faceModeOn;
+
+// ── FACE MODE STATE ──
+// faceCal holds the auto-calibration (see faceTracker.js for why there's no
+// calibration UI). faceReady gates the render loop until MediaPipe's WASM +
+// model have actually downloaded.
+let faceCal      = faceModeOn ? FaceTracker.createCalibrator() : null;
+let faceReady    = false;
+let faceLoadFailed = false;
+let lastFaceFingerprint = null;
 
 // ════════════════════════════════════════════════
 // CHART — bold, minimal, high-contrast
@@ -741,6 +757,65 @@ function processVideo() {
     return { x:((nx-cropX)/cropW)*dw, y:((ny-cropY)/cropH)*dh };
   }
 
+  // ── FACE MODE ──
+  // Note this branch never calls getImageData: MediaPipe reads the <video>
+  // element directly and can use the GPU, so pulling pixels back to the CPU
+  // would be pure wasted work every frame.
+  if (faceModeOn) {
+    if (!faceReady) {
+      distBadge.innerText = faceLoadFailed
+        ? 'Face tracking failed to load'
+        : 'Loading face tracking…';
+      requestAnimationFrame(processVideo); return;
+    }
+
+    // faceCal is passed in so detect() can use the measured-foreshortening
+    // method once a frontal reference exists (see faceTracker.js).
+    const result = FaceTracker.detect(video, performance.now(), vw, vh, faceCal);
+
+    if (result.found) {
+      lastFaceFingerprint = result.fingerprint;
+      const calibrated = faceCal.feed(result);
+      const c = toDisplay(result.cx, result.cy);
+
+      // Overlay: a reticle sized to the tracked face, so students can see
+      // WHAT is being measured. Scaled off interocular distance since that
+      // is literally the quantity driving the graph.
+      const rDisp = Math.max(14, (result.correctedPx * 2.1 / cropW) * dw);
+      ctx.strokeStyle = calibrated ? '#00e5ff' : '#ffd740';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(c.x, c.y, rDisp, 0, Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(c.x, c.y, 4, 0, Math.PI*2);
+      ctx.fillStyle = calibrated ? '#00e5ff' : '#ffd740'; ctx.fill();
+
+      // A second face in frame is worth surfacing — it's the most likely
+      // cause of the tracker jumping to the wrong person.
+      if (result.faceCount > 1) {
+        ctx.font = 'bold 12px "Space Mono", monospace';
+        ctx.fillStyle = '#ff4081'; ctx.textAlign = 'center';
+        ctx.fillText(`${result.faceCount} faces — tracking centered one`, c.x, c.y - rDisp - 10);
+      }
+
+      if (!calibrated) {
+        const pct = Math.round(faceCal.progress * 100);
+        distBadge.innerText = `Look at the camera and hold still — ${pct}%`;
+      } else {
+        const distCm = smooth(faceCal.distanceCm(result.correctedPx));
+        const distFt = distCm / 30.48;
+        const distDisplay = currentUnit === 'm' ? Units.ftToM(distFt) : distFt;
+        distBadge.innerText = distDisplay.toFixed(currentUnit === 'm' ? 2 : 1) + ' ' + currentUnit;
+        const now = (Date.now() - startTime) / 1000;
+        updateGauges(distDisplay, calcSlope(now, distDisplay));
+        if (recording) recordPoint(distDisplay);
+      }
+    } else {
+      distBadge.innerText = result.reason === 'yaw-too-large'
+        ? 'Turn back toward the camera'
+        : 'No face detected';
+    }
+    requestAnimationFrame(processVideo); return;
+  }
+
   if (ballModeOn && ballColor) {
     const imageData=offCtx.getImageData(0,0,vw,vh), pixels=imageData.data;
     // Detection lives in motionTracker.js — original, validated formula
@@ -862,6 +937,17 @@ startBtn.onclick = () => {
       if(typeof AR==='undefined'){alert('ArUco library failed to load. Refresh.');return;}
       if(!detector) detector=new AR.Detector();
     }
+    // Face mode: MediaPipe is a real network download (WASM runtime + model),
+    // not a local script like aruco.js. Start it in parallel with the camera
+    // permission prompt so the two waits overlap instead of stacking.
+    if(faceModeOn){
+      FaceTracker.load()
+        .then(()=>{ faceReady = true; })
+        .catch(err=>{
+          faceLoadFailed = true;
+          alert('Face tracking failed to load. Check your connection and refresh.\n\n'+(err && err.message ? err.message : ''));
+        });
+    }
     startBtn.disabled=true;
     navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:960}}})
       .then(stream=>{
@@ -883,6 +969,14 @@ startBtn.onclick = () => {
     return;
   }
   if(countingDown||recording) return;
+  // Face mode records a ratio against a reference reading — starting before
+  // that reference exists would produce a graph with no meaningful y-axis.
+  if(faceModeOn && !faceCal.calibrated){
+    distBadge.innerText = faceReady
+      ? 'Look at the camera and hold still for a moment first'
+      : 'Still loading face tracking…';
+    return;
+  }
   startBtn.disabled=true;
   beginRecording(); // data collection starts NOW — t is negative until "Go"
   countingDown=true;
