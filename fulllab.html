@@ -11,6 +11,7 @@
   <script src="motionTracker.js"></script>
   <script src="faceTracker.js"></script>
   <script src="units.js"></script>
+  <script src="emailCapture.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
@@ -1720,6 +1721,7 @@ function stopRecording(){
   if (data.length >= 2) {
     if (graphMode === 'speed') recordedSpeed = data.slice();
     else recordedDistance = data.slice();
+    EmailCapture.maybeShow();
   }
   // Live recording pushed raw points frame-by-frame; now that it's done,
   // re-render so speed mode splices in its zero crossings (color anchors +

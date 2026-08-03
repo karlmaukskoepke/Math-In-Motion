@@ -11,6 +11,7 @@
   <script src="motionTracker.js"></script>
   <script src="faceTracker.js"></script>
   <script src="units.js"></script>
+  <script src="emailCapture.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
@@ -1050,6 +1051,9 @@ function stopRecording(){
   statusDot.classList.remove('recording');
   statusDot.classList.add('active');
   chart.update();
+  // Only counts as a "real" recording if there's actually a line to show —
+  // guards the one-shot popup trigger against an accidental false start.
+  if (data.length >= 2) EmailCapture.maybeShow();
 }
 
 // ════════════════════════════════════════════════
