@@ -1,5 +1,5 @@
 /*
-  motionTracker.js — shared HSV ball-tracking logic for Math In Motion.
+  motionTracker.js — shared HSV ball-tracking logic for GraFables.
 
   Extracted from quickstart.html so Quick Start and Full Lab (and any future
   page) share ONE copy of this pipeline. Ball tracking is an active, ongoing
@@ -12,7 +12,7 @@
   deferred cosmetic issue, not a functional one. The adaptive widen
   attempted on 2026-07-01 caused two regressions (distance range collapsed
   to <2ft, off-center circles) and was reverted. Do not reintroduce
-  history/position-based prediction — see Math In Motion handoff doc.
+  history/position-based prediction — see GraFables handoff doc.
 */
 
 const MotionTracker = (() => {

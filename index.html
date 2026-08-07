@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Motion Math</title>
+  <title>GraFables</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@400;500;600&family=Permanent+Marker&family=Caveat:wght@700&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg:       #0f1117;
@@ -159,7 +159,7 @@
       opacity: 0;
     }
 
-    .hero-word.revealed { opacity: 1; }
+    .hero-word.revealed { opacity: 1; clip-path: inset(0 0 0 0); }
 
     @keyframes shine {
       0%   { background-position: 200% 0; }
@@ -176,23 +176,21 @@
     .hero-word.motion {
       top: 11%;
       left: 6%;
+      font-family: 'Permanent Marker', cursive;
+      font-style: normal;
       font-size: clamp(3.4rem, 11.5vw, 9rem);
       color: var(--accent);
       transform-origin: left center;
-      /* Layered offset copies simulate extruded 3D block letters — each
-         step slightly darker/further back, so the tilt (driven by JS)
-         reads as real depth instead of a flat rotated sprite. */
+      /* Trimmed from the old 7-layer block-letter extrusion — a hand-drawn
+         marker face reads as "spray" on its own; heavy geometric extrusion
+         fought the organic letterforms instead of supporting them. */
       text-shadow:
-        1px 1px 0 #00b8d4,
-        2px 2px 0 #009fb8,
-        3px 3px 0 #00869c,
-        4px 4px 0 #006d80,
-        5px 5px 0 #005464,
-        6px 6px 0 #003b48,
-        7px 7px 8px rgba(0,0,0,0.55);
+        2px 2px 0 rgba(0,184,212,0.7),
+        4px 4px 10px rgba(0,0,0,0.5);
       filter: drop-shadow(0 0 14px rgba(0,229,255,0.6)) drop-shadow(0 0 32px rgba(0,229,255,0.3));
       transition: filter 0.3s ease;
-      will-change: transform;
+      will-change: transform, clip-path;
+      clip-path: inset(0 100% 0 0);
     }
 
     /* MATH — ambient state: mouse-driven "light source" shifts the metallic
@@ -211,37 +209,59 @@
     .hero-word.math {
       bottom: 11%;
       right: 8%;
+      font-family: 'Caveat', cursive;
+      font-style: normal;
+      font-weight: 700;
       padding-left: 0.15em;
-      font-size: clamp(3.8rem, 12.5vw, 10rem);
-      color: #2a0d18;
+      font-size: clamp(4.4rem, 14vw, 11.5rem);
+      color: #ff87b0;
       cursor: default;
+      clip-path: inset(0 100% 0 0);
+      will-change: transform, clip-path;
     }
 
     .hero-word.math:hover {
       animation: electric-flicker 0.7s linear infinite;
     }
 
-    @keyframes flicker-in {
-      0%   { opacity: 0; }
-      10%  { opacity: 0.8; }
-      12%  { opacity: 0.1; }
-      16%  { opacity: 0.9; }
-      18%  { opacity: 0.2; }
-      24%  { opacity: 1; }
-      26%  { opacity: 0.5; }
-      100% { opacity: 1; }
+    @keyframes draw-on-graf {
+      0%   { clip-path: inset(0 100% 0 0); transform: translate(0,0) scale(1); }
+      55%  { clip-path: inset(0 0 0 0);     transform: translate(0,0) scale(1); }
+      85%  { clip-path: inset(0 0 0 0);     transform: translate(3%, 4%) scale(1.04);
+             filter: drop-shadow(0 0 30px rgba(0,229,255,0.95)) drop-shadow(0 0 60px rgba(0,229,255,0.55)); }
+      100% { clip-path: inset(0 0 0 0);     transform: translate(4.5%, 5.5%) scale(1);
+             filter: drop-shadow(0 0 14px rgba(0,229,255,0.6)) drop-shadow(0 0 32px rgba(0,229,255,0.3)); }
     }
+
+    @keyframes draw-on-fables {
+      0%   { clip-path: inset(0 100% 0 0); transform: translate(0,0) scale(1); }
+      55%  { clip-path: inset(0 0 0 0);     transform: translate(0,0) scale(1); }
+      85%  { clip-path: inset(0 0 0 0);     transform: translate(-3%, -4%) scale(1.04);
+             text-shadow: 0 0 30px rgba(255,64,129,0.95), 0 0 60px rgba(255,64,129,0.5); }
+      100% { clip-path: inset(0 0 0 0);     transform: translate(-4.5%, -5.5%) scale(1);
+             text-shadow: none; }
+    }
+
+    /* NOTE (tier-1 attempt): this converges the two words toward each
+       other and flashes at "contact" as a stand-in for the two F's
+       physically overlapping — true pixel-precise letter overlap (like
+       the static wordmark concept) is fragile across screen sizes and
+       wasn't attempted here. Worth revisiting once font choices are
+       locked in, possibly as a fixed-viewport enhancement layered on
+       top rather than the baseline behavior. */
 
     /* First-time reveal: flicker on. Motion's ongoing motion is JS-driven
        (not part of this animation); Math's shine/flicker are always-on via
        its base rule above, so only opacity needs the power-on treatment. */
     .hero-word.motion.powering {
-      animation: flicker-in 1.1s steps(1, end) forwards;
+      opacity: 1;
+      animation: draw-on-graf 1.7s cubic-bezier(.25,.85,.25,1) forwards;
     }
 
     .hero-word.math.powering {
-      animation: flicker-in 1.1s steps(1, end) 0.5s forwards,
-                 shine 4s ease-in-out 1.6s infinite;
+      opacity: 1;
+      animation: draw-on-fables 1.7s cubic-bezier(.25,.85,.25,1) 0.1s both,
+                 shine 4s ease-in-out 2.2s infinite;
     }
 
     .replay-intro {
@@ -565,7 +585,7 @@
   <div class="page-flex">
 
     <div class="hero-pane" id="heroPane">
-      <div class="hero-pane-logo">Motion<span>//</span>Math</div>
+      <div class="hero-pane-logo">GraFables</div>
 
       <!-- CODE-DRAWN grid + curve — perfectly even by construction (SVG
            pattern tiling), replaces the AI frame as the permanent state.
@@ -627,15 +647,15 @@
         <source src="assets/motion-math-hero.mp4" type="video/mp4">
       </video>
       <div class="hero-scanlines" id="heroScanlines"></div>
-      <div class="hero-word motion" id="wordMotion">Motion</div>
-      <div class="hero-word math" id="wordMath">Math</div>
+      <div class="hero-word motion" id="wordMotion">GraF</div>
+      <div class="hero-word math" id="wordMath">Fables</div>
       <button class="hero-skip" id="heroSkip">Press <kbd>Space</kbd> to skip</button>
       <button class="replay-intro" id="replayIntro">↻ Replay Intro</button>
     </div>
 
     <div class="right-panel">
       <div class="top-row">
-        <div class="logo">Motion<span>//</span>Math</div>
+        <div class="logo">GraFables</div>
         <div class="section-label">Choose Your Path</div>
       </div>
 

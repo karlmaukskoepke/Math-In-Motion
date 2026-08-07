@@ -1,5 +1,5 @@
 /*
-  emailCapture.js — shared post-recording popup for Math In Motion.
+  emailCapture.js — shared post-recording popup for GraFables.
 
   Fires once per browser, after the FIRST completed recording, on any
   tracking mode, on either quickstart.html or fulllab.html. Presents a
@@ -243,7 +243,7 @@ const EmailCapture = (() => {
 
   function renderFork(bodyEl) {
     bodyEl.innerHTML = `
-      <div class="mmec-eyebrow">Motion // Math</div>
+      <div class="mmec-eyebrow">GraFables</div>
       <div class="mmec-headline">Nice graph! Want to hear when new tools and games ship?</div>
       <div class="mmec-choices">
         <button class="mmec-choice-btn" data-choice="student">
@@ -265,11 +265,31 @@ const EmailCapture = (() => {
     setTimeout(close, 1400);
   }
 
+  // A hidden iframe as the form's submit target. This is a real browser
+  // form POST (a navigation, not a script-initiated fetch), so it's not
+  // subject to CORS and — importantly — it's not the kind of call ad
+  // blockers / privacy extensions intercept the way they intercept
+  // fetch()/XHR calls to third-party domains. Kit's own JS-free embed
+  // relies on the same mechanism (just target="_top" instead of an
+  // iframe, which would navigate away from the site entirely).
+  function ensureTargetFrame() {
+    let frame = document.getElementById('mmec-target-frame');
+    if (!frame) {
+      frame = document.createElement('iframe');
+      frame.id = 'mmec-target-frame';
+      frame.name = 'mmec-target-frame';
+      frame.style.display = 'none';
+      document.body.appendChild(frame);
+    }
+    return frame;
+  }
+
   function renderForm(bodyEl) {
+    ensureTargetFrame();
     bodyEl.innerHTML = `
       <div class="mmec-eyebrow">For Educators</div>
       <div class="mmec-headline">Get occasional updates</div>
-      <form class="mmec-form">
+      <form class="mmec-form" action="${KIT_ACTION}" method="post" target="mmec-target-frame">
         <div class="mmec-form-sub">New tools, games, and classroom resources — including early access when the next one ships. No spam, unsubscribe any time.</div>
         <input class="mmec-input" type="email" name="${KIT_EMAIL_FIELD}" placeholder="you@school.edu" required autocomplete="email">
         <input class="mmec-honeypot" type="text" name="${KIT_HONEYPOT_FIELD}" tabindex="-1" autocomplete="off">
@@ -281,18 +301,15 @@ const EmailCapture = (() => {
     bodyEl.querySelector('.mmec-back').onclick = () => renderFork(bodyEl);
 
     const form = bodyEl.querySelector('.mmec-form');
-    form.onsubmit = (e) => {
-      e.preventDefault();
+    form.onsubmit = () => {
+      // Don't preventDefault — let the browser actually submit the form
+      // to the hidden iframe. We can't read the cross-origin response
+      // either way, so update our own UI in parallel rather than wait
+      // on it. Kit's confirmation email is the real signal of success.
       const btn = form.querySelector('.mmec-submit');
       btn.disabled = true;
       btn.textContent = 'Sending…';
-
-      const body = new FormData(form);
-      fetch(KIT_ACTION, { method: 'POST', body, mode: 'no-cors' })
-        .then(() => renderSuccess(bodyEl))
-        .catch(() => renderSuccess(bodyEl));
-        // no-cors means we can't read the response either way — Kit's own
-        // double opt-in confirmation email is the real signal of success.
+      setTimeout(() => renderSuccess(bodyEl), 900);
     };
   }
 

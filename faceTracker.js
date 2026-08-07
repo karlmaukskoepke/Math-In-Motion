@@ -1,5 +1,5 @@
 /*
-  faceTracker.js — shared face-tracking logic for Math In Motion (Phase 4).
+  faceTracker.js — shared face-tracking logic for GraFables (Phase 4).
 
   Mirrors the role motionTracker.js plays for ball tracking: ONE copy of the
   pipeline, used by both quickstart.html and fulllab.html. Fixes go here.

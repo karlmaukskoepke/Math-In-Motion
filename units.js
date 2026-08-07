@@ -1,5 +1,5 @@
 /*
-  units.js — shared unit preference + conversion for Math In Motion.
+  units.js — shared unit preference + conversion for GraFables.
   Persists to sessionStorage so the choice carries across setup/quickstart/
   fulllab within one session, same pattern as mm_tracking.
 */
