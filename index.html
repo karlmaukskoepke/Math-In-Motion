@@ -213,7 +213,7 @@
       font-style: normal;
       font-weight: 700;
       padding-left: 0.15em;
-      font-size: clamp(4.4rem, 14vw, 11.5rem);
+      font-size: clamp(2.6rem, 8vw, 6.2rem);
       color: #ff87b0;
       cursor: default;
       clip-path: inset(0 100% 0 0);
@@ -225,43 +225,42 @@
     }
 
     @keyframes draw-on-graf {
-      0%   { clip-path: inset(0 100% 0 0); transform: translate(0,0) scale(1); }
-      55%  { clip-path: inset(0 0 0 0);     transform: translate(0,0) scale(1); }
-      85%  { clip-path: inset(0 0 0 0);     transform: translate(3%, 4%) scale(1.04);
-             filter: drop-shadow(0 0 30px rgba(0,229,255,0.95)) drop-shadow(0 0 60px rgba(0,229,255,0.55)); }
-      100% { clip-path: inset(0 0 0 0);     transform: translate(4.5%, 5.5%) scale(1);
-             filter: drop-shadow(0 0 14px rgba(0,229,255,0.6)) drop-shadow(0 0 32px rgba(0,229,255,0.3)); }
+      0%   { clip-path: inset(0 100% 0 0); }
+      100% { clip-path: inset(0 0 0 0); }
     }
 
     @keyframes draw-on-fables {
-      0%   { clip-path: inset(0 100% 0 0); transform: translate(0,0) scale(1); }
-      55%  { clip-path: inset(0 0 0 0);     transform: translate(0,0) scale(1); }
-      85%  { clip-path: inset(0 0 0 0);     transform: translate(-3%, -4%) scale(1.04);
-             text-shadow: 0 0 30px rgba(255,64,129,0.95), 0 0 60px rgba(255,64,129,0.5); }
-      100% { clip-path: inset(0 0 0 0);     transform: translate(-4.5%, -5.5%) scale(1);
-             text-shadow: none; }
+      0%   { clip-path: inset(0 100% 0 0); }
+      100% { clip-path: inset(0 0 0 0); }
     }
 
-    /* NOTE (tier-1 attempt): this converges the two words toward each
-       other and flashes at "contact" as a stand-in for the two F's
-       physically overlapping — true pixel-precise letter overlap (like
-       the static wordmark concept) is fragile across screen sizes and
-       wasn't attempted here. Worth revisiting once font choices are
-       locked in, possibly as a fixed-viewport enhancement layered on
-       top rather than the baseline behavior. */
+    .hero-word.snapping {
+      transition: transform 0.55s cubic-bezier(.25,.9,.3,1.15);
+    }
+
+    .f-anchor { position: relative; }
+
+    @keyframes f-contact-flash {
+      0%, 100% { filter: none; }
+      50% { filter: drop-shadow(0 0 26px rgba(255,255,255,0.9)); }
+    }
+
+    .f-anchor.contact {
+      animation: f-contact-flash 0.5s ease;
+    }
 
     /* First-time reveal: flicker on. Motion's ongoing motion is JS-driven
        (not part of this animation); Math's shine/flicker are always-on via
        its base rule above, so only opacity needs the power-on treatment. */
     .hero-word.motion.powering {
       opacity: 1;
-      animation: draw-on-graf 1.7s cubic-bezier(.25,.85,.25,1) forwards;
+      animation: draw-on-graf 1s cubic-bezier(.25,.85,.25,1) forwards;
     }
 
     .hero-word.math.powering {
       opacity: 1;
-      animation: draw-on-fables 1.7s cubic-bezier(.25,.85,.25,1) 0.1s both,
-                 shine 4s ease-in-out 2.2s infinite;
+      animation: draw-on-fables 1s cubic-bezier(.25,.85,.25,1) 0.1s both,
+                 shine 4s ease-in-out 1.5s infinite;
     }
 
     .replay-intro {
@@ -647,8 +646,8 @@
         <source src="assets/motion-math-hero.mp4" type="video/mp4">
       </video>
       <div class="hero-scanlines" id="heroScanlines"></div>
-      <div class="hero-word motion" id="wordMotion">GraF</div>
-      <div class="hero-word math" id="wordMath">Fables</div>
+      <div class="hero-word motion" id="wordMotion">Gra<span class="f-anchor" id="grafF">F</span></div>
+      <div class="hero-word math" id="wordMath"><span class="f-anchor" id="fablesF">F</span>ables</div>
       <button class="hero-skip" id="heroSkip">Press <kbd>Space</kbd> to skip</button>
       <button class="replay-intro" id="replayIntro">↻ Replay Intro</button>
     </div>
@@ -904,9 +903,56 @@
       const wordMath   = document.getElementById('wordMath');
       const skipBtn    = document.getElementById('heroSkip');
       const replayBtn  = document.getElementById('replayIntro');
+      const grafF      = document.getElementById('grafF');
+      const fablesF    = document.getElementById('fablesF');
+
+      // Sped up ~40% — the original pacing read as slow. playbackRate is
+      // a display-only property (doesn't touch the source file), so this
+      // also automatically covers the Replay Intro button below.
+      video.playbackRate = 1.4;
+
+      // Snap Fables' leading F to sit near GraF's trailing F — offset
+      // slightly right and noticeably lower, not perfectly aligned, per
+      // Karl's call. Computed from real rendered positions (not a fixed
+      // % guess) so it holds up across screen sizes and font-size clamp
+      // breakpoints.
+      const F_OFFSET_X = 10;  // px, Fables' F sits slightly right of GraF's F
+      const F_OFFSET_Y = 22;  // px, and noticeably lower
+
+      function snapFablesToGraf(animate) {
+        const gRect = grafF.getBoundingClientRect();
+        const fRect = fablesF.getBoundingClientRect();
+        if (!gRect.width || !fRect.width) return; // not laid out yet
+
+        const dx = (gRect.left - fRect.left) + F_OFFSET_X;
+        const dy = (gRect.top  - fRect.top)  + F_OFFSET_Y;
+
+        if (animate) wordMath.classList.add('snapping');
+        wordMath.style.transform = `translate(${dx}px, ${dy}px)`;
+
+        if (animate) {
+          grafF.classList.add('contact');
+          fablesF.classList.add('contact');
+          setTimeout(() => {
+            grafF.classList.remove('contact');
+            fablesF.classList.remove('contact');
+          }, 550);
+        }
+      }
 
       let seen = false;
       try { seen = localStorage.getItem('mm_intro_seen') === '1'; } catch (e) {}
+
+      function whenFontsReady(fn) {
+        // Custom web fonts change letter metrics once they load — measuring
+        // before that would misalign the snap, then visibly jump. Wait for
+        // them where the browser supports it, otherwise best-effort.
+        if (document.fonts && document.fonts.ready) {
+          document.fonts.ready.then(() => requestAnimationFrame(fn));
+        } else {
+          requestAnimationFrame(fn);
+        }
+      }
 
       function showTitleInstantly() {
         video.classList.add('done');
@@ -914,11 +960,13 @@
         wordMotion.classList.add('revealed');
         wordMath.classList.add('revealed');
         skipBtn.classList.add('gone');
+        whenFontsReady(() => snapFablesToGraf(false));
       }
 
       function hideTitle() {
         wordMotion.classList.remove('revealed', 'powering');
-        wordMath.classList.remove('revealed', 'powering');
+        wordMath.classList.remove('revealed', 'powering', 'snapping');
+        wordMath.style.transform = '';
         scanlines.classList.remove('on');
       }
 
@@ -932,6 +980,9 @@
           wordMotion.classList.add('powering');
           wordMath.classList.add('powering');
           skipBtn.classList.add('gone');
+          wordMotion.addEventListener('animationend', () => {
+            whenFontsReady(() => snapFablesToGraf(true));
+          }, { once: true });
         }, 450);
       }
 
@@ -966,6 +1017,13 @@
         skipBtn.classList.remove('gone');
         try { video.currentTime = 0; video.play(); } catch (e) {}
         video.addEventListener('ended', revealWithGlitch, { once: true });
+      });
+
+      let resizeTimer = null;
+      window.addEventListener('resize', () => {
+        if (!wordMath.classList.contains('revealed')) return;
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => snapFablesToGraf(false), 120);
       });
     })();
   </script>
