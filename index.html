@@ -915,15 +915,52 @@
       // land in the same visual spot relative to the ink for both — that
       // mismatch is almost certainly why the first attempt read as
       // "above" instead of "below." Center-to-center is more robust.
-      const SEP_X = 20;  // px, total horizontal gap — Fables sits right of GraF
-      const SEP_Y = 42;  // px, total vertical gap — Fables sits below GraF
+      // Both words converge on the hero pane's center and lock their F's
+      // together there — offset right-and-down for Fables, not stacked
+      // dead-center. Anchored on each F's bounding-box CENTER rather than
+      // its top-left corner: "GraF" (Permanent Marker) and "Fables"
+      // (Caveat) have quite different font metrics, and box-top doesn't
+      // land in the same visual spot relative to the ink for both — that
+      // mismatch is almost certainly why the first attempt read as
+      // "above" instead of "below." Center-to-center is more robust.
+      const SEP_X = 12;  // px, total horizontal gap — Fables sits right of GraF
+      const SEP_Y = 22;  // px, total vertical gap — Fables sits below GraF
+      const EDGE_MARGIN = 18; // px, keep this much clearance from the pane's edges
 
       function centerOf(el) {
         const r = el.getBoundingClientRect();
         return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
       }
 
+      // transform: translate() is always relative to the element's
+      // UNTRANSFORMED layout position, not additive with whatever
+      // transform is already applied. Measuring while an old transform
+      // is still in effect (e.g. on a resize re-snap, after the first
+      // snap already moved things) gives the wrong delta. Reset first,
+      // measure clean, then compute.
+      function resetTransform(el) {
+        el.style.transition = 'none';
+        el.style.transform = 'none';
+      }
+
+      // Keep a word's whole box (not just its F) inside the pane, so a
+      // trailing letter — "Fables"'s "s" — can't get pushed past the edge.
+      function clampToPane(wordEl, dx, dy, paneRect) {
+        const r = wordEl.getBoundingClientRect(); // untransformed, per resetTransform above
+        let cdx = dx, cdy = dy;
+        const right = r.right + dx, left = r.left + dx;
+        const bottom = r.bottom + dy, top = r.top + dy;
+        if (right > paneRect.right - EDGE_MARGIN) cdx -= right - (paneRect.right - EDGE_MARGIN);
+        if (left < paneRect.left + EDGE_MARGIN) cdx += (paneRect.left + EDGE_MARGIN) - left;
+        if (bottom > paneRect.bottom - EDGE_MARGIN) cdy -= bottom - (paneRect.bottom - EDGE_MARGIN);
+        if (top < paneRect.top + EDGE_MARGIN) cdy += (paneRect.top + EDGE_MARGIN) - top;
+        return { dx: cdx, dy: cdy };
+      }
+
       function snapFablesToGraf(animate) {
+        resetTransform(wordMotion);
+        resetTransform(wordMath);
+
         const gC = centerOf(grafF);
         const fC = centerOf(fablesF);
         if (!gC.x || !fC.x) return; // not laid out yet
@@ -933,12 +970,15 @@
         const grafTarget   = { x: mid.x - SEP_X / 2, y: mid.y - SEP_Y / 2 };
         const fablesTarget = { x: mid.x + SEP_X / 2, y: mid.y + SEP_Y / 2 };
 
-        const grafDX = grafTarget.x - gC.x,     grafDY = grafTarget.y - gC.y;
-        const fablesDX = fablesTarget.x - fC.x, fablesDY = fablesTarget.y - fC.y;
+        let grafDX = grafTarget.x - gC.x,     grafDY = grafTarget.y - gC.y;
+        let fablesDX = fablesTarget.x - fC.x, fablesDY = fablesTarget.y - fC.y;
+
+        const grafClamped = clampToPane(wordMotion, grafDX, grafDY, paneRect);
+        const fablesClamped = clampToPane(wordMath, fablesDX, fablesDY, paneRect);
+        grafDX = grafClamped.dx; grafDY = grafClamped.dy;
+        fablesDX = fablesClamped.dx; fablesDY = fablesClamped.dy;
 
         if (!animate) {
-          wordMotion.style.transition = 'none';
-          wordMath.style.transition = 'none';
           wordMotion.style.transform = `translate(${grafDX}px, ${grafDY}px)`;
           wordMath.style.transform = `translate(${fablesDX}px, ${fablesDY}px)`;
           wordMotion.classList.add('locked');
@@ -959,12 +999,14 @@
         wordMath.classList.remove('locked');
         wordMotion.style.transition = `transform ${APPROACH_MS}ms ${approachEase}`;
         wordMath.style.transition = `transform ${APPROACH_MS}ms ${approachEase}`;
+        void wordMotion.offsetWidth; void wordMath.offsetWidth; // force flush so the transition reliably applies
         wordMotion.style.transform = `translate(${(grafDX * OVERSHOOT).toFixed(1)}px, ${(grafDY * OVERSHOOT).toFixed(1)}px)`;
         wordMath.style.transform = `translate(${(fablesDX * OVERSHOOT).toFixed(1)}px, ${(fablesDY * OVERSHOOT).toFixed(1)}px)`;
 
         setTimeout(() => {
           wordMotion.style.transition = `transform ${SETTLE_MS}ms ${settleEase}`;
           wordMath.style.transition = `transform ${SETTLE_MS}ms ${settleEase}`;
+          void wordMotion.offsetWidth; void wordMath.offsetWidth;
           wordMotion.style.transform = `translate(${grafDX}px, ${grafDY}px)`;
           wordMath.style.transform = `translate(${fablesDX}px, ${fablesDY}px)`;
 
@@ -1067,6 +1109,65 @@
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => snapFablesToGraf(false), 120);
       });
+    })();
+  </script>
+
+  <script>
+    // ── "GraF" IS A DELIBERATE MISSPELLING — v1 attempt at owning it ──
+    // Proximity: as the cursor nears the F, it grows brighter/unsteady.
+    // Direct hover: it flickers between "F" and "PH" — the tool briefly
+    // "admitting" the correct spelling — then settles back to "F" on
+    // mouseleave. Only active once the intro has snapped into place
+    // (wordMotion.locked), so it doesn't fight the reveal sequence.
+    // First pass — text-content swapping changes the glyph's width, so
+    // GraF's F will visibly wobble in place relative to Fables' fixed F
+    // during the flicker. Left as-is for now to see how it reads; worth
+    // a second pass (fixed-width container, or swap via layered spans
+    // instead of textContent) if the wobble is more distracting than fun.
+    (function () {
+      const grafF = document.getElementById('grafF');
+      const wordMotion = document.getElementById('wordMotion');
+      if (!grafF || !wordMotion) return;
+
+      const PROXIMITY_RADIUS = 170; // px
+      let hovering = false;
+      let flickerTimer = null;
+
+      document.addEventListener('mousemove', (e) => {
+        if (hovering || !wordMotion.classList.contains('locked')) return;
+        const r = grafF.getBoundingClientRect();
+        const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+        const dist = Math.hypot(e.clientX - cx, e.clientY - cy);
+        if (dist < PROXIMITY_RADIUS) {
+          const t = 1 - dist / PROXIMITY_RADIUS; // 0 at edge of radius -> 1 at center
+          grafF.style.filter = `drop-shadow(0 0 ${(6 + t * 26).toFixed(0)}px rgba(255,255,255,${(0.25 + t * 0.65).toFixed(2)}))`;
+        } else {
+          grafF.style.filter = '';
+        }
+      });
+
+      function startFlicker() {
+        if (!wordMotion.classList.contains('locked')) return;
+        hovering = true;
+        let step = 0;
+        (function tick() {
+          step++;
+          grafF.textContent = (step % 2 === 0) ? 'F' : 'PH';
+          if (step < 7) {
+            flickerTimer = setTimeout(tick, 60 + Math.random() * 70);
+          }
+        })();
+      }
+
+      function stopFlicker() {
+        hovering = false;
+        clearTimeout(flickerTimer);
+        grafF.textContent = 'F';
+        grafF.style.filter = '';
+      }
+
+      grafF.addEventListener('mouseenter', startFlicker);
+      grafF.addEventListener('mouseleave', stopFlicker);
     })();
   </script>
 
