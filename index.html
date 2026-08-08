@@ -213,7 +213,7 @@
       font-style: normal;
       font-weight: 700;
       padding-left: 0.15em;
-      font-size: clamp(2.6rem, 8vw, 6.2rem);
+      font-size: clamp(3.8rem, 12.5vw, 9.5rem);
       color: #ff87b0;
       cursor: default;
       clip-path: inset(0 100% 0 0);
@@ -232,10 +232,6 @@
     @keyframes draw-on-fables {
       0%   { clip-path: inset(0 100% 0 0); }
       100% { clip-path: inset(0 0 0 0); }
-    }
-
-    .hero-word.snapping {
-      transition: transform 0.55s cubic-bezier(.25,.9,.3,1.15);
     }
 
     .f-anchor { position: relative; }
@@ -833,7 +829,7 @@
         const mx = Math.max(0, Math.min(1, targetX / vw));
         const my = Math.max(0, Math.min(1, targetY / vh));
 
-        if (wordMotion) {
+        if (wordMotion && !wordMotion.classList.contains('locked')) {
           const rect = wordMotion.getBoundingClientRect();
           const cx = rect.left + rect.width / 2;
           const cy = rect.top + rect.height / 2;
@@ -906,38 +902,81 @@
       const grafF      = document.getElementById('grafF');
       const fablesF    = document.getElementById('fablesF');
 
-      // Sped up ~40% — the original pacing read as slow. playbackRate is
+      // Sped up 60% — the original pacing read as slow. playbackRate is
       // a display-only property (doesn't touch the source file), so this
       // also automatically covers the Replay Intro button below.
-      video.playbackRate = 1.4;
+      video.playbackRate = 1.6;
 
-      // Snap Fables' leading F to sit near GraF's trailing F — offset
-      // slightly right and noticeably lower, not perfectly aligned, per
-      // Karl's call. Computed from real rendered positions (not a fixed
-      // % guess) so it holds up across screen sizes and font-size clamp
-      // breakpoints.
-      const F_OFFSET_X = 10;  // px, Fables' F sits slightly right of GraF's F
-      const F_OFFSET_Y = 22;  // px, and noticeably lower
+      // Both words converge on the hero pane's center and lock their F's
+      // together there — offset right-and-down for Fables, not stacked
+      // dead-center. Anchored on each F's bounding-box CENTER rather than
+      // its top-left corner: "GraF" (Permanent Marker) and "Fables"
+      // (Caveat) have quite different font metrics, and box-top doesn't
+      // land in the same visual spot relative to the ink for both — that
+      // mismatch is almost certainly why the first attempt read as
+      // "above" instead of "below." Center-to-center is more robust.
+      const SEP_X = 20;  // px, total horizontal gap — Fables sits right of GraF
+      const SEP_Y = 42;  // px, total vertical gap — Fables sits below GraF
+
+      function centerOf(el) {
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      }
 
       function snapFablesToGraf(animate) {
-        const gRect = grafF.getBoundingClientRect();
-        const fRect = fablesF.getBoundingClientRect();
-        if (!gRect.width || !fRect.width) return; // not laid out yet
+        const gC = centerOf(grafF);
+        const fC = centerOf(fablesF);
+        if (!gC.x || !fC.x) return; // not laid out yet
 
-        const dx = (gRect.left - fRect.left) + F_OFFSET_X;
-        const dy = (gRect.top  - fRect.top)  + F_OFFSET_Y;
+        const paneRect = pane.getBoundingClientRect();
+        const mid = { x: paneRect.left + paneRect.width / 2, y: paneRect.top + paneRect.height / 2 };
+        const grafTarget   = { x: mid.x - SEP_X / 2, y: mid.y - SEP_Y / 2 };
+        const fablesTarget = { x: mid.x + SEP_X / 2, y: mid.y + SEP_Y / 2 };
 
-        if (animate) wordMath.classList.add('snapping');
-        wordMath.style.transform = `translate(${dx}px, ${dy}px)`;
+        const grafDX = grafTarget.x - gC.x,     grafDY = grafTarget.y - gC.y;
+        const fablesDX = fablesTarget.x - fC.x, fablesDY = fablesTarget.y - fC.y;
 
-        if (animate) {
+        if (!animate) {
+          wordMotion.style.transition = 'none';
+          wordMath.style.transition = 'none';
+          wordMotion.style.transform = `translate(${grafDX}px, ${grafDY}px)`;
+          wordMath.style.transform = `translate(${fablesDX}px, ${fablesDY}px)`;
+          wordMotion.classList.add('locked');
+          wordMath.classList.add('locked');
+          return;
+        }
+
+        // Magnetic feel: slow start, hard acceleration (ease-in) covering
+        // most of the distance, then a brief overshoot-and-settle — like
+        // two magnets clacking together rather than sliding to a stop.
+        const OVERSHOOT = 1.12; // 12% past the target, then settles back
+        const APPROACH_MS = 650;
+        const SETTLE_MS = 200;
+        const approachEase = 'cubic-bezier(.7,0,.84,0)';   // strong ease-in
+        const settleEase   = 'cubic-bezier(.33,1.4,.6,1)';  // slight bounce back
+
+        wordMotion.classList.remove('locked');
+        wordMath.classList.remove('locked');
+        wordMotion.style.transition = `transform ${APPROACH_MS}ms ${approachEase}`;
+        wordMath.style.transition = `transform ${APPROACH_MS}ms ${approachEase}`;
+        wordMotion.style.transform = `translate(${(grafDX * OVERSHOOT).toFixed(1)}px, ${(grafDY * OVERSHOOT).toFixed(1)}px)`;
+        wordMath.style.transform = `translate(${(fablesDX * OVERSHOOT).toFixed(1)}px, ${(fablesDY * OVERSHOOT).toFixed(1)}px)`;
+
+        setTimeout(() => {
+          wordMotion.style.transition = `transform ${SETTLE_MS}ms ${settleEase}`;
+          wordMath.style.transition = `transform ${SETTLE_MS}ms ${settleEase}`;
+          wordMotion.style.transform = `translate(${grafDX}px, ${grafDY}px)`;
+          wordMath.style.transform = `translate(${fablesDX}px, ${fablesDY}px)`;
+
           grafF.classList.add('contact');
           fablesF.classList.add('contact');
           setTimeout(() => {
             grafF.classList.remove('contact');
             fablesF.classList.remove('contact');
-          }, 550);
-        }
+            wordMotion.classList.add('locked');
+            wordMath.classList.add('locked');
+          }, SETTLE_MS + 50);
+        }, APPROACH_MS);
       }
 
       let seen = false;
@@ -964,9 +1003,12 @@
       }
 
       function hideTitle() {
-        wordMotion.classList.remove('revealed', 'powering');
-        wordMath.classList.remove('revealed', 'powering', 'snapping');
+        wordMotion.classList.remove('revealed', 'powering', 'locked');
+        wordMath.classList.remove('revealed', 'powering', 'locked');
+        wordMotion.style.transform = '';
+        wordMotion.style.transition = '';
         wordMath.style.transform = '';
+        wordMath.style.transition = '';
         scanlines.classList.remove('on');
       }
 
