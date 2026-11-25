@@ -326,7 +326,18 @@
   };
 
   // ── Scoring / medals (localStorage, device-only, no logins) ──
-  const STORAGE_KEYS = { score: 'sc_score', streak: 'sc_streak', bestMedal: 'sc_best_medal', lastKey: 'sc_last_item' };
+  const STORAGE_KEYS = {
+    score: 'sc_score', streak: 'sc_streak', bestMedal: 'sc_best_medal', lastKey: 'sc_last_item',
+    level: 'sc_level', levelProgress: 'sc_level_progress',
+  };
+
+  // ── Match the Forecast levels ──
+  // Level N = forecasts with N weather pieces (1, 2, then 3). Moving up
+  // takes LEVEL_UP_STREAK first-try-correct rounds in a row at the current
+  // level. A wrong first pick resets that count but never drops a level —
+  // a slip shouldn't send a student back to one-piece graphs.
+  const MAX_LEVEL = MAX_SEGMENTS;
+  const LEVEL_UP_STREAK = 3;
   const MEDAL_THRESHOLDS = [[10, 'gold'], [5, 'silver'], [3, 'bronze']];
   const MEDAL_RANK = { none: 0, bronze: 1, silver: 2, gold: 3 };
 
@@ -342,6 +353,8 @@
       score: parseInt(safeGet(STORAGE_KEYS.score, '0'), 10) || 0,
       streak: parseInt(safeGet(STORAGE_KEYS.streak, '0'), 10) || 0,
       bestMedal: safeGet(STORAGE_KEYS.bestMedal, 'none'),
+      level: Math.min(MAX_LEVEL, Math.max(1, parseInt(safeGet(STORAGE_KEYS.level, '1'), 10) || 1)),
+      levelProgress: parseInt(safeGet(STORAGE_KEYS.levelProgress, '0'), 10) || 0,
     };
   }
 
@@ -367,10 +380,24 @@
     const earnedNewMedal = MEDAL_RANK[newMedal] > MEDAL_RANK[state.bestMedal];
     if (earnedNewMedal) state.bestMedal = newMedal;
 
+    let leveledUp = false;
+    if (firstTryCorrect && state.level < MAX_LEVEL) {
+      state.levelProgress += 1;
+      if (state.levelProgress >= LEVEL_UP_STREAK) { state.level += 1; state.levelProgress = 0; leveledUp = true; }
+    } else if (!firstTryCorrect) {
+      state.levelProgress = 0;
+    }
+
     safeSet(STORAGE_KEYS.score, String(state.score));
     safeSet(STORAGE_KEYS.streak, String(state.streak));
     safeSet(STORAGE_KEYS.bestMedal, state.bestMedal);
-    return { state, earnedNewMedal, newMedal };
+    safeSet(STORAGE_KEYS.level, String(state.level));
+    safeSet(STORAGE_KEYS.levelProgress, String(state.levelProgress));
+    return { state, earnedNewMedal, newMedal, leveledUp };
+  }
+
+  function resetProgress() {
+    Object.values(STORAGE_KEYS).forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
   }
 
   function rememberLastItem(key) { safeSet(STORAGE_KEYS.lastKey, key); }
@@ -382,6 +409,7 @@
     forecastStory, generateForecast, buildMatchItem, RULE_FEEDBACK,
     getScoreState, recordAttempt, medalForStreak, rememberLastItem, wasLastItem,
     pointsKey, cloneForecast, isPlausibleGraph,
+    MAX_LEVEL, LEVEL_UP_STREAK, resetProgress,
   };
 
   if (typeof module !== 'undefined' && module.exports) {

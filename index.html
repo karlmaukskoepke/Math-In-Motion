@@ -695,7 +695,6 @@
         </a>
 
         <div class="category-card cat-games" id="gamesCard" onclick="openGames()">
-          <div class="coming-soon-badge">Coming Soon</div>
           <div class="stripe"></div>
           <div class="category-card-head">
             <h2 id="gamesCardLabel"></h2>
@@ -773,7 +772,7 @@
           <div class="card-tag"><span class="tag-dot"></span>Challenge</div>
           <div class="card-icon">❄️</div>
           <h2>Snow Challenge</h2>
-          <p>Snow piles up, holds steady, or melts — read the rate as steepness, match a forecast to its graph, or build your own storm and watch it play out.</p>
+          <p>Snow piles up, holds steady, or melts — build your own storm and watch it graph, or match a weather forecast to the graph it makes.</p>
           <svg class="graph-preview" viewBox="0 0 300 60" fill="none" xmlns="http://www.w3.org/2000/svg">
             <polyline points="0,45 90,20 180,20 300,35" stroke="#ffd740" stroke-width="2" fill="none"/>
             <rect x="4" y="4" width="4" height="4" fill="#1A56DB"/>
@@ -1204,7 +1203,7 @@
     // the overlay header) — change this one line to rename the section.
     const CHALLENGES_LABEL = 'Challenges';
     document.getElementById('gamesCardLabel').textContent = CHALLENGES_LABEL;
-    document.getElementById('gamesOverlayLabel').textContent = `${CHALLENGES_LABEL} — Coming Soon`;
+    document.getElementById('gamesOverlayLabel').textContent = CHALLENGES_LABEL;
 
     function openGames() { document.getElementById('gamesOverlay').classList.add('open'); }
     function closeGames() { document.getElementById('gamesOverlay').classList.remove('open'); }

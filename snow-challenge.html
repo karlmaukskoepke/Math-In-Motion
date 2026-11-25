@@ -185,6 +185,7 @@
       <div class="score-badge">
         <span>Score <b id="scoreVal">0</b></span>
         <span>Streak <b id="streakVal">0</b></span>
+        <span id="levelBadge" title="Level = how many weather pieces each Match forecast has. 3 first-try correct in a row moves you up.">Level <b id="levelVal">1</b></span>
         <span class="medal" id="medalVal" title="Best streak medal"></span>
       </div>
       <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
@@ -286,6 +287,34 @@
 (function () {
   'use strict';
   const SM = window.SnowModel;
+
+  // ── URL settings, so a link can open a specific situation ──
+  //   ?mode=match            open Match the Forecast
+  //   ?level=1..3            Match level for this visit (not saved)
+  //   ?seed=N                reproducible Match round
+  //   ?start=2&segs=snow:1:3:6,cloudy:2,sun:-1:1:1   Explorer forecast
+  //   ?steps=1  ?story=1     tick the Explorer toggles
+  //   ?at=end | ?at=H        show the graph drawn to the end / to hour H
+  //   ?theme=light|dark      ?reset=1  clear saved score/level
+  const URLP = (function () {
+    const q = new URLSearchParams(location.search);
+    const num = k => (q.has(k) && q.get(k) !== '' && !isNaN(+q.get(k)) ? +q.get(k) : null);
+    let segs = null;
+    if (q.get('segs')) {
+      segs = q.get('segs').split(',').map(part => {
+        const [w, a, b, c] = part.split(':');
+        return w === 'cloudy' ? { weather: 'cloudy', hours: +a } : { weather: w, rise: +a, run: +b, hours: +c };
+      });
+    }
+    return { mode: q.get('mode'), level: num('level'), seed: num('seed'), start: num('start'), segs,
+      steps: q.get('steps') === '1', story: q.get('story') === '1', at: q.get('at'), theme: q.get('theme'), reset: q.get('reset') === '1' };
+  })();
+  if (URLP.reset) SM.resetProgress();
+  if (URLP.theme === 'light' || URLP.theme === 'dark') { try { sessionStorage.setItem('mm_theme', URLP.theme); } catch (e) {} }
+  function currentLevel() {
+    if (URLP.level >= 1 && URLP.level <= SM.MAX_LEVEL) return URLP.level;
+    return SM.getScoreState().level;
+  }
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // ── THEME (same key/pattern as the rest of the site) ──
@@ -311,6 +340,7 @@
     scoreVal.textContent = s.score;
     streakVal.textContent = s.streak;
     medalVal.textContent = MEDAL_EMOJI[s.bestMedal] || '';
+    document.getElementById('levelVal').textContent = currentLevel();
   }
   refreshScoreDisplay();
 
@@ -344,10 +374,67 @@
   // whole unit, axis titles).
   // ══════════════════════════════════════════════════════════════
   let chartTextColor = getTheme() === 'light' ? '#1a1d27' : '#ffffff';
+  // Light mode needed noticeably darker gridlines to be readable on white.
+  const gridColor = () => getTheme() === 'light' ? 'rgba(40,50,120,0.30)' : 'rgba(160,180,255,0.28)';
   const runBlue = getComputedStyle(document.documentElement).getPropertyValue('--run-blue').trim() || '#1A56DB';
   const riseOrange = getComputedStyle(document.documentElement).getPropertyValue('--rise-orange').trim() || '#E07B00';
 
+  // Number captions on the rise/run staircase: "3 hours" under each blue
+  // run leg, "+1 inch" beside each orange rise leg. Run captions sit on
+  // the side of the leg AWAY from the graph line (below when snowing,
+  // above when melting). If a step is too narrow for its caption (e.g.
+  // twelve 1-hour steps on a small screen), only each piece's first step
+  // is captioned so the labels never pile up (see the overlap check below).
+  let stepLabels = [];
+  const stepLabelPlugin = {
+    id: 'stepLabels',
+    afterDatasetsDraw(c) {
+      if (!stepLabels.length) return;
+      const { ctx, scales: { x, y } } = c;
+      ctx.save();
+      ctx.font = "bold 12px 'Space Mono', monospace";
+      ctx.lineJoin = 'round';
+      const halo = getTheme() === 'light' ? '#ffffff' : '#0f1117';
+      const drawText = (text, px, py, align, baseline, color) => {
+        ctx.textAlign = align; ctx.textBaseline = baseline;
+        ctx.strokeStyle = halo; ctx.lineWidth = 4; ctx.strokeText(text, px, py);
+        ctx.fillStyle = color; ctx.fillText(text, px, py);
+      };
+      // Work out where every caption would go, as a box, then check two
+      // things: each run caption fits inside its own step, and no two
+      // captions overlap. If either fails (small screen, or short repeated
+      // steps like "1 inch every hour"), caption only the first step of
+      // each piece — the repeating pattern is still visible in the dashes.
+      const TEXT_H = 13;
+      const placed = stepLabels.map(l => {
+        const w = ctx.measureText(l.text).width;
+        if (l.kind === 'run') {
+          const x0 = x.getPixelForValue(l.x0), x1 = x.getPixelForValue(l.x1);
+          const px = (x0 + x1) / 2, py = y.getPixelForValue(l.y) + (l.melting ? -6 : 6);
+          const top = l.melting ? py - TEXT_H : py;
+          return { l, px, py, fits: (x1 - x0) > w + 6, box: [px - w / 2, top, px + w / 2, top + TEXT_H] };
+        }
+        const px = x.getPixelForValue(l.x) + 6;
+        const py = (y.getPixelForValue(l.y0) + y.getPixelForValue(l.y1)) / 2;
+        return { l, px, py, fits: true, box: [px, py - TEXT_H / 2, px + w, py + TEXT_H / 2] };
+      });
+      const overlaps = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+      const crowded = placed.some(p => !p.fits) ||
+        placed.some((p, i) => placed.some((q, j) => j > i && overlaps(p.box, q.box)));
+      for (const p of placed) {
+        if (crowded && !p.l.firstOfSeg) continue;
+        if (p.l.kind === 'run') drawText(p.l.text, p.px, p.py, 'center', p.l.melting ? 'bottom' : 'top', runBlueLabel());
+        else drawText(p.l.text, p.px, p.py, 'left', 'middle', riseOrange);
+      }
+      ctx.restore();
+    },
+  };
+  // #1A56DB is too dark to read as text on the dark background; use a
+  // lighter tint of the same blue there (lines keep the exact class color).
+  const runBlueLabel = () => getTheme() === 'light' ? runBlue : '#6f9bff';
+
   const chart = new Chart(document.getElementById('chart'), {
+    plugins: [stepLabelPlugin],
     type: 'line',
     data: { datasets: [
       { label: 'depth', data: [], borderColor: chartTextColor, backgroundColor: 'transparent', borderWidth: 3, pointRadius: 0, tension: 0 },
@@ -365,13 +452,13 @@
           type: 'linear', min: 0, max: 12,
           title: { display: true, text: 'Time (hours)', color: chartTextColor, font: { family: 'Space Mono', size: 13, weight: 'bold' } },
           ticks: { color: chartTextColor, font: { family: 'Space Mono', size: 12, weight: 'bold' }, stepSize: 1 },
-          grid: { color: 'rgba(160,180,255,0.25)' },
+          grid: { color: gridColor() },
         },
         y: {
           min: 0, max: 12,
           title: { display: true, text: 'Snow depth (inches)', color: chartTextColor, font: { family: 'Space Mono', size: 13, weight: 'bold' } },
           ticks: { color: chartTextColor, font: { family: 'Space Mono', size: 12, weight: 'bold' }, stepSize: 1 },
-          grid: { color: 'rgba(160,180,255,0.25)' },
+          grid: { color: gridColor() },
         },
       },
     },
@@ -382,6 +469,8 @@
     chart.options.scales.x.ticks.color = chartTextColor;
     chart.options.scales.y.title.color = chartTextColor;
     chart.options.scales.y.ticks.color = chartTextColor;
+    chart.options.scales.x.grid.color = gridColor();
+    chart.options.scales.y.grid.color = gridColor();
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -656,7 +745,7 @@
     // 6-hour "1 inch every 3 hours" segment draws as two 3h/1in steps,
     // not one 6h/2in step — so this walks in increments of `seg.run`,
     // not across the whole segment at once.
-    const runPts = [], risePts = [];
+    const runPts = [], risePts = [], labels = [];
     let t = 0, d = forecast.start;
     for (const seg of forecast.segments) {
       if (seg.weather === 'cloudy' || t >= uptoHour) { t += seg.hours; d += SM.segmentDelta(seg); continue; }
@@ -668,13 +757,18 @@
         if (runEnd >= segT + seg.run) {
           const newD = segD + seg.rise;
           risePts.push({ x: runEnd, y: segD }, { x: runEnd, y: newD }, { x: NaN, y: NaN });
+          // Labels only for finished steps, so they don't flicker in mid-draw.
+          labels.push({ kind: 'run', x0: segT, x1: runEnd, y: segD, melting: seg.rise < 0, firstOfSeg: r === 0,
+            text: seg.run === 1 ? '1 hour' : `${seg.run} hours` });
+          labels.push({ kind: 'rise', x: runEnd, y0: segD, y1: newD, firstOfSeg: r === 0,
+            text: `${seg.rise < 0 ? '−' : '+'}${Math.abs(seg.rise)} ${Math.abs(seg.rise) === 1 ? 'inch' : 'inches'}` });
           segD = newD;
         }
         segT += seg.run;
       }
       t += seg.hours; d += SM.segmentDelta(seg);
     }
-    return { runPts, risePts };
+    return { runPts, risePts, labels };
   }
 
   let playbackHour = 0;
@@ -700,12 +794,14 @@
     }
     chart.data.datasets[0].data = drawn;
     if (toggleSteps.checked) {
-      const { runPts, risePts } = stepPoints(forecast, uptoHour);
+      const { runPts, risePts, labels } = stepPoints(forecast, uptoHour);
       chart.data.datasets[1].data = runPts;
       chart.data.datasets[2].data = risePts;
+      stepLabels = labels;
     } else {
       chart.data.datasets[1].data = [];
       chart.data.datasets[2].data = [];
+      stepLabels = [];
     }
     chart.update('none');
     return drawn.length ? drawn[drawn.length - 1].y : forecast.start;
@@ -803,11 +899,11 @@
     for (let v = 0; v <= 12; v++) {
       const major = v % 3 === 0;
       const op = major ? 0.55 : 0.22;
-      grid += `<line x1="${sx(v)}" y1="${sy(0)}" x2="${sx(v)}" y2="${sy(12)}" stroke="#7986cb" stroke-width="0.6" opacity="${op}"/>`;
-      grid += `<line x1="${sx(0)}" y1="${sy(v)}" x2="${sx(12)}" y2="${sy(v)}" stroke="#7986cb" stroke-width="0.6" opacity="${op}"/>`;
+      grid += `<line x1="${sx(v)}" y1="${sy(0)}" x2="${sx(v)}" y2="${sy(12)}" stroke="var(--muted)" stroke-width="0.7" opacity="${op}"/>`;
+      grid += `<line x1="${sx(0)}" y1="${sy(v)}" x2="${sx(12)}" y2="${sy(v)}" stroke="var(--muted)" stroke-width="0.7" opacity="${op}"/>`;
       if (major) {
-        grid += `<text x="${sx(v)}" y="${H - PAD + 12}" text-anchor="middle" font-family="Space Mono" font-size="9" fill="#7986cb">${v}</text>`;
-        grid += `<text x="${PAD - 5}" y="${sy(v) + 3}" text-anchor="end" font-family="Space Mono" font-size="9" fill="#7986cb">${v}</text>`;
+        grid += `<text x="${sx(v)}" y="${H - PAD + 12}" text-anchor="middle" font-family="Space Mono" font-size="9" fill="var(--muted)">${v}</text>`;
+        grid += `<text x="${PAD - 5}" y="${sy(v) + 3}" text-anchor="end" font-family="Space Mono" font-size="9" fill="var(--muted)">${v}</text>`;
       }
     }
     return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
@@ -818,6 +914,7 @@
 
   function setPlaybackEnabled(on) { playBtn.disabled = !on; replayBtn.disabled = !on; }
 
+  let seedPending = URLP.seed != null;
   function newMatchItem() {
     stopPlayback();
     setPlaybackEnabled(false);
@@ -829,11 +926,15 @@
     weatherBadge.textContent = '—'; clockReadout.textContent = 'Hour 0';
 
     let item = null;
+    // ?seed=N makes the FIRST round reproducible (used by the review
+    // checklist); "Next" after that is random as usual.
+    const seed = seedPending ? URLP.seed : null;
+    seedPending = false;
     for (let tries = 0; tries < 40 && !item; tries++) {
-      const rng = SM.makeRng(Date.now() ^ (Math.random() * 1e9) ^ tries);
-      const forecast = SM.generateForecast(rng, { numSegments: 1 + Math.floor(rng() * 3) });
+      const rng = SM.makeRng(seed != null ? seed * 101 + tries : (Date.now() ^ (Math.random() * 1e9) ^ tries));
+      const forecast = SM.generateForecast(rng, { numSegments: currentLevel() });
       const key = SM.pointsKey(SM.forecastPoints(forecast));
-      if (SM.wasLastItem(key)) continue;
+      if (seed == null && SM.wasLastItem(key)) continue;
       item = SM.buildMatchItem(rng, forecast, 3);
       if (item) SM.rememberLastItem(key);
     }
@@ -873,6 +974,12 @@
         ? 'Correct on the first try! Watch it play out below.'
         : 'That’s the one — watch it play out below.';
       if (earnedNewMedal) matchFeedbackEl.textContent += ` New medal: ${MEDAL_EMOJI[newMedal]}`;
+      if (medalResult && medalResult.leveledUp) {
+        matchFeedbackEl.textContent += ` Level up! Next forecasts have ${currentLevel()} pieces.`;
+      } else if (medalResult && matchFirstPickCorrect && currentLevel() < SM.MAX_LEVEL) {
+        const left = SM.LEVEL_UP_STREAK - SM.getScoreState().levelProgress;
+        matchFeedbackEl.textContent += ` ${left} more in a row for Level ${currentLevel() + 1}.`;
+      }
       nextItemBtn.classList.remove('hidden');
       Array.from(matchChoicesEl.children).forEach(c => c.classList.add('resolved'));
       playbackHour = 0;
@@ -889,9 +996,20 @@
 
   // ── init ──
   applyTheme(getTheme());
+  if (URLP.start != null) startDepthSel.value = Math.max(0, Math.min(6, URLP.start));
+  if (URLP.segs) explorerSegments = URLP.segs.slice(0, SM.MAX_SEGMENTS);
+  if (URLP.steps) toggleSteps.checked = true;
+  if (URLP.story) toggleStory.checked = true;
   renderSegmentRows();
   renderExplorerAtRest();
-  setMode('explorer');
+  setMode(URLP.mode === 'match' ? 'match' : 'explorer');
+  if (mode === 'explorer' && URLP.at) {
+    const total = SM.forecastTotalHours(currentExplorerForecast());
+    playbackHour = URLP.at === 'end' ? total : Math.max(0, Math.min(total, +URLP.at || 0));
+    const d = drawExplorerGraph(playbackHour);
+    renderSceneAt(currentExplorerForecast(), playbackHour);
+    updateLinkLine(d);
+  }
   requestAnimationFrame(refreshLinkLine);
 })();
 </script>

@@ -86,5 +86,42 @@ const buildRate = matchItemsBuilt / SEEDS;
 if (buildRate < 0.4) fail(`only ${(buildRate * 100).toFixed(0)}% of forecasts produced a Match item — rounds may fail to build`);
 console.log(`Match items built for ${(buildRate * 100).toFixed(0)}% of forecasts.`);
 
+// Every level can actually produce rounds with its number of pieces.
+for (let level = 1; level <= SnowModel.MAX_LEVEL; level++) {
+  let built = 0;
+  for (let seed = 1; seed <= 1000; seed++) {
+    const rng = SnowModel.makeRng(seed * 7 + level);
+    const f = SnowModel.generateForecast(rng, { numSegments: level });
+    if (f.segments.length !== level) fail(`level ${level}: forecast has ${f.segments.length} pieces`);
+    if (SnowModel.buildMatchItem(rng, f, 3)) built++;
+  }
+  if (built < 500) fail(`level ${level}: only ${built}/1000 forecasts produced a round`);
+  console.log(`Level ${level}: ${(built / 10).toFixed(0)}% of forecasts produce a round.`);
+}
+
+// Level-up rules, against an in-memory stand-in for localStorage.
+{
+  const store = new Map();
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: k => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k),
+  } });
+  const S = SnowModel;
+  const lvl = () => S.getScoreState().level;
+  if (lvl() !== 1) fail('levels: should start at level 1');
+  S.recordAttempt(true); S.recordAttempt(true);
+  S.recordAttempt(false); // resets progress, keeps level
+  if (lvl() !== 1) fail('levels: a wrong pick should not change the level');
+  S.recordAttempt(true); S.recordAttempt(true);
+  if (lvl() !== 1) fail('levels: progress should have reset after the wrong pick');
+  const r = S.recordAttempt(true);
+  if (lvl() !== 2 || !r.leveledUp) fail('levels: 3 first-try corrects in a row should reach level 2');
+  S.recordAttempt(false);
+  if (lvl() !== 2) fail('levels: a wrong pick should never drop a level');
+  for (let i = 0; i < 20; i++) S.recordAttempt(true);
+  if (lvl() !== S.MAX_LEVEL) fail(`levels: should cap at level ${S.MAX_LEVEL}, got ${lvl()}`);
+  S.resetProgress();
+  if (lvl() !== 1 || S.getScoreState().score !== 0) fail('levels: resetProgress should clear everything');
+}
+
 console.log(`${SEEDS} seeds checked, ${failures} failure(s).`);
 process.exit(failures ? 1 : 0);
