@@ -537,8 +537,15 @@
     }
 
     .card .stripe { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
-    .card-pink  .stripe { background: var(--accent2); }
-    .card-green .stripe { background: var(--accent3); }
+    .card-pink   .stripe { background: var(--accent2); }
+    .card-green  .stripe { background: var(--accent3); }
+    .card-yellow .stripe { background: var(--accent4); }
+
+    /* Only card-yellow is ever a real link (the other two are still
+       non-clickable teasers), so this is the first hover state .card
+       has needed — kept generic in case more cards go live later. */
+    .card[href]:hover { border-color: var(--card-hover-border); }
+    .card[href]:hover .card-arrow { color: var(--accent4); transform: translateX(4px); }
 
     .card-tag {
       display: inline-flex; align-items: center; gap: 6px;
@@ -547,12 +554,14 @@
       padding: 4px 10px; border-radius: 20px; border: 1px solid; width: fit-content;
     }
 
-    .card-pink  .card-tag { color: var(--accent2); border-color: rgba(255,64,129,0.3); background: rgba(255,64,129,0.06); }
-    .card-green .card-tag { color: var(--accent3); border-color: rgba(105,240,174,0.3);background: rgba(105,240,174,0.06);}
+    .card-pink   .card-tag { color: var(--accent2); border-color: rgba(255,64,129,0.3); background: rgba(255,64,129,0.06); }
+    .card-green  .card-tag { color: var(--accent3); border-color: rgba(105,240,174,0.3);background: rgba(105,240,174,0.06);}
+    .card-yellow .card-tag { color: var(--accent4); border-color: rgba(255,215,64,0.3); background: rgba(255,215,64,0.06); }
 
     .tag-dot { width: 6px; height: 6px; border-radius: 50%; }
-    .card-pink  .tag-dot { background: var(--accent2); }
-    .card-green .tag-dot { background: var(--accent3); }
+    .card-pink   .tag-dot { background: var(--accent2); }
+    .card-green  .tag-dot { background: var(--accent3); }
+    .card-yellow .tag-dot { background: var(--accent4); }
 
     .card-icon { font-size: 1.8rem; line-height: 1; }
     .card h2 { font-family: 'Space Mono', monospace; font-size: 1rem; font-weight: 700; color: var(--text); }
@@ -689,7 +698,7 @@
           <div class="coming-soon-badge">Coming Soon</div>
           <div class="stripe"></div>
           <div class="category-card-head">
-            <h2>Games</h2>
+            <h2 id="gamesCardLabel"></h2>
             <span class="card-arrow">↗</span>
           </div>
           <div class="category-card-art">
@@ -756,9 +765,28 @@
     <div class="games-overlay-backdrop" onclick="closeGames()"></div>
     <div class="games-overlay-panel">
       <button class="overlay-close" onclick="closeGames()" aria-label="Close">✕</button>
-      <div class="section-label" style="margin-bottom:8px;">Games — Coming Soon</div>
+      <div class="section-label" style="margin-bottom:8px;" id="gamesOverlayLabel"></div>
 
       <div class="cards">
+        <a class="card card-yellow" href="snow-challenge.html">
+          <div class="stripe"></div>
+          <div class="card-tag"><span class="tag-dot"></span>Challenge</div>
+          <div class="card-icon">❄️</div>
+          <h2>Snow Challenge</h2>
+          <p>Snow piles up, holds steady, or melts — read the rate as steepness, match a forecast to its graph, or build your own storm and watch it play out.</p>
+          <svg class="graph-preview" viewBox="0 0 300 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <polyline points="0,50 90,50 90,20 180,20 180,35 300,35" stroke="#ffd740" stroke-width="2" fill="none"/>
+            <rect x="4" y="4" width="4" height="4" fill="#1A56DB"/>
+            <text x="12" y="12" fill="#7986cb" font-family="Space Mono" font-size="7">run</text>
+            <rect x="4" y="16" width="4" height="4" fill="#E07B00"/>
+            <text x="12" y="24" fill="#7986cb" font-family="Space Mono" font-size="7">rise</text>
+          </svg>
+          <div class="card-footer">
+            <div class="card-pills"><span class="pill">Explorer</span><span class="pill">Match the Forecast</span></div>
+            <span class="card-arrow">→</span>
+          </div>
+        </a>
+
         <div class="card card-pink">
           <div class="stripe"></div>
           <div class="card-tag"><span class="tag-dot"></span>Game</div>
@@ -1172,6 +1200,12 @@
   </script>
 
   <script>
+    // One label, used in both places it appears (the homepage card and
+    // the overlay header) — change this one line to rename the section.
+    const CHALLENGES_LABEL = 'Challenges';
+    document.getElementById('gamesCardLabel').textContent = CHALLENGES_LABEL;
+    document.getElementById('gamesOverlayLabel').textContent = `${CHALLENGES_LABEL} — Coming Soon`;
+
     function openGames() { document.getElementById('gamesOverlay').classList.add('open'); }
     function closeGames() { document.getElementById('gamesOverlay').classList.remove('open'); }
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeGames(); });

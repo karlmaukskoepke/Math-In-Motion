@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Snow Challenge — GraFables</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="snowModel.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --surface2:  #22263a;
+      --accent:    #00e5ff;
+      --accent2:   #ff4081;
+      --accent3:   #69f0ae;
+      --accent4:   #ffd740;
+      --text:      #e8eaf6;
+      --muted:     #7986cb;
+      --border:    #2e3356;
+      --left-w:    420px;
+      /* Karl's class conventions for this challenge specifically (spec
+         section 2) — distinct from the site's general accent palette
+         above, which is why they're their own variables. */
+      --run-blue:  #1A56DB;
+      --rise-orange: #E07B00;
+    }
+    html[data-theme="light"] {
+      --bg:        #f4f5fa;
+      --surface:   #ffffff;
+      --surface2:  #eceef7;
+      --accent:    #0077b6;
+      --accent2:   #c2185b;
+      --accent3:   #2e7d32;
+      --accent4:   #e0982a;
+      --text:      #1a1d27;
+      --muted:     #5c6bc0;
+      --border:    #d0d3e6;
+    }
+    body { transition: background 0.2s, color 0.2s; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; }
+    #app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; position: relative; }
+
+    /* ── HEADER ── */
+    #header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 14px; background: var(--surface);
+      border-bottom: 2px solid var(--accent4); flex-shrink: 0; z-index: 10;
+    }
+    #header h1 { font-family: 'Space Mono', monospace; font-size: 0.82rem; color: var(--accent4); letter-spacing: 2px; text-transform: uppercase; flex: 1; }
+    .hdr-btn {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 7px; padding: 5px 12px; font-size: 0.72rem; font-family: 'Space Mono', monospace;
+      cursor: pointer; display: flex; align-items: center; gap: 5px;
+      transition: all 0.15s; flex-shrink: 0; letter-spacing: 0.5px; text-decoration: none;
+    }
+    .hdr-btn:hover { border-color: var(--accent4); color: var(--accent4); }
+    .hdr-btn.active { border-color: var(--accent4); color: var(--accent4); background: rgba(255,215,64,0.08); }
+    .score-badge {
+      font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--muted);
+      display: flex; align-items: center; gap: 8px; padding: 0 6px;
+    }
+    .score-badge b { color: var(--text); }
+    .medal { font-size: 1rem; }
+
+    /* ── CONTENT ── */
+    #content { display: flex; flex: 1; overflow: hidden; position: relative; }
+    #scenePane {
+      width: var(--left-w); flex-shrink: 0; background: var(--surface);
+      border-right: 1px solid var(--border); display: flex; flex-direction: column;
+      padding: 14px; gap: 10px; overflow: hidden;
+    }
+    #graphPane { flex: 1; display: flex; flex-direction: column; padding: 14px 18px; gap: 10px; overflow: hidden; min-width: 0; }
+
+    /* ── SCENE ── */
+    #sceneSvg { width: 100%; flex: 1; min-height: 0; background: linear-gradient(to bottom, #1c2541, #2a3458); border-radius: 10px; }
+    .clock-readout {
+      font-family: 'Space Mono', monospace; font-size: 0.78rem; color: var(--text);
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 6px 10px; text-align: center;
+    }
+    .weather-badge {
+      font-family: 'Space Mono', monospace; font-size: 0.7rem; color: var(--muted);
+      text-align: center;
+    }
+
+    /* ── PLAYBACK CONTROLS ── */
+    .playback-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .play-btn {
+      background: var(--accent4); color: #0a0c12; border: none; border-radius: 8px;
+      padding: 7px 14px; font-family: 'Space Mono', monospace; font-weight: 700; font-size: 0.78rem;
+      cursor: pointer; transition: filter 0.15s, transform 0.1s;
+    }
+    .play-btn:hover { filter: brightness(1.1); }
+    .play-btn:active { transform: translateY(1px); }
+    .speed-select {
+      background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 7px; padding: 6px 8px; font-family: 'Space Mono', monospace; font-size: 0.72rem;
+    }
+
+    /* ── GRAPH PANE ── */
+    #chartWrap { flex: 1; min-height: 0; position: relative; }
+    #chart { width: 100% !important; height: 100% !important; }
+    .toggle-row { display: flex; gap: 14px; font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--muted); }
+    .toggle-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    #storyText {
+      font-size: 0.85rem; line-height: 1.5; color: var(--text); background: var(--surface);
+      border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; min-height: 2.2em;
+    }
+    #storyText.hidden { display: none; }
+
+    /* ── EXPLORER BUILDER ── */
+    #builderControls { display: flex; flex-direction: column; gap: 8px; }
+    .builder-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--muted); }
+    .builder-row select, .builder-row input[type=number] {
+      background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; padding: 4px 6px; font-family: 'Space Mono', monospace; font-size: 0.72rem;
+    }
+    .segment-row {
+      display: flex; align-items: center; gap: 6px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; flex-wrap: wrap;
+    }
+    .seg-remove {
+      background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 50%;
+      width: 20px; height: 20px; cursor: pointer; font-size: 0.7rem; line-height: 1;
+    }
+    .seg-remove:hover { border-color: var(--accent2); color: var(--accent2); }
+    #addSegmentBtn {
+      background: none; border: 1px dashed var(--border); color: var(--muted);
+      border-radius: 8px; padding: 6px 10px; font-family: 'Space Mono', monospace; font-size: 0.72rem;
+      cursor: pointer; align-self: flex-start;
+    }
+    #addSegmentBtn:hover { border-color: var(--accent4); color: var(--accent4); }
+    #addSegmentBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── MATCH THE FORECAST ── */
+    #matchArea { display: none; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
+    #matchArea.active { display: flex; }
+    #builderControls.hidden, #chartWrap.hidden, .toggle-row.hidden { display: none; }
+    #matchStory {
+      font-size: 0.95rem; line-height: 1.5; color: var(--text); background: var(--surface);
+      border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+    }
+    #matchChoices {
+      display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px;
+      flex: 1; min-height: 0;
+    }
+    .match-choice {
+      background: var(--surface); border: 2px solid var(--border); border-radius: 10px;
+      cursor: pointer; padding: 6px; transition: border-color 0.15s, transform 0.1s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .match-choice:hover:not(.resolved) { border-color: var(--accent4); }
+    .match-choice.correct-pick { border-color: var(--accent3); }
+    .match-choice.wrong-pick { border-color: var(--accent2); }
+    .match-choice svg { width: 100%; height: 100%; }
+    #matchFeedback {
+      font-size: 0.85rem; color: var(--text); background: var(--surface2);
+      border-radius: 8px; padding: 10px 12px; min-height: 1.4em;
+    }
+    #matchFeedback.hidden { display: none; }
+    #nextItemBtn { align-self: flex-start; }
+    #nextItemBtn.hidden { display: none; }
+
+    /* ── LINK LINE (stake ↔ graph) ── */
+    #linkLineSvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .flake { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="header">
+      <a class="hdr-btn back" href="index.html">← Home</a>
+      <h1>Snow Challenge</h1>
+      <button class="hdr-btn active" id="modeExplorerBtn" type="button">Explorer</button>
+      <button class="hdr-btn" id="modeMatchBtn" type="button">Match the Forecast</button>
+      <div class="score-badge">
+        <span>Score <b id="scoreVal">0</b></span>
+        <span>Streak <b id="streakVal">0</b></span>
+        <span class="medal" id="medalVal" title="Best streak medal"></span>
+      </div>
+      <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
+    </div>
+
+    <div id="content">
+      <svg id="linkLineSvg"><line id="linkLine" x1="0" y1="0" x2="0" y2="0" stroke="var(--text)" stroke-width="1.5" stroke-dasharray="4 4" opacity="0"/></svg>
+
+      <!-- SCENE (left) -->
+      <div id="scenePane">
+        <svg id="sceneSvg" viewBox="0 0 260 320" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <clipPath id="snowClip"><rect id="snowClipRect" x="20" y="0" width="220" height="260"/></clipPath>
+          </defs>
+          <!-- sky handled by pane background -->
+          <!-- sun -->
+          <g id="sunGroup" opacity="0">
+            <circle cx="205" cy="55" r="22" fill="#ffd740"/>
+            <g id="sunDrips" stroke="#8ec9ff" stroke-width="2" stroke-linecap="round"></g>
+          </g>
+          <!-- clouds -->
+          <g id="cloudGroup" opacity="0" fill="#aab4d6">
+            <ellipse cx="90" cy="48" rx="30" ry="14"/>
+            <ellipse cx="115" cy="42" rx="24" ry="12"/>
+            <ellipse cx="160" cy="55" rx="34" ry="15"/>
+            <ellipse cx="185" cy="46" rx="22" ry="11"/>
+          </g>
+          <!-- tree -->
+          <g id="treeGroup">
+            <rect x="196" y="190" width="10" height="55" fill="#6b4a2f"/>
+            <polygon points="201,120 170,210 232,210" fill="#2e6b4a"/>
+            <polygon points="201,145 176,225 226,225" fill="#357a54"/>
+            <polygon points="201,170 182,245 220,245" fill="#3d8a5f"/>
+          </g>
+          <!-- ground -->
+          <rect x="0" y="260" width="260" height="60" fill="#3a3f5c"/>
+          <!-- measuring stake, planted at x=40, ticks every inch 0-12 bottom-up -->
+          <g id="stakeGroup">
+            <rect x="38" y="140" width="4" height="120" fill="#8a5a3a"/>
+            <g id="stakeTicks" font-family="Space Mono" font-size="7" fill="#cfd6ff"></g>
+          </g>
+          <!-- snow layer, clipped, height driven by current depth -->
+          <g clip-path="url(#snowClip)">
+            <rect id="snowLayer" x="20" y="260" width="220" height="0" fill="#f4f8ff" stroke="#c9d4f0" stroke-width="1"/>
+          </g>
+          <!-- flakes -->
+          <g id="flakeGroup"></g>
+          <!-- top-of-snow dashed anchor (picked up by the full-page link line) -->
+          <circle id="stakeAnchor" cx="40" cy="260" r="3" fill="var(--accent4)" opacity="0"/>
+        </svg>
+        <div class="clock-readout" id="clockReadout">Hour 0</div>
+        <div class="weather-badge" id="weatherBadge">—</div>
+        <div class="playback-row">
+          <button class="play-btn" id="playBtn" type="button">▶ Play</button>
+          <button class="hdr-btn" id="replayBtn" type="button">↻ Replay</button>
+          <select class="speed-select" id="speedSelect">
+            <option value="slow">Slow</option>
+            <option value="normal" selected>Normal</option>
+            <option value="fast">Fast</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- GRAPH + CONTROLS (right) -->
+      <div id="graphPane">
+        <div class="toggle-row" id="explorerToggles">
+          <label><input type="checkbox" id="toggleSteps"> Show rise/run steps</label>
+          <label><input type="checkbox" id="toggleStory"> Show the story</label>
+        </div>
+        <div id="storyText" class="hidden"></div>
+
+        <div id="chartWrap"><canvas id="chart"></canvas></div>
+
+        <div id="builderControls">
+          <div class="builder-row">
+            <span>Starting depth:</span>
+            <select id="startDepth"></select>
+            <span>inches</span>
+          </div>
+          <div id="segmentRows"></div>
+          <button id="addSegmentBtn" type="button">+ Add Segment</button>
+        </div>
+
+        <div id="matchArea">
+          <div id="matchStory"></div>
+          <div id="matchChoices"></div>
+          <div id="matchFeedback" class="hidden"></div>
+          <button class="play-btn hidden" id="nextItemBtn" type="button">Next →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+  const SM = window.SnowModel;
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ── THEME (same key/pattern as the rest of the site) ──
+  const THEME_KEY = 'mm_theme';
+  const themeBtn = document.getElementById('themeBtn');
+  function getTheme() { try { return sessionStorage.getItem(THEME_KEY) || 'dark'; } catch (e) { return 'dark'; } }
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { sessionStorage.setItem(THEME_KEY, theme); } catch (e) {}
+    themeBtn.textContent = theme === 'light' ? '☀ Light' : '🌙 Dark';
+    chartTextColor = theme === 'light' ? '#1a1d27' : '#ffffff';
+    if (chart) { updateChartColors(); chart.update(); }
+  }
+  themeBtn.onclick = () => applyTheme(getTheme() === 'light' ? 'dark' : 'light');
+
+  // ── SCORE DISPLAY ──
+  const scoreVal = document.getElementById('scoreVal');
+  const streakVal = document.getElementById('streakVal');
+  const medalVal = document.getElementById('medalVal');
+  const MEDAL_EMOJI = { none: '', bronze: '🥉', silver: '🥈', gold: '🥇' };
+  function refreshScoreDisplay() {
+    const s = SM.getScoreState();
+    scoreVal.textContent = s.score;
+    streakVal.textContent = s.streak;
+    medalVal.textContent = MEDAL_EMOJI[s.bestMedal] || '';
+  }
+  refreshScoreDisplay();
+
+  // ── MODE SWITCH ──
+  const modeExplorerBtn = document.getElementById('modeExplorerBtn');
+  const modeMatchBtn = document.getElementById('modeMatchBtn');
+  const matchArea = document.getElementById('matchArea');
+  const chartWrap = document.getElementById('chartWrap');
+  const builderControls = document.getElementById('builderControls');
+  const explorerToggles = document.getElementById('explorerToggles');
+  let mode = 'explorer';
+  function setMode(next) {
+    stopPlayback();
+    mode = next;
+    modeExplorerBtn.classList.toggle('active', mode === 'explorer');
+    modeMatchBtn.classList.toggle('active', mode === 'match');
+    matchArea.classList.toggle('active', mode === 'match');
+    chartWrap.classList.toggle('hidden', mode === 'match');
+    builderControls.classList.toggle('hidden', mode === 'match');
+    explorerToggles.classList.toggle('hidden', mode === 'match');
+    document.getElementById('storyText').classList.toggle('hidden', mode === 'match' || !document.getElementById('toggleStory').checked);
+    if (mode === 'match') newMatchItem();
+    else renderExplorerAtRest();
+  }
+  modeExplorerBtn.onclick = () => setMode('explorer');
+  modeMatchBtn.onclick = () => setMode('match');
+
+  // ══════════════════════════════════════════════════════════════
+  // CHART.JS SETUP (Explorer's main graph — matches the site's axis
+  // conventions: Space Mono labels, 0 line emphasized, gridlines every
+  // whole unit, axis titles).
+  // ══════════════════════════════════════════════════════════════
+  let chartTextColor = getTheme() === 'light' ? '#1a1d27' : '#ffffff';
+  const runBlue = getComputedStyle(document.documentElement).getPropertyValue('--run-blue').trim() || '#1A56DB';
+  const riseOrange = getComputedStyle(document.documentElement).getPropertyValue('--rise-orange').trim() || '#E07B00';
+
+  const chart = new Chart(document.getElementById('chart'), {
+    type: 'line',
+    data: { datasets: [
+      { label: 'depth', data: [], borderColor: chartTextColor, backgroundColor: 'transparent', borderWidth: 3, pointRadius: 0, tension: 0 },
+      { label: 'run', data: [], showLine: true, borderColor: runBlue, backgroundColor: 'transparent', borderWidth: 2, pointRadius: 0, borderDash: [5,3], tension: 0 },
+      { label: 'rise', data: [], showLine: true, borderColor: riseOrange, backgroundColor: 'transparent', borderWidth: 2, pointRadius: 0, borderDash: [5,3], tension: 0 },
+    ]},
+    options: {
+      animation: false, responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: {
+        x: {
+          type: 'linear', min: 0, max: 12,
+          title: { display: true, text: 'Time (hours)', color: chartTextColor, font: { family: 'Space Mono', size: 13, weight: 'bold' } },
+          ticks: { color: chartTextColor, font: { family: 'Space Mono', size: 12, weight: 'bold' }, stepSize: 1 },
+          grid: { color: 'rgba(160,180,255,0.25)' },
+        },
+        y: {
+          min: 0, max: 12,
+          title: { display: true, text: 'Snow depth (inches)', color: chartTextColor, font: { family: 'Space Mono', size: 13, weight: 'bold' } },
+          ticks: { color: chartTextColor, font: { family: 'Space Mono', size: 12, weight: 'bold' }, stepSize: 1 },
+          grid: { color: 'rgba(160,180,255,0.25)' },
+        },
+      },
+    },
+  });
+  function updateChartColors() {
+    chart.data.datasets[0].borderColor = chartTextColor;
+    chart.options.scales.x.title.color = chartTextColor;
+    chart.options.scales.x.ticks.color = chartTextColor;
+    chart.options.scales.y.title.color = chartTextColor;
+    chart.options.scales.y.ticks.color = chartTextColor;
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // SCENE RENDERING — shared by both modes (Match the Forecast plays
+  // the scene using the CORRECT forecast after a pick).
+  // ══════════════════════════════════════════════════════════════
+  const sceneSvg = document.getElementById('sceneSvg');
+  const snowLayer = document.getElementById('snowLayer');
+  const stakeTicks = document.getElementById('stakeTicks');
+  const stakeAnchor = document.getElementById('stakeAnchor');
+  const flakeGroup = document.getElementById('flakeGroup');
+  const sunGroup = document.getElementById('sunGroup');
+  const cloudGroup = document.getElementById('cloudGroup');
+  const clockReadout = document.getElementById('clockReadout');
+  const weatherBadge = document.getElementById('weatherBadge');
+  const linkLine = document.getElementById('linkLine');
+
+  // Stake geometry: ground at svg-y=260, 0in at y=260, each inch = 16px up,
+  // matching MAX_DEPTH=12 -> top of stake usable range at y=260-12*16=68.
+  const PX_PER_INCH = 16;
+  const GROUND_Y = 260;
+  for (let inch = 0; inch <= 12; inch++) {
+    const y = GROUND_Y - inch * PX_PER_INCH;
+    const tick = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    tick.setAttribute('x', 46); tick.setAttribute('y', y + 3);
+    tick.textContent = inch % 3 === 0 ? String(inch) : '';
+    stakeTicks.appendChild(tick);
+    if (inch % 3 !== 0) continue;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', 38); line.setAttribute('x2', 46); line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('stroke', '#cfd6ff'); line.setAttribute('stroke-width', '1.5');
+    stakeTicks.appendChild(line);
+  }
+
+  // Flake pool — reused elements, count/visibility driven by rate tier.
+  const MAX_FLAKES = 40;
+  const flakes = [];
+  for (let i = 0; i < MAX_FLAKES; i++) {
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('class', 'flake');
+    c.setAttribute('r', 2);
+    c.setAttribute('fill', '#ffffff');
+    c.style.opacity = 0;
+    flakeGroup.appendChild(c);
+    flakes.push({ el: c, x: Math.random() * 220 + 20, y: Math.random() * 240, speed: 0.6 + Math.random() * 0.8 });
+  }
+  let flakeAnimHandle = null;
+  function setFlakeDensity(activeCount) {
+    for (let i = 0; i < flakes.length; i++) flakes[i].el.style.opacity = i < activeCount ? 0.9 : 0;
+  }
+  function tickFlakes() {
+    for (const f of flakes) {
+      if (+f.el.style.opacity === 0) continue;
+      f.y += f.speed; if (f.y > 258) f.y = 0;
+      f.el.setAttribute('cx', f.x); f.el.setAttribute('cy', f.y);
+    }
+    flakeAnimHandle = requestAnimationFrame(tickFlakes);
+  }
+  if (!prefersReducedMotion) flakeAnimHandle = requestAnimationFrame(tickFlakes);
+
+  function snowDensityCount(rise) {
+    // light/medium/heavy by magnitude, independent of run.
+    const mag = Math.abs(rise);
+    if (mag <= 1) return 10;
+    if (mag <= 2) return 24;
+    return MAX_FLAKES;
+  }
+
+  function renderSceneAt(forecast, hour) {
+    // Interpolate depth at `hour` across the forecast's segments.
+    let t = 0, d = forecast.start, weather = 'cloudy', rise = 0, run = 1;
+    for (const seg of forecast.segments) {
+      const segEnd = t + seg.hours;
+      const isLast = seg === forecast.segments[forecast.segments.length - 1];
+      if (hour <= segEnd || isLast) {
+        const into = Math.max(0, Math.min(seg.hours, hour - t));
+        const frac = seg.hours === 0 ? 0 : into / seg.hours;
+        d = d + SM.segmentDelta(seg) * frac;
+        weather = seg.weather; rise = seg.rise || 0; run = seg.run || 1;
+        break;
+      }
+      t = segEnd;
+      d += SM.segmentDelta(seg);
+    }
+    d = Math.max(0, Math.min(12, d));
+
+    snowLayer.setAttribute('y', GROUND_Y - d * PX_PER_INCH);
+    snowLayer.setAttribute('height', d * PX_PER_INCH);
+    stakeAnchor.setAttribute('cy', GROUND_Y - d * PX_PER_INCH);
+    stakeAnchor.setAttribute('opacity', 1);
+
+    sunGroup.setAttribute('opacity', weather === 'sun' ? 1 : 0);
+    cloudGroup.setAttribute('opacity', weather === 'cloudy' ? 1 : 0);
+    if (!prefersReducedMotion) setFlakeDensity(weather === 'snow' ? snowDensityCount(rise) : 0);
+
+    clockReadout.textContent = `Hour ${Math.round(hour * 10) / 10}`;
+    weatherBadge.textContent = weather === 'snow'
+      ? `❄️ Snowing (${SM.rateLabel(rise, run, 'snow')})`
+      : weather === 'sun' ? `☀️ Sunny — melting` : `☁️ Cloudy`;
+
+    return d;
+  }
+
+  function updateLinkLine(depthInches) {
+    if (depthInches == null) { linkLine.setAttribute('opacity', 0); return; }
+    const anchorRect = stakeAnchor.getBoundingClientRect();
+    const chartCanvas = document.getElementById('chart');
+    if (mode !== 'explorer' || chartWrap.classList.contains('hidden')) { linkLine.setAttribute('opacity', 0); return; }
+    const chartRect = chartCanvas.getBoundingClientRect();
+    const appRect = document.getElementById('app').getBoundingClientRect();
+    const y = anchorRect.top + anchorRect.height / 2 - appRect.top;
+    linkLine.setAttribute('x1', anchorRect.left - appRect.left);
+    linkLine.setAttribute('y1', y);
+    linkLine.setAttribute('x2', chartRect.left - appRect.left + chartRect.width * 0.02);
+    linkLine.setAttribute('y2', y);
+    linkLine.setAttribute('opacity', 0.7);
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // EXPLORER — builder state + live graph/story
+  // ══════════════════════════════════════════════════════════════
+  const startDepthSel = document.getElementById('startDepth');
+  for (let i = 0; i <= 6; i++) { const o = document.createElement('option'); o.value = i; o.textContent = i; startDepthSel.appendChild(o); }
+  startDepthSel.value = 2;
+
+  const segmentRows = document.getElementById('segmentRows');
+  const addSegmentBtn = document.getElementById('addSegmentBtn');
+  let explorerSegments = [{ weather: 'snow', rise: 1, run: 3, hours: 6 }]; // friendly default, matches spec's own example
+
+  function allowedHoursFor(weather, rise, run) {
+    if (weather === 'cloudy') return SM.MAX_TOTAL_HOURS;
+    const maxK = Math.floor(SM.MAX_TOTAL_HOURS / run);
+    const out = [];
+    for (let k = 1; k <= maxK; k++) out.push(run * k);
+    return out;
+  }
+
+  function renderSegmentRows() {
+    segmentRows.innerHTML = '';
+    explorerSegments.forEach((seg, i) => {
+      const row = document.createElement('div');
+      row.className = 'segment-row';
+
+      const weatherSel = document.createElement('select');
+      ['snow', 'cloudy', 'sun'].forEach(w => { const o = document.createElement('option'); o.value = w; o.textContent = w === 'snow' ? 'Snowing' : w === 'sun' ? 'Sunny (melting)' : 'Cloudy'; weatherSel.appendChild(o); });
+      weatherSel.value = seg.weather;
+      weatherSel.onchange = () => {
+        seg.weather = weatherSel.value;
+        if (seg.weather === 'cloudy') { delete seg.rise; delete seg.run; seg.hours = 2; }
+        else if (seg.weather === 'snow') { seg.rise = 1; seg.run = 3; seg.hours = 3; }
+        else { seg.rise = -1; seg.run = 1; seg.hours = 1; }
+        renderSegmentRows(); renderExplorerAtRest();
+      };
+      row.appendChild(weatherSel);
+
+      if (seg.weather !== 'cloudy') {
+        const rateSel = document.createElement('select');
+        const rates = seg.weather === 'snow' ? SM.SNOW_RATES : SM.MELT_RATES;
+        rates.forEach(([r, u]) => {
+          const o = document.createElement('option');
+          o.value = `${r},${u}`;
+          o.textContent = SM.rateLabel(r, u, seg.weather);
+          rateSel.appendChild(o);
+        });
+        rateSel.value = `${seg.rise},${seg.run}`;
+        rateSel.onchange = () => {
+          const [r, u] = rateSel.value.split(',').map(Number);
+          seg.rise = r; seg.run = u;
+          const valid = allowedHoursFor(seg.weather, r, u);
+          if (!valid.includes(seg.hours)) seg.hours = valid[0];
+          renderSegmentRows(); renderExplorerAtRest();
+        };
+        row.appendChild(rateSel);
+      }
+
+      const hoursSel = document.createElement('select');
+      const validHours = allowedHoursFor(seg.weather, seg.rise, seg.run);
+      validHours.forEach(h => { const o = document.createElement('option'); o.value = h; o.textContent = `${h}h`; hoursSel.appendChild(o); });
+      hoursSel.value = seg.hours;
+      hoursSel.onchange = () => { seg.hours = Number(hoursSel.value); renderExplorerAtRest(); };
+      row.appendChild(hoursSel);
+
+      if (explorerSegments.length > 1) {
+        const rm = document.createElement('button');
+        rm.className = 'seg-remove'; rm.type = 'button'; rm.textContent = '✕';
+        rm.onclick = () => { explorerSegments.splice(i, 1); renderSegmentRows(); renderExplorerAtRest(); };
+        row.appendChild(rm);
+      }
+      segmentRows.appendChild(row);
+    });
+    addSegmentBtn.disabled = explorerSegments.length >= SM.MAX_SEGMENTS;
+  }
+  addSegmentBtn.onclick = () => {
+    if (explorerSegments.length >= SM.MAX_SEGMENTS) return;
+    explorerSegments.push({ weather: 'snow', rise: 1, run: 3, hours: 3 });
+    renderSegmentRows(); renderExplorerAtRest();
+  };
+  startDepthSel.onchange = renderExplorerAtRest;
+
+  function currentExplorerForecast() {
+    return { start: Number(startDepthSel.value), segments: explorerSegments.map(s => Object.assign({}, s)) };
+  }
+
+  const toggleSteps = document.getElementById('toggleSteps');
+  const toggleStory = document.getElementById('toggleStory');
+  const storyText = document.getElementById('storyText');
+  toggleStory.onchange = () => {
+    storyText.classList.toggle('hidden', !toggleStory.checked);
+    storyText.textContent = SM.forecastStory(currentExplorerForecast());
+  };
+  toggleSteps.onchange = () => drawExplorerGraph(playbackHour);
+
+  function stepPoints(forecast, uptoHour) {
+    // Rise/run staircase for whichever segments have been drawn up to
+    // `uptoHour` — split into a blue "run" leg and an orange "rise" leg,
+    // matching the scene's color conventions. Per the spec, the unit
+    // step (run, rise) REPEATS across a segment's full length — e.g. a
+    // 6-hour "1 inch every 3 hours" segment draws as two 3h/1in steps,
+    // not one 6h/2in step — so this walks in increments of `seg.run`,
+    // not across the whole segment at once.
+    const runPts = [], risePts = [];
+    let t = 0, d = forecast.start;
+    for (const seg of forecast.segments) {
+      if (seg.weather === 'cloudy' || t >= uptoHour) { t += seg.hours; d += SM.segmentDelta(seg); continue; }
+      const reps = seg.hours / seg.run; // integer by construction (hours is always a multiple of run)
+      let segT = t, segD = d;
+      for (let r = 0; r < reps && segT < uptoHour; r++) {
+        const runEnd = Math.min(segT + seg.run, uptoHour);
+        runPts.push({ x: segT, y: segD }, { x: runEnd, y: segD }, { x: NaN, y: NaN });
+        if (runEnd >= segT + seg.run) {
+          const newD = segD + seg.rise;
+          risePts.push({ x: runEnd, y: segD }, { x: runEnd, y: newD }, { x: NaN, y: NaN });
+          segD = newD;
+        }
+        segT += seg.run;
+      }
+      t += seg.hours; d += SM.segmentDelta(seg);
+    }
+    return { runPts, risePts };
+  }
+
+  let playbackHour = 0;
+  function drawExplorerGraph(uptoHour) {
+    const forecast = currentExplorerForecast();
+    const drawn = [];
+    let t = 0, d = forecast.start;
+    // Explorer forecasts are hand-built, so (unlike the generator) they
+    // CAN melt past zero — clamping each plotted depth to [0,12] is what
+    // makes that read as "the line goes flat" rather than dipping
+    // negative, per spec section 3's melt-to-zero rule.
+    const clamp = v => Math.max(0, Math.min(12, v));
+    drawn.push({ x: 0, y: clamp(d) });
+    for (const seg of forecast.segments) {
+      const segEnd = t + seg.hours;
+      if (uptoHour >= segEnd) { d += SM.segmentDelta(seg); drawn.push({ x: segEnd, y: clamp(d) }); }
+      else if (uptoHour > t) {
+        const frac = (uptoHour - t) / seg.hours;
+        drawn.push({ x: uptoHour, y: clamp(d + SM.segmentDelta(seg) * frac) });
+        break;
+      } else break;
+      t = segEnd;
+    }
+    chart.data.datasets[0].data = drawn;
+    if (toggleSteps.checked) {
+      const { runPts, risePts } = stepPoints(forecast, uptoHour);
+      chart.data.datasets[1].data = runPts;
+      chart.data.datasets[2].data = risePts;
+    } else {
+      chart.data.datasets[1].data = [];
+      chart.data.datasets[2].data = [];
+    }
+    chart.update('none');
+    return drawn.length ? drawn[drawn.length - 1].y : forecast.start;
+  }
+
+  function renderExplorerAtRest() {
+    stopPlayback();
+    playbackHour = 0;
+    const forecast = currentExplorerForecast();
+    drawExplorerGraph(0);
+    renderSceneAt(forecast, 0);
+    updateLinkLine(forecast.start);
+    if (toggleStory.checked) storyText.textContent = SM.forecastStory(forecast);
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // PLAYBACK LOOP — shared by Explorer and Match the Forecast's
+  // post-pick reveal. speedSelect maps to real-seconds per simulated hour.
+  // ══════════════════════════════════════════════════════════════
+  const SPEED_SEC_PER_HOUR = { slow: 2, normal: 1, fast: 0.35 };
+  const speedSelect = document.getElementById('speedSelect');
+  const playBtn = document.getElementById('playBtn');
+  const replayBtn = document.getElementById('replayBtn');
+  let playTimer = null;
+  let playingForecast = null;
+  let onPlaybackDone = null;
+
+  function stopPlayback() {
+    if (playTimer) { clearInterval(playTimer); playTimer = null; }
+    playBtn.textContent = '▶ Play';
+  }
+
+  function startPlayback(forecast, onDone) {
+    stopPlayback();
+    playingForecast = forecast;
+    onPlaybackDone = onDone || null;
+    const total = SM.forecastTotalHours(forecast);
+    const secPerHour = SPEED_SEC_PER_HOUR[speedSelect.value] || 1;
+    const stepMs = 50;
+    const hourPerStep = stepMs / 1000 / secPerHour;
+    playBtn.textContent = '⏸ Pause';
+    playTimer = setInterval(() => {
+      playbackHour = Math.min(total, playbackHour + hourPerStep);
+      const d = mode === 'explorer' ? drawExplorerGraph(playbackHour) : null;
+      const sceneDepth = renderSceneAt(forecast, playbackHour);
+      updateLinkLine(mode === 'explorer' ? sceneDepth : null);
+      if (sceneDepth <= 0 && forecast.segments.some(s => s.weather === 'sun')) {
+        weatherBadge.textContent = 'All melted.';
+      }
+      if (playbackHour >= total) {
+        stopPlayback();
+        if (onPlaybackDone) onPlaybackDone();
+      }
+    }, stepMs);
+  }
+
+  playBtn.onclick = () => {
+    if (playTimer) { stopPlayback(); return; }
+    if (mode === 'explorer') {
+      if (playbackHour >= SM.forecastTotalHours(currentExplorerForecast())) playbackHour = 0;
+      startPlayback(currentExplorerForecast());
+    } else if (currentMatchItem) {
+      startPlayback(currentMatchItem.correct);
+    }
+  };
+  replayBtn.onclick = () => {
+    playbackHour = 0;
+    if (mode === 'explorer') { drawExplorerGraph(0); renderSceneAt(currentExplorerForecast(), 0); startPlayback(currentExplorerForecast()); }
+    else if (currentMatchItem) { renderSceneAt(currentMatchItem.correct, 0); startPlayback(currentMatchItem.correct, matchRevealDone); }
+  };
+
+  // ══════════════════════════════════════════════════════════════
+  // MATCH THE FORECAST
+  // ══════════════════════════════════════════════════════════════
+  const matchStoryEl = document.getElementById('matchStory');
+  const matchChoicesEl = document.getElementById('matchChoices');
+  const matchFeedbackEl = document.getElementById('matchFeedback');
+  const nextItemBtn = document.getElementById('nextItemBtn');
+  let currentMatchItem = null;
+  let matchResolved = false;
+  let matchFirstPickCorrect = null;
+
+  function miniGraphSvg(points, opts) {
+    opts = opts || {};
+    const W = 300, H = 180, PAD = 22;
+    const sx = x => PAD + (x / 12) * (W - PAD * 2);
+    const sy = y => (H - PAD) - (y / 12) * (H - PAD * 2);
+    let path = '';
+    points.forEach((p, i) => { path += (i === 0 ? 'M' : 'L') + sx(p.t) + ',' + sy(p.d) + ' '; });
+    const stroke = opts.color || 'var(--text)';
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+      <line x1="${PAD}" y1="${H-PAD}" x2="${W-PAD}" y2="${H-PAD}" stroke="#555a7a" stroke-width="1"/>
+      <line x1="${PAD}" y1="${PAD}" x2="${PAD}" y2="${H-PAD}" stroke="#555a7a" stroke-width="1"/>
+      <path d="${path.trim()}" fill="none" stroke="${stroke}" stroke-width="3"/>
+    </svg>`;
+  }
+
+  function newMatchItem() {
+    stopPlayback();
+    matchFeedbackEl.classList.add('hidden');
+    nextItemBtn.classList.add('hidden');
+    matchResolved = false;
+    matchFirstPickCorrect = null;
+    renderSceneAt({ start: 0, segments: [] }, 0);
+    weatherBadge.textContent = '—'; clockReadout.textContent = 'Hour 0';
+
+    let item = null;
+    for (let tries = 0; tries < 20 && !item; tries++) {
+      const rng = SM.makeRng(Date.now() ^ (Math.random() * 1e9) ^ tries);
+      const forecast = SM.generateForecast(rng, { numSegments: 1 + Math.floor(rng() * 3) });
+      const key = SM.pointsKey(SM.forecastPoints(forecast));
+      if (SM.wasLastItem(key)) continue;
+      item = SM.buildMatchItem(rng, forecast, 3);
+      if (item) SM.rememberLastItem(key);
+    }
+    if (!item) { matchStoryEl.textContent = 'Could not build a round — try again.'; return; }
+    currentMatchItem = item;
+    matchStoryEl.textContent = item.story;
+    matchChoicesEl.innerHTML = '';
+    item.choices.forEach((choice, i) => {
+      const div = document.createElement('div');
+      div.className = 'match-choice';
+      div.innerHTML = miniGraphSvg(choice.points);
+      div.onclick = () => pickMatchChoice(i, div);
+      matchChoicesEl.appendChild(div);
+    });
+  }
+
+  function pickMatchChoice(i, el) {
+    if (matchResolved) return;
+    const choice = currentMatchItem.choices[i];
+    if (matchFirstPickCorrect === null) matchFirstPickCorrect = choice.isCorrect;
+
+    if (choice.isCorrect) {
+      matchResolved = true;
+      el.classList.add('correct-pick');
+      const { earnedNewMedal, newMedal } = SM.recordAttempt(matchFirstPickCorrect);
+      refreshScoreDisplay();
+      matchFeedbackEl.classList.remove('hidden');
+      matchFeedbackEl.textContent = matchFirstPickCorrect
+        ? 'Correct on the first try! Watch it play out below.'
+        : 'That’s the one — watch it play out below.';
+      if (earnedNewMedal) matchFeedbackEl.textContent += ` New medal: ${MEDAL_EMOJI[newMedal]}`;
+      nextItemBtn.classList.remove('hidden');
+      Array.from(matchChoicesEl.children).forEach(c => c.classList.add('resolved'));
+      playbackHour = 0;
+      startPlayback(currentMatchItem.correct, matchRevealDone);
+    } else {
+      el.classList.add('wrong-pick');
+      el.classList.add('resolved');
+      SM.recordAttempt(false);
+      refreshScoreDisplay();
+      matchFeedbackEl.classList.remove('hidden');
+      matchFeedbackEl.textContent = SM.RULE_FEEDBACK[choice.rule] || 'Not quite — look again.';
+    }
+  }
+  function matchRevealDone() { /* scene finished playing the correct forecast — nothing further needed */ }
+  nextItemBtn.onclick = newMatchItem;
+
+  // ── init ──
+  applyTheme(getTheme());
+  renderSegmentRows();
+  renderExplorerAtRest();
+  setMode('explorer');
+})();
+</script>
+</body>
+</html>
