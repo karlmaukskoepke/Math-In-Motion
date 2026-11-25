@@ -9,6 +9,7 @@ const SnowModel = require('./snowModel.js');
 
 const SEEDS = 5000;
 let failures = 0;
+let matchItemsBuilt = 0;
 function fail(msg) { failures++; console.error('FAIL: ' + msg); }
 
 for (let seed = 1; seed <= SEEDS; seed++) {
@@ -59,8 +60,31 @@ for (let seed = 1; seed <= SEEDS; seed++) {
   for (const c of item.choices) {
     if (c.isCorrect) continue;
     if (!c.rule) fail(`seed ${seed}: a distractor has no rule tag`);
+    // Wrong answers must look like real forecasts — no off-grid corners,
+    // negative/over-12 depth, or past-12h graphs that give themselves away.
+    for (const p of c.points) {
+      if (!Number.isInteger(p.t) || !Number.isInteger(p.d)) fail(`seed ${seed}: ${c.rule} distractor has off-grid corner (${p.t}, ${p.d})`);
+      if (p.d < 0 || p.d > 12) fail(`seed ${seed}: ${c.rule} distractor depth ${p.d} out of [0,12]`);
+    }
+    const end = c.points[c.points.length - 1].t;
+    if (end > 12) fail(`seed ${seed}: ${c.rule} distractor runs to hour ${end}`);
+  }
+  matchItemsBuilt++;
+}
+
+// Story text: correct plurals and a capital letter starting each sentence.
+for (let seed = 1; seed <= 500; seed++) {
+  const story = SnowModel.forecastStory(SnowModel.generateForecast(SnowModel.makeRng(seed)));
+  if (/\binchs\b|\bevery 1 hour\b/.test(story)) fail(`seed ${seed}: bad plural in story — "${story}"`);
+  for (const sentence of story.split(/(?<=\.)\s+/)) {
+    if (!/^[A-Z]/.test(sentence)) fail(`seed ${seed}: sentence not capitalized — "${sentence}"`);
   }
 }
+
+// The page retries up to 20 forecasts per round; make sure that's plenty.
+const buildRate = matchItemsBuilt / SEEDS;
+if (buildRate < 0.4) fail(`only ${(buildRate * 100).toFixed(0)}% of forecasts produced a Match item — rounds may fail to build`);
+console.log(`Match items built for ${(buildRate * 100).toFixed(0)}% of forecasts.`);
 
 console.log(`${SEEDS} seeds checked, ${failures} failure(s).`);
 process.exit(failures ? 1 : 0);

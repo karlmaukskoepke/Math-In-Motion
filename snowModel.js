@@ -49,7 +49,10 @@
   function randInt(rng, min, max) { return min + Math.floor(rng() * (max - min + 1)); }
 
   // ── Rate labels (always "a inch(es) every b hour(s)" — never a decimal) ──
-  function pluralize(n, word) { return `${n} ${word}${n === 1 ? '' : 's'}`; }
+  function pluralize(n, word) {
+    if (n === 1) return `${n} ${word}`;
+    return `${n} ${word}${/(ch|sh|s|x)$/.test(word) ? 'es' : 's'}`; // inch -> inches
+  }
 
   function rateLabel(rise, run, weather) {
     const absRise = Math.abs(rise);
@@ -89,13 +92,18 @@
       if (seg.weather === 'cloudy') {
         parts.push(`Then it's cloudy for ${pluralize(seg.hours, 'hour')}.`);
       } else if (seg.weather === 'snow') {
-        parts.push(`It snows ${pluralize(seg.rise, 'inch')} every ${pluralize(seg.run, 'hour')} for ${pluralize(seg.hours, 'hour')}.`);
+        const every = seg.run === 1 ? 'every hour' : `every ${pluralize(seg.run, 'hour')}`; // never "every 1 hour"
+        parts.push(`Then it snows ${pluralize(seg.rise, 'inch')} ${every} for ${pluralize(seg.hours, 'hour')}.`);
       } else {
         parts.push(`Then the sun comes out and the snow melts ${pluralize(Math.abs(seg.rise), 'inch')} every hour for ${pluralize(seg.hours, 'hour')}.`);
       }
     }
-    // First snow line doesn't want a leading "Then" — matches the spec example.
-    if (parts[1]) parts[1] = parts[1].replace(/^Then /, '');
+    // First weather line doesn't want a leading "Then" — matches the spec
+    // example — and must start with a capital once "Then " is stripped.
+    if (parts[1]) {
+      parts[1] = parts[1].replace(/^Then /, '');
+      parts[1] = parts[1].charAt(0).toUpperCase() + parts[1].slice(1);
+    }
     return parts.join(' ');
   }
 
@@ -255,6 +263,15 @@
     },
   };
 
+  // A wrong answer must obey the same drawing rules as a real forecast
+  // (whole-number corners, depth 0-12, at most 12 hours). Otherwise a
+  // student can rule it out on sight — "snow can't be negative", "that
+  // corner is between grid lines" — without reading the story at all.
+  function isPlausibleGraph(points) {
+    return points.every(p => Number.isInteger(p.t) && Number.isInteger(p.d) && p.d >= 0 && p.d <= MAX_DEPTH)
+      && points[points.length - 1].t <= MAX_TOTAL_HOURS;
+  }
+
   function buildMatchItem(rng, correct, count) {
     count = count || 3;
     const correctPoints = forecastPoints(correct);
@@ -262,19 +279,26 @@
     const ruleNames = Object.keys(DISTRACTOR_RULES);
     const distractors = [];
 
-    // Try each rule (shuffled) until we have `count` distinct distractors.
+    // Pass 1: one distractor per rule (shuffled), so a round shows as many
+    // different mistake types as possible. Pass 2: if some rules don't apply
+    // to this forecast (e.g. no cloudy piece for cloudyAsMelt), let a rule
+    // that does apply contribute a second, different graph — otherwise
+    // forecasts without a cloudy piece would almost never become rounds.
     const order = ruleNames.slice().sort(() => rng() - 0.5);
-    for (const rule of order) {
-      if (distractors.length >= count) break;
-      for (let tries = 0; tries < 15; tries++) {
-        const result = DISTRACTOR_RULES[rule](rng, correct);
-        if (!result) break; // this rule doesn't apply to this forecast at all
-        const pts = forecastPoints(result.forecast);
-        const key = pointsKey(pts);
-        if (seenKeys.has(key)) continue; // collides with an existing choice, retry
-        seenKeys.add(key);
-        distractors.push(Object.assign({ points: pts }, result));
-        break;
+    for (let pass = 0; pass < 2 && distractors.length < count; pass++) {
+      for (const rule of order) {
+        if (distractors.length >= count) break;
+        for (let tries = 0; tries < 15; tries++) {
+          const result = DISTRACTOR_RULES[rule](rng, correct);
+          if (!result) break; // this rule doesn't apply to this forecast at all
+          const pts = forecastPoints(result.forecast);
+          if (!isPlausibleGraph(pts)) continue; // would give itself away, retry
+          const key = pointsKey(pts);
+          if (seenKeys.has(key)) continue; // collides with an existing choice, retry
+          seenKeys.add(key);
+          distractors.push(Object.assign({ points: pts }, result));
+          break;
+        }
       }
     }
 
@@ -357,7 +381,7 @@
     makeRng, rateLabel, segmentDelta, forecastPoints, forecastTotalHours,
     forecastStory, generateForecast, buildMatchItem, RULE_FEEDBACK,
     getScoreState, recordAttempt, medalForStreak, rememberLastItem, wasLastItem,
-    pointsKey, cloneForecast,
+    pointsKey, cloneForecast, isPlausibleGraph,
   };
 
   if (typeof module !== 'undefined' && module.exports) {

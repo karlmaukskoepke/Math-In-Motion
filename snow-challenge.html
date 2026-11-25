@@ -96,6 +96,7 @@
     }
     .play-btn:hover { filter: brightness(1.1); }
     .play-btn:active { transform: translateY(1px); }
+    .play-btn:disabled, #replayBtn:disabled { opacity: 0.35; cursor: not-allowed; filter: none; }
     .speed-select {
       background: var(--surface2); color: var(--text); border: 1px solid var(--border);
       border-radius: 7px; padding: 6px 8px; font-family: 'Space Mono', monospace; font-size: 0.72rem;
@@ -152,6 +153,7 @@
       background: var(--surface); border: 2px solid var(--border); border-radius: 10px;
       cursor: pointer; padding: 6px; transition: border-color 0.15s, transform 0.1s;
       display: flex; align-items: center; justify-content: center;
+      min-height: 0; overflow: hidden; /* let grid rows shrink so the feedback line never covers them */
     }
     .match-choice:hover:not(.resolved) { border-color: var(--accent4); }
     .match-choice.correct-pick { border-color: var(--accent3); }
@@ -189,13 +191,15 @@
     </div>
 
     <div id="content">
-      <svg id="linkLineSvg"><line id="linkLine" x1="0" y1="0" x2="0" y2="0" stroke="var(--text)" stroke-width="1.5" stroke-dasharray="4 4" opacity="0"/></svg>
+      <svg id="linkLineSvg"><line id="linkLine" x1="0" y1="0" x2="0" y2="0" stroke="var(--accent4)" stroke-width="1.5" stroke-dasharray="4 4" opacity="0"/><circle id="linkDot" r="5" fill="var(--accent4)" opacity="0"/></svg>
 
       <!-- SCENE (left) -->
       <div id="scenePane">
         <svg id="sceneSvg" viewBox="0 0 260 320" xmlns="http://www.w3.org/2000/svg">
           <defs>
-            <clipPath id="snowClip"><rect id="snowClipRect" x="20" y="0" width="220" height="260"/></clipPath>
+            <!-- Snow and ground run well past the 260-wide viewBox so they
+                 fill the pane at any aspect ratio (no bare sky strips). -->
+            <clipPath id="snowClip"><rect id="snowClipRect" x="-400" y="0" width="1060" height="260"/></clipPath>
           </defs>
           <!-- sky handled by pane background -->
           <!-- sun -->
@@ -218,15 +222,17 @@
             <polygon points="201,170 182,245 220,245" fill="#3d8a5f"/>
           </g>
           <!-- ground -->
-          <rect x="0" y="260" width="260" height="60" fill="#3a3f5c"/>
-          <!-- measuring stake, planted at x=40, ticks every inch 0-12 bottom-up -->
-          <g id="stakeGroup">
-            <rect x="38" y="140" width="4" height="120" fill="#8a5a3a"/>
-            <g id="stakeTicks" font-family="Space Mono" font-size="7" fill="#cfd6ff"></g>
-          </g>
+          <rect x="-400" y="260" width="1060" height="400" fill="#3a3f5c"/>
           <!-- snow layer, clipped, height driven by current depth -->
           <g clip-path="url(#snowClip)">
-            <rect id="snowLayer" x="20" y="260" width="220" height="0" fill="#f4f8ff" stroke="#c9d4f0" stroke-width="1"/>
+            <rect id="snowLayer" x="-400" y="260" width="1060" height="0" fill="#f4f8ff" stroke="#c9d4f0" stroke-width="1"/>
+          </g>
+          <!-- measuring stake, planted at x=40, ticks every inch 0-12
+               bottom-up. Drawn AFTER the snow so it stays readable when
+               buried, like a real stake poking out of a drift. -->
+          <g id="stakeGroup">
+            <rect x="37" y="0" width="5" height="0" fill="#8a5a3a" id="stakeBody"/>
+            <g id="stakeTicks" font-family="Space Mono" font-size="8" font-weight="700"></g>
           </g>
           <!-- flakes -->
           <g id="flakeGroup"></g>
@@ -326,8 +332,8 @@
     builderControls.classList.toggle('hidden', mode === 'match');
     explorerToggles.classList.toggle('hidden', mode === 'match');
     document.getElementById('storyText').classList.toggle('hidden', mode === 'match' || !document.getElementById('toggleStory').checked);
-    if (mode === 'match') newMatchItem();
-    else renderExplorerAtRest();
+    if (mode === 'match') { updateLinkLine(null); newMatchItem(); }
+    else { setPlaybackEnabled(true); renderExplorerAtRest(); }
   }
   modeExplorerBtn.onclick = () => setMode('explorer');
   modeMatchBtn.onclick = () => setMode('match');
@@ -350,6 +356,9 @@
     ]},
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
+      // The chart resizes itself asynchronously (initial layout, story box
+      // toggling, window resize) — re-aim the link line once it settles.
+      onResize: () => requestAnimationFrame(refreshLinkLine),
       plugins: { legend: { display: false }, tooltip: { enabled: false } },
       scales: {
         x: {
@@ -394,17 +403,31 @@
   // matching MAX_DEPTH=12 -> top of stake usable range at y=260-12*16=68.
   const PX_PER_INCH = 16;
   const GROUND_Y = 260;
+  // Stake spans the full 0-12 inch range (plus a little top) so every
+  // tick sits on wood. Ticks every inch, longer + labeled every 3 inches.
+  // Each mark has a dark outline so it reads on white snow AND dark sky.
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const stakeBody = document.getElementById('stakeBody');
+  stakeBody.setAttribute('y', GROUND_Y - 12.6 * PX_PER_INCH);
+  stakeBody.setAttribute('height', 12.6 * PX_PER_INCH);
   for (let inch = 0; inch <= 12; inch++) {
     const y = GROUND_Y - inch * PX_PER_INCH;
-    const tick = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    tick.setAttribute('x', 46); tick.setAttribute('y', y + 3);
-    tick.textContent = inch % 3 === 0 ? String(inch) : '';
-    stakeTicks.appendChild(tick);
-    if (inch % 3 !== 0) continue;
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', 38); line.setAttribute('x2', 46); line.setAttribute('y1', y); line.setAttribute('y2', y);
-    line.setAttribute('stroke', '#cfd6ff'); line.setAttribute('stroke-width', '1.5');
-    stakeTicks.appendChild(line);
+    const major = inch % 3 === 0;
+    const x2 = major ? 50 : 45;
+    [['#1c2541', 3.5], ['#ffffff', 1.5]].forEach(([color, w]) => {
+      const line = document.createElementNS(SVGNS, 'line');
+      line.setAttribute('x1', 37); line.setAttribute('x2', x2); line.setAttribute('y1', y); line.setAttribute('y2', y);
+      line.setAttribute('stroke', color); line.setAttribute('stroke-width', w);
+      stakeTicks.appendChild(line);
+    });
+    if (!major) continue;
+    const label = document.createElementNS(SVGNS, 'text');
+    label.setAttribute('x', 53); label.setAttribute('y', y + 3);
+    label.setAttribute('fill', '#ffffff');
+    label.setAttribute('stroke', '#1c2541'); label.setAttribute('stroke-width', 2.5);
+    label.setAttribute('paint-order', 'stroke');
+    label.textContent = String(inch);
+    stakeTicks.appendChild(label);
   }
 
   // Flake pool — reused elements, count/visibility driven by rate tier.
@@ -476,20 +499,33 @@
     return d;
   }
 
+  // Connects the top of the snow on the stake to the matching point on
+  // the graph (current hour, current depth). The stake and the graph use
+  // different inch scales, so a flat horizontal line would point at the
+  // wrong depth — instead the line ends exactly on the plotted point,
+  // found with Chart.js's own value->pixel conversion.
+  const linkDot = document.getElementById('linkDot');
+  const contentEl = document.getElementById('content');
   function updateLinkLine(depthInches) {
-    if (depthInches == null) { linkLine.setAttribute('opacity', 0); return; }
+    if (depthInches == null || mode !== 'explorer' || chartWrap.classList.contains('hidden')) {
+      linkLine.setAttribute('opacity', 0); linkDot.setAttribute('opacity', 0); return;
+    }
     const anchorRect = stakeAnchor.getBoundingClientRect();
-    const chartCanvas = document.getElementById('chart');
-    if (mode !== 'explorer' || chartWrap.classList.contains('hidden')) { linkLine.setAttribute('opacity', 0); return; }
-    const chartRect = chartCanvas.getBoundingClientRect();
-    const appRect = document.getElementById('app').getBoundingClientRect();
-    const y = anchorRect.top + anchorRect.height / 2 - appRect.top;
-    linkLine.setAttribute('x1', anchorRect.left - appRect.left);
-    linkLine.setAttribute('y1', y);
-    linkLine.setAttribute('x2', chartRect.left - appRect.left + chartRect.width * 0.02);
-    linkLine.setAttribute('y2', y);
-    linkLine.setAttribute('opacity', 0.7);
+    const chartRect = document.getElementById('chart').getBoundingClientRect();
+    const box = contentEl.getBoundingClientRect();
+    const x1 = anchorRect.left + anchorRect.width / 2 - box.left;
+    const y1 = anchorRect.top + anchorRect.height / 2 - box.top;
+    const x2 = chartRect.left - box.left + chart.scales.x.getPixelForValue(playbackHour);
+    const y2 = chartRect.top - box.top + chart.scales.y.getPixelForValue(depthInches);
+    linkLine.setAttribute('x1', x1); linkLine.setAttribute('y1', y1);
+    linkLine.setAttribute('x2', x2); linkLine.setAttribute('y2', y2);
+    linkDot.setAttribute('cx', x2); linkDot.setAttribute('cy', y2);
+    linkLine.setAttribute('opacity', 0.6); linkDot.setAttribute('opacity', 1);
   }
+  function refreshLinkLine() {
+    if (mode === 'explorer') updateLinkLine(Math.max(0, Math.min(12, explorerDepthAt(playbackHour))));
+  }
+  window.addEventListener('resize', refreshLinkLine);
 
   // ══════════════════════════════════════════════════════════════
   // EXPLORER — builder state + live graph/story
@@ -502,17 +538,41 @@
   const addSegmentBtn = document.getElementById('addSegmentBtn');
   let explorerSegments = [{ weather: 'snow', rise: 1, run: 3, hours: 6 }]; // friendly default, matches spec's own example
 
-  function allowedHoursFor(weather, rise, run) {
-    if (weather === 'cloudy') return SM.MAX_TOTAL_HOURS;
-    const maxK = Math.floor(SM.MAX_TOTAL_HOURS / run);
+  // Hours a segment may last: any whole hour for cloudy, a multiple of
+  // the run for snow/sun (so corners land on whole inches), and never
+  // more than what's left of the 12-hour graph after the other segments.
+  function allowedHoursFor(weather, run, maxHours) {
+    const step = weather === 'cloudy' ? 1 : run;
     const out = [];
-    for (let k = 1; k <= maxK; k++) out.push(run * k);
+    for (let h = step; h <= maxHours; h += step) out.push(h);
     return out;
+  }
+  function hoursLeftFor(i) {
+    return SM.MAX_TOTAL_HOURS - explorerSegments.reduce((sum, s, j) => j === i ? sum : sum + s.hours, 0);
+  }
+  // After any change, nudge a segment back into a legal shape: a rate
+  // whose run doesn't fit falls back to a 1-hour run, and hours snap to
+  // the nearest allowed value at or below what was there.
+  function fitSegment(seg, maxHours) {
+    if (seg.weather !== 'cloudy' && seg.run > maxHours) { seg.rise = seg.weather === 'sun' ? -1 : 1; seg.run = 1; }
+    const valid = allowedHoursFor(seg.weather, seg.run, maxHours);
+    if (!valid.includes(seg.hours)) seg.hours = valid.filter(h => h <= seg.hours).pop() || valid[0];
+  }
+  function explorerDepthAt(hour) {
+    const f = currentExplorerForecast();
+    let t = 0, d = f.start;
+    for (const seg of f.segments) {
+      if (hour <= t + seg.hours) return d + SM.segmentDelta(seg) * ((hour - t) / seg.hours);
+      t += seg.hours; d += SM.segmentDelta(seg);
+    }
+    return d;
   }
 
   function renderSegmentRows() {
     segmentRows.innerHTML = '';
     explorerSegments.forEach((seg, i) => {
+      const maxHours = hoursLeftFor(i);
+      fitSegment(seg, maxHours);
       const row = document.createElement('div');
       row.className = 'segment-row';
 
@@ -524,6 +584,7 @@
         if (seg.weather === 'cloudy') { delete seg.rise; delete seg.run; seg.hours = 2; }
         else if (seg.weather === 'snow') { seg.rise = 1; seg.run = 3; seg.hours = 3; }
         else { seg.rise = -1; seg.run = 1; seg.hours = 1; }
+        fitSegment(seg, maxHours);
         renderSegmentRows(); renderExplorerAtRest();
       };
       row.appendChild(weatherSel);
@@ -535,21 +596,21 @@
           const o = document.createElement('option');
           o.value = `${r},${u}`;
           o.textContent = SM.rateLabel(r, u, seg.weather);
+          o.disabled = u > maxHours; // run wouldn't fit in the hours left
           rateSel.appendChild(o);
         });
         rateSel.value = `${seg.rise},${seg.run}`;
         rateSel.onchange = () => {
           const [r, u] = rateSel.value.split(',').map(Number);
           seg.rise = r; seg.run = u;
-          const valid = allowedHoursFor(seg.weather, r, u);
-          if (!valid.includes(seg.hours)) seg.hours = valid[0];
+          fitSegment(seg, maxHours);
           renderSegmentRows(); renderExplorerAtRest();
         };
         row.appendChild(rateSel);
       }
 
       const hoursSel = document.createElement('select');
-      const validHours = allowedHoursFor(seg.weather, seg.rise, seg.run);
+      const validHours = allowedHoursFor(seg.weather, seg.run, maxHours);
       validHours.forEach(h => { const o = document.createElement('option'); o.value = h; o.textContent = `${h}h`; hoursSel.appendChild(o); });
       hoursSel.value = seg.hours;
       hoursSel.onchange = () => { seg.hours = Number(hoursSel.value); renderExplorerAtRest(); };
@@ -563,11 +624,13 @@
       }
       segmentRows.appendChild(row);
     });
-    addSegmentBtn.disabled = explorerSegments.length >= SM.MAX_SEGMENTS;
+    const hoursUsed = explorerSegments.reduce((sum, s) => sum + s.hours, 0);
+    addSegmentBtn.disabled = explorerSegments.length >= SM.MAX_SEGMENTS || hoursUsed >= SM.MAX_TOTAL_HOURS;
   }
   addSegmentBtn.onclick = () => {
-    if (explorerSegments.length >= SM.MAX_SEGMENTS) return;
-    explorerSegments.push({ weather: 'snow', rise: 1, run: 3, hours: 3 });
+    const hoursLeft = SM.MAX_TOTAL_HOURS - explorerSegments.reduce((sum, s) => sum + s.hours, 0);
+    if (explorerSegments.length >= SM.MAX_SEGMENTS || hoursLeft < 1) return;
+    explorerSegments.push(hoursLeft >= 3 ? { weather: 'snow', rise: 1, run: 3, hours: 3 } : { weather: 'cloudy', hours: hoursLeft });
     renderSegmentRows(); renderExplorerAtRest();
   };
   startDepthSel.onchange = renderExplorerAtRest;
@@ -704,14 +767,14 @@
     if (mode === 'explorer') {
       if (playbackHour >= SM.forecastTotalHours(currentExplorerForecast())) playbackHour = 0;
       startPlayback(currentExplorerForecast());
-    } else if (currentMatchItem) {
+    } else if (currentMatchItem && matchResolved) { // no peeking before a pick
       startPlayback(currentMatchItem.correct);
     }
   };
   replayBtn.onclick = () => {
     playbackHour = 0;
     if (mode === 'explorer') { drawExplorerGraph(0); renderSceneAt(currentExplorerForecast(), 0); startPlayback(currentExplorerForecast()); }
-    else if (currentMatchItem) { renderSceneAt(currentMatchItem.correct, 0); startPlayback(currentMatchItem.correct, matchRevealDone); }
+    else if (currentMatchItem && matchResolved) { renderSceneAt(currentMatchItem.correct, 0); startPlayback(currentMatchItem.correct, matchRevealDone); }
   };
 
   // ══════════════════════════════════════════════════════════════
@@ -733,15 +796,31 @@
     let path = '';
     points.forEach((p, i) => { path += (i === 0 ? 'M' : 'L') + sx(p.t) + ',' + sy(p.d) + ' '; });
     const stroke = opts.color || 'var(--text)';
+    // Faint 1-hour / 1-inch grid with labels every 3 — without it a
+    // "wrong start" or "rate flipped" graph can't be told apart by
+    // reading, only by guessing at proportions.
+    let grid = '';
+    for (let v = 0; v <= 12; v++) {
+      const major = v % 3 === 0;
+      const op = major ? 0.55 : 0.22;
+      grid += `<line x1="${sx(v)}" y1="${sy(0)}" x2="${sx(v)}" y2="${sy(12)}" stroke="#7986cb" stroke-width="0.6" opacity="${op}"/>`;
+      grid += `<line x1="${sx(0)}" y1="${sy(v)}" x2="${sx(12)}" y2="${sy(v)}" stroke="#7986cb" stroke-width="0.6" opacity="${op}"/>`;
+      if (major) {
+        grid += `<text x="${sx(v)}" y="${H - PAD + 12}" text-anchor="middle" font-family="Space Mono" font-size="9" fill="#7986cb">${v}</text>`;
+        grid += `<text x="${PAD - 5}" y="${sy(v) + 3}" text-anchor="end" font-family="Space Mono" font-size="9" fill="#7986cb">${v}</text>`;
+      }
+    }
     return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
-      <line x1="${PAD}" y1="${H-PAD}" x2="${W-PAD}" y2="${H-PAD}" stroke="#555a7a" stroke-width="1"/>
-      <line x1="${PAD}" y1="${PAD}" x2="${PAD}" y2="${H-PAD}" stroke="#555a7a" stroke-width="1"/>
+      ${grid}
       <path d="${path.trim()}" fill="none" stroke="${stroke}" stroke-width="3"/>
     </svg>`;
   }
 
+  function setPlaybackEnabled(on) { playBtn.disabled = !on; replayBtn.disabled = !on; }
+
   function newMatchItem() {
     stopPlayback();
+    setPlaybackEnabled(false);
     matchFeedbackEl.classList.add('hidden');
     nextItemBtn.classList.add('hidden');
     matchResolved = false;
@@ -750,7 +829,7 @@
     weatherBadge.textContent = '—'; clockReadout.textContent = 'Hour 0';
 
     let item = null;
-    for (let tries = 0; tries < 20 && !item; tries++) {
+    for (let tries = 0; tries < 40 && !item; tries++) {
       const rng = SM.makeRng(Date.now() ^ (Math.random() * 1e9) ^ tries);
       const forecast = SM.generateForecast(rng, { numSegments: 1 + Math.floor(rng() * 3) });
       const key = SM.pointsKey(SM.forecastPoints(forecast));
@@ -774,13 +853,21 @@
   function pickMatchChoice(i, el) {
     if (matchResolved) return;
     const choice = currentMatchItem.choices[i];
-    if (matchFirstPickCorrect === null) matchFirstPickCorrect = choice.isCorrect;
+    // Score each round exactly once, on the very first pick — later
+    // retries after a wrong pick neither add nor subtract again.
+    let medalResult = null;
+    if (matchFirstPickCorrect === null) {
+      matchFirstPickCorrect = choice.isCorrect;
+      medalResult = SM.recordAttempt(choice.isCorrect);
+      refreshScoreDisplay();
+    }
 
     if (choice.isCorrect) {
       matchResolved = true;
+      setPlaybackEnabled(true);
       el.classList.add('correct-pick');
-      const { earnedNewMedal, newMedal } = SM.recordAttempt(matchFirstPickCorrect);
-      refreshScoreDisplay();
+      const earnedNewMedal = medalResult && medalResult.earnedNewMedal;
+      const newMedal = medalResult && medalResult.newMedal;
       matchFeedbackEl.classList.remove('hidden');
       matchFeedbackEl.textContent = matchFirstPickCorrect
         ? 'Correct on the first try! Watch it play out below.'
@@ -793,8 +880,6 @@
     } else {
       el.classList.add('wrong-pick');
       el.classList.add('resolved');
-      SM.recordAttempt(false);
-      refreshScoreDisplay();
       matchFeedbackEl.classList.remove('hidden');
       matchFeedbackEl.textContent = SM.RULE_FEEDBACK[choice.rule] || 'Not quite — look again.';
     }
@@ -807,6 +892,7 @@
   renderSegmentRows();
   renderExplorerAtRest();
   setMode('explorer');
+  requestAnimationFrame(refreshLinkLine);
 })();
 </script>
 </body>
