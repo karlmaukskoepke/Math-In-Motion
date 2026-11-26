@@ -29,6 +29,10 @@
          snowModel.js at startup so the plot keeps unit squares. */
       --hours: 12;
       --depth: 15;
+      /* Snow fill under a traced graph (Phase 1A.2, Section 3). Translucent
+         so the gridlines show through. */
+      --snow-fill: rgba(232, 240, 255, 0.5);
+      --snow-edge: #ffffff;
     }
     html[data-theme="light"] {
       --bg:        #f4f5fa;
@@ -41,6 +45,9 @@
       --text:      #1a1d27;
       --muted:     #5c6bc0;
       --border:    #d0d3e6;
+      /* pure white vanishes on the light page: ice-blue with a blue-gray edge */
+      --snow-fill: rgba(150, 190, 232, 0.45);
+      --snow-edge: #6f86a8;
     }
     body { transition: background 0.2s, color 0.2s; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -92,10 +99,8 @@
     #sceneWrap { position: relative; flex: 1; min-height: 0; border-radius: 10px; overflow: hidden; background: #0d1430; }
     #sceneSvg, #flakeCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
     #flakeCanvas { pointer-events: none; }
-    #cloudGroup { transition: opacity 1s ease, transform 1.4s ease, fill 1s ease; }
-    #sunGroup   { transition: opacity 0.8s ease, transform 1.2s ease; }
-    #moonGroup  { transition: opacity 0.8s ease; }
-    .hillSnow   { transition: opacity 0.4s linear; }
+    /* Sky, sun, clouds and colors follow the timeline continuously
+       (snowModel skyLevel / cloudLevel), so they need no CSS transitions. */
     .weather-badge {
       font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--muted);
       text-align: center; min-height: 1.2em;
@@ -103,6 +108,7 @@
 
     /* ── TIMELINE SLIDER (replaces the old "Hour N" bar) ── */
     .timeline {
+      position: relative;
       background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
       padding: 6px 12px 4px; display: flex; flex-direction: column; gap: 2px;
     }
@@ -136,6 +142,14 @@
     .tl-ticks { position: absolute; left: 9px; right: 9px; top: 18px; height: 16px; pointer-events: none; }
     .tl-tick { position: absolute; top: 0; width: 1px; height: 4px; background: var(--muted); opacity: 0.6; transform: translateX(-0.5px); }
     .tl-tick.major { height: 6px; opacity: 1; }
+    /* Arrow-key hint: shows on hover, touch or keyboard focus, then fades. */
+    .tl-hint {
+      position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%); z-index: 20;
+      background: var(--surface); color: var(--text); border: 1px solid var(--accent4); border-radius: 7px;
+      padding: 5px 12px; font-size: 16px; line-height: 1.3; white-space: nowrap; box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+      opacity: 0; pointer-events: none; transition: opacity 0.25s;
+    }
+    .tl-hint.show { opacity: 1; }
     .tl-tick span { position: absolute; top: 6px; left: 0; transform: translateX(-50%); font-family: 'Space Mono', monospace; font-size: 0.62rem; color: var(--muted); }
 
     /* ── PLAYBACK CONTROLS ── */
@@ -248,13 +262,23 @@
       flex: 1; font-size: 0.95rem; line-height: 1.35; color: var(--text); background: var(--surface2);
       border-radius: 8px; padding: 8px 12px; display: flex; align-items: center; overflow-y: auto;
     }
-    #matchFeedback.hidden, #nextItemBtn.hidden { visibility: hidden; }
+    #matchFeedback.hidden, #nextItemBtn.hidden, #showResultBtn.hidden { visibility: hidden; }
+    #matchFeedback.is-right { box-shadow: inset 4px 0 0 var(--accent3); }
+    #matchFeedback.is-wrong { box-shadow: inset 4px 0 0 var(--accent2); }
+    #showResultBtn { align-self: center; padding: 8px 14px; font-size: 0.8rem; }
+    /* After the pick: the other three gray out; the chosen one gets a
+       neutral highlight until the verdict colors it. */
+    .match-choice { transition: opacity 0.25s, border-color 0.15s; }
+    .match-choice.dimmed { opacity: 0.3; pointer-events: none; }
+    .match-choice.your-pick { border-color: var(--text); border-style: dashed; }
+    .match-choice.answer-was { opacity: 1; }
+    .match-ghost { position: fixed; z-index: 60; pointer-events: none; transform-origin: 0 0; margin: 0; background: var(--surface); }
 
     /* ── LINK LINE (stake ↔ graph) ── */
     #linkLineSvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
 
     @media (prefers-reduced-motion: reduce) {
-      #cloudGroup, #sunGroup, #moonGroup, .hillSnow { transition: none !important; }
+      .tl-hint, .match-choice { transition: none !important; }
     }
   </style>
 </head>
@@ -305,6 +329,7 @@
           <div id="matchBox"><div id="matchChoices"></div></div>
           <div id="matchFooter">
             <div id="matchFeedback" class="hidden"></div>
+            <button class="hdr-btn hidden" id="showResultBtn" type="button">Show result</button>
             <button class="play-btn hidden" id="nextItemBtn" type="button">Next →</button>
           </div>
         </div>
@@ -323,12 +348,13 @@
             <span class="tl-lock" id="tlLock" hidden>🔒 after you pick</span>
           </div>
           <div class="tl-track">
-            <input type="range" id="timeSlider" min="0" max="6" step="0.01" value="0" aria-label="Time in hours">
+            <input type="range" id="timeSlider" min="0" max="6" step="0.01" value="0" aria-label="Time in hours" aria-describedby="tlHint">
             <div class="tl-ticks" id="tlTicks"></div>
           </div>
+          <div class="tl-hint" id="tlHint" role="note">← → move 1 hour · Shift + ← → move ¼ hour</div>
         </div>
         <div class="playback-row">
-          <button class="play-btn" id="playBtn" type="button">▶ Play</button>
+          <button class="play-btn" id="playBtn" type="button" title="Play the story. On the slider: ← → move 1 hour · Shift + ← → move ¼ hour">▶ Play</button>
           <button class="hdr-btn" id="replayBtn" type="button">↻ Replay</button>
           <select class="speed-select" id="speedSelect" aria-label="Playback speed">
             <option value="slow">Slow</option>
@@ -356,6 +382,8 @@
   //   ?hours=10 ?depth=12      preview another graph scale (not saved)
   //   ?tile=2x2 | 1x4          force the Match grid layout
   //   ?birds=soon              first bird visit after ~1 second (for review)
+  //   ?scene=night | day       force the scene type
+  //   ?flavor=soon | plane | shooting | birds   a flavor event after ~1 second
   const URLP = (function () {
     const q = new URLSearchParams(location.search);
     const num = k => (q.has(k) && q.get(k) !== '' && !isNaN(+q.get(k)) ? +q.get(k) : null);
@@ -368,7 +396,8 @@
     }
     return { mode: q.get('mode'), level: num('level'), seed: num('seed'), start: num('start'), segs,
       steps: q.get('steps') === '1', story: q.get('story') === '1', at: q.get('at'), theme: q.get('theme'), reset: q.get('reset') === '1',
-      hours: num('hours'), depth: num('depth'), tile: q.get('tile'), birdsSoon: q.get('birds') === 'soon' };
+      hours: num('hours'), depth: num('depth'), tile: q.get('tile'), birdsSoon: q.get('birds') === 'soon',
+      scene: ['night', 'day'].includes(q.get('scene')) ? q.get('scene') : null, flavor: q.get('flavor') };
   })();
 
   // The model at this visit's scale (default 12 h x 15 in, from snowModel.js).
@@ -436,7 +465,10 @@
     explorerToggles.classList.toggle('hidden', mode === 'match');
     document.getElementById('storyText').classList.toggle('hidden', mode === 'explorer' && !document.getElementById('toggleStory').checked);
     if (mode === 'match') { updateLinkLine(null); newMatchItem(); }
-    else { setPlaybackEnabled(true); renderExplorerAtRest(); }
+    else {
+      scene.overlay = null; scene.type = explorerSceneType;
+      setPlaybackEnabled(true); renderExplorerAtRest();
+    }
   }
   modeExplorerBtn.onclick = () => setMode('explorer');
   modeMatchBtn.onclick = () => setMode('match');
@@ -525,6 +557,7 @@
   let chartTextColor = getTheme() === 'light' ? '#1a1d27' : '#ffffff';
   // Light mode needed noticeably darker gridlines to be readable on white.
   const gridColor = () => getTheme() === 'light' ? 'rgba(40,50,120,0.30)' : 'rgba(160,180,255,0.28)';
+  const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const runBlue = getComputedStyle(document.documentElement).getPropertyValue('--run-blue').trim() || '#1A56DB';
   const riseOrange = getComputedStyle(document.documentElement).getPropertyValue('--rise-orange').trim() || '#E07B00';
 
@@ -590,6 +623,8 @@
       { label: 'depth', data: [], borderColor: chartTextColor, backgroundColor: 'transparent', borderWidth: 2, pointRadius: 0, tension: 0 },
       { label: 'run', data: [], showLine: true, borderColor: runBlue, backgroundColor: 'transparent', borderWidth: 2, pointRadius: 0, borderDash: [5,3], tension: 0 },
       { label: 'rise', data: [], showLine: true, borderColor: riseOrange, backgroundColor: 'transparent', borderWidth: 2, pointRadius: 0, borderDash: [5,3], tension: 0 },
+      // Snow fill under the traced line (drawn first, so it sits beneath).
+      { label: 'snow', data: [], borderColor: cssVar('--snow-edge'), backgroundColor: cssVar('--snow-fill'), borderWidth: 1.5, pointRadius: 0, tension: 0, fill: 'origin' },
     ]},
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
@@ -627,6 +662,8 @@
     chart.options.scales.y.ticks.color = chartTextColor;
     chart.options.scales.x.grid.color = gridColor();
     chart.options.scales.y.grid.color = gridColor();
+    chart.data.datasets[3].borderColor = cssVar('--snow-edge');
+    chart.data.datasets[3].backgroundColor = cssVar('--snow-fill');
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -655,13 +692,40 @@
 
   let L = null;          // current SM.sceneLayout()
   let el = {};           // refs to dynamic scene parts, rebuilt with the scene
-  const scene = { forecast: null, hour: 0, neutral: false, depth: 0, tier: 0, weather: 'none' };
+  // type: 'night' | 'day' (Section 4). overlay: the Match reveal (Section 2).
+  const scene = { forecast: null, hour: 0, neutral: false, depth: 0, tier: 0, weather: 'none', type: 'night', sun: 0, bright: false, overlay: null };
+  // Explorer has no seed: pick day or night once per visit and keep it
+  // while the student edits (?scene= forces either).
+  const explorerSceneType = URLP.scene || (Math.random() < 0.5 ? 'night' : 'day');
 
   function svgEl(tag, attrs, parent) {
     const n = document.createElementNS(SVGNS, tag);
     for (const k in attrs) n.setAttribute(k, attrs[k]);
     if (parent) parent.appendChild(n);
     return n;
+  }
+
+  // ── Scene palettes (Phase 1A.2, Section 4) ──
+  // A night scene sits at `night` and brightens toward `nightLit` as the sun
+  // rises. A day scene runs clear → overcast with the clouds, and → sunny
+  // with the sun. Every backdrop stays a mid/dark tone so the white top of
+  // the snow keeps at least 3:1 contrast against it.
+  const PALETTES = {
+    night:       { sky0: '#0b1230', sky1: '#1b2752', sky2: '#2d3b6a', hillFar: '#2a3762', hillNear: '#243152', tree: '#27493f', yard0: '#1c2540', yard1: '#111727', ground0: '#6e4d33', ground1: '#3b291b', cloudSnow: '#7d87ac', cloudCloudy: '#aab3d2' },
+    nightLit:    { sky0: '#3f78c0', sky1: '#86b6e6', sky2: '#f3d6aa', hillFar: '#6f86ad', hillNear: '#55709a', tree: '#3c6b56', yard0: '#4a5b7c', yard1: '#36435d', ground0: '#8f6646', ground1: '#5c402b', cloudSnow: '#c4ccdc', cloudCloudy: '#dde3ee' },
+    dayClear:    { sky0: '#5f9ad8', sky1: '#9cc6ee', sky2: '#d3e6f6', hillFar: '#7f9cc0', hillNear: '#6788aa', tree: '#4a7a60', yard0: '#5a6c8c', yard1: '#465673', ground0: '#8f6646', ground1: '#5c402b', cloudSnow: '#b9c2d1', cloudCloudy: '#dfe4ec' },
+    dayOvercast: { sky0: '#8794aa', sky1: '#a6b1c3', sky2: '#c2cad7', hillFar: '#8492a9', hillNear: '#6f7f98', tree: '#4d6c5e', yard0: '#59667e', yard1: '#465166', ground0: '#7f5c41', ground1: '#523a28', cloudSnow: '#9ba5b8', cloudCloudy: '#cdd3de' },
+    daySunny:    { sky0: '#2f86de', sky1: '#79b6ef', sky2: '#cfe6f8', hillFar: '#7c9ac2', hillNear: '#5f83ab', tree: '#477d5d', yard0: '#5b6f92', yard1: '#465876', ground0: '#97704d', ground1: '#614530', cloudSnow: '#ffffff', cloudCloudy: '#ffffff' },
+  };
+  const rgbOf = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+  function mixHex(a, b, t) {
+    const A = rgbOf(a), B = rgbOf(b);
+    return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join('');
+  }
+  function mixPal(a, b, t) { const o = {}; for (const k in a) o[k] = mixHex(a[k], b[k], t); return o; }
+  function scenePalette(type, sun, cloud) {
+    if (type === 'night') return mixPal(PALETTES.night, PALETTES.nightLit, sun);
+    return mixPal(mixPal(PALETTES.dayClear, PALETTES.dayOvercast, cloud), PALETTES.daySunny, sun);
   }
 
   function buildScene() {
@@ -678,37 +742,45 @@
     const rng = SM.makeRng(20261126); // fixed seed: the texture looks the same every time
     const R = (a, b) => a + rng() * (b - a);
     const S = Math.min(w, h);
+    const sx = w * STAKE_X;
+    const STAKE_HALF = 4;          // the stake is 8 px wide
+    const ox = sx + STAKE_HALF;    // overlay hour 0 = the stake's right edge (the stake is the y-axis)
+    const ovW = SM.MAX_HOURS * L.pxPerInch;
     let defs = `
       <linearGradient id="skyG" x1="0" y1="0" x2="0" y2="${fgTop}" gradientUnits="userSpaceOnUse">
-        <stop offset="0" stop-color="#0b1230"/><stop offset="0.6" stop-color="#1b2752"/><stop offset="1" stop-color="#2d3b6a"/></linearGradient>
+        <stop class="skyStop" offset="0" stop-color="#0b1230"/><stop class="skyStop" offset="0.6" stop-color="#1b2752"/><stop class="skyStop" offset="1" stop-color="#2d3b6a"/></linearGradient>
       <radialGradient id="moonGlow"><stop offset="0" stop-color="#e9efff" stop-opacity="0.45"/><stop offset="1" stop-color="#e9efff" stop-opacity="0"/></radialGradient>
       <radialGradient id="sunGlow"><stop offset="0" stop-color="#ffe9a0" stop-opacity="0.75"/><stop offset="1" stop-color="#ffd740" stop-opacity="0"/></radialGradient>
       <linearGradient id="yardG" x1="0" y1="${fgTop}" x2="0" y2="${groundY}" gradientUnits="userSpaceOnUse">
-        <stop offset="0" stop-color="#1c2540"/><stop offset="1" stop-color="#111727"/></linearGradient>
+        <stop class="yardStop" offset="0" stop-color="#1c2540"/><stop class="yardStop" offset="1" stop-color="#111727"/></linearGradient>
       <linearGradient id="groundG" x1="0" y1="${groundY}" x2="0" y2="${h}" gradientUnits="userSpaceOnUse">
-        <stop offset="0" stop-color="#6e4d33"/><stop offset="1" stop-color="#3b291b"/></linearGradient>
+        <stop class="groundStop" offset="0" stop-color="#6e4d33"/><stop class="groundStop" offset="1" stop-color="#3b291b"/></linearGradient>
       <linearGradient id="snowG" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d9e3f5"/></linearGradient>
       <pattern id="snowTex" width="22" height="18" patternUnits="userSpaceOnUse">
         <circle cx="3" cy="4" r="0.8" fill="#aebfe0" opacity="0.55"/><circle cx="14" cy="11" r="0.7" fill="#aebfe0" opacity="0.5"/>
-        <circle cx="9" cy="15" r="0.6" fill="#ffffff" opacity="0.9"/><circle cx="19" cy="3" r="0.6" fill="#ffffff" opacity="0.8"/></pattern>`;
+        <circle cx="9" cy="15" r="0.6" fill="#ffffff" opacity="0.9"/><circle cx="19" cy="3" r="0.6" fill="#ffffff" opacity="0.8"/></pattern>
+      <clipPath id="ovSnowClip"><rect x="0" y="0" width="${ox}" height="${h}"/><rect x="${ox + ovW}" y="0" width="${Math.max(0, w - ox - ovW)}" height="${h}"/></clipPath>`;
 
     // Sky, stars, moon, sun, clouds (top band)
-    let sky = `<rect x="0" y="0" width="${w}" height="${fgTop + 2}" fill="url(#skyG)"/>`;
+    let sky = `<rect x="0" y="0" width="${w}" height="${fgTop + 2}" fill="url(#skyG)"/><g id="stars">`;
     for (let i = 0; i < Math.round(w / 18); i++) {
       sky += `<circle cx="${R(0, w).toFixed(1)}" cy="${R(4, skyBottom * 0.95).toFixed(1)}" r="${R(0.4, 1.1).toFixed(2)}" fill="#ffffff" opacity="${R(0.25, 0.7).toFixed(2)}"/>`;
     }
+    sky += '</g>';
     const mr = S * 0.035;
-    sky += `<g id="moonGroup"><circle cx="${w * 0.36}" cy="${h * 0.1}" r="${mr * 2.6}" fill="url(#moonGlow)"/>
-      <circle cx="${w * 0.36}" cy="${h * 0.1}" r="${mr}" fill="#eef2ff"/><circle cx="${w * 0.36 + mr * 0.35}" cy="${h * 0.1 - mr * 0.15}" r="${mr * 0.85}" fill="#1b2752" opacity="0.18"/></g>`;
-    const sr = S * 0.055;
-    sky += `<g id="sunGroup" style="opacity:0"><circle cx="${w * 0.6}" cy="${h * 0.13}" r="${sr * 2.3}" fill="url(#sunGlow)"/>
-      <circle cx="${w * 0.6}" cy="${h * 0.13}" r="${sr}" fill="#ffd740"/></g>`;
+    sky += `<g id="moonGroup"><circle cx="${w * 0.36}" cy="${h * 0.09}" r="${mr * 2.6}" fill="url(#moonGlow)"/>
+      <circle cx="${w * 0.36}" cy="${h * 0.09}" r="${mr}" fill="#eef2ff"/><circle cx="${w * 0.36 + mr * 0.35}" cy="${h * 0.09 - mr * 0.15}" r="${mr * 0.85}" fill="#1b2752" opacity="0.18"/></g>`;
+    // The sun sits at its noon spot; at night it rises from behind the
+    // hills (translateY from sunRise px below, see applyScene).
+    const sr = S * 0.05, sunY = h * 0.1;
+    sky += `<g id="sunGroup" style="opacity:0"><circle cx="${w * 0.62}" cy="${sunY}" r="${sr * 2.3}" fill="url(#sunGlow)"/>
+      <circle cx="${w * 0.62}" cy="${sunY}" r="${sr}" fill="#ffd740"/></g>`;
     let clouds = '';
-    const puffs = [[0.08, 0.07, 0.11], [0.2, 0.05, 0.08], [0.38, 0.12, 0.12], [0.5, 0.1, 0.07], [0.68, 0.06, 0.12], [0.82, 0.09, 0.09], [0.95, 0.15, 0.1], [0.27, 0.2, 0.09], [0.6, 0.22, 0.1], [0.86, 0.24, 0.08]];
+    const puffs = [[0.08, 0.05, 0.11], [0.2, 0.035, 0.08], [0.38, 0.09, 0.12], [0.5, 0.07, 0.07], [0.68, 0.045, 0.12], [0.82, 0.07, 0.09], [0.95, 0.11, 0.1], [0.27, 0.15, 0.09], [0.6, 0.16, 0.1], [0.86, 0.17, 0.08]];
     for (const [cx, cy, rx] of puffs) {
-      clouds += `<ellipse cx="${(cx * w).toFixed(1)}" cy="${(cy * h).toFixed(1)}" rx="${(rx * w).toFixed(1)}" ry="${(rx * w * 0.32).toFixed(1)}"/>`;
-      clouds += `<ellipse cx="${((cx + rx * 0.45) * w).toFixed(1)}" cy="${(cy * h - rx * w * 0.18).toFixed(1)}" rx="${(rx * w * 0.6).toFixed(1)}" ry="${(rx * w * 0.28).toFixed(1)}"/>`;
+      clouds += `<ellipse cx="${(cx * w).toFixed(1)}" cy="${(cy * h).toFixed(1)}" rx="${(rx * w).toFixed(1)}" ry="${(rx * w * 0.3).toFixed(1)}"/>`;
+      clouds += `<ellipse cx="${((cx + rx * 0.45) * w).toFixed(1)}" cy="${(cy * h - rx * w * 0.16).toFixed(1)}" rx="${(rx * w * 0.6).toFixed(1)}" ry="${(rx * w * 0.26).toFixed(1)}"/>`;
     }
     sky += `<g id="cloudGroup" style="opacity:0">${clouds}</g>`;
 
@@ -720,20 +792,20 @@
       return d + ` L ${w} ${fgTop + 2} Z`;
     };
     const far = hill(skyBottom + band * 0.45, band * 0.35, 0.6), near = hill(skyBottom + band * 0.78, band * 0.22, 2.1);
-    let hills = `<path d="${far}" fill="#2a3762"/><path class="hillSnow" d="${far}" fill="#dfe8ff" opacity="0"/>`;
+    let hills = `<path id="hillFar" d="${far}" fill="#2a3762"/><path class="hillSnow" d="${far}" fill="#dfe8ff" opacity="0"/>`;
     for (const [tx, ty, th] of [[0.5, 0.62, 0.55], [0.56, 0.66, 0.42], [0.34, 0.7, 0.45]]) {
       const x = tx * w, y = skyBottom + band * ty, hh = band * th;
       hills += `<g opacity="0.75"><rect x="${x - 1.2}" y="${y - hh * 0.25}" width="2.4" height="${hh * 0.3}" fill="#3b3530"/>
-        <polygon points="${x},${y - hh} ${x - hh * 0.32},${y - hh * 0.2} ${x + hh * 0.32},${y - hh * 0.2}" fill="#27493f"/></g>`;
+        <polygon class="farTree" points="${x},${y - hh} ${x - hh * 0.32},${y - hh * 0.2} ${x + hh * 0.32},${y - hh * 0.2}" fill="#27493f"/></g>`;
     }
-    hills += `<path d="${near}" fill="#243152"/><path class="hillSnow" d="${near}" fill="#e8efff" opacity="0"/>`;
+    hills += `<path id="hillNear" d="${near}" fill="#243152"/><path class="hillSnow" d="${near}" fill="#e8efff" opacity="0"/>`;
 
     // Foreground: dark night-yard backdrop so the white snow top reads clearly
     let fg = `<rect x="0" y="${fgTop}" width="${w}" height="${groundY - fgTop + 1}" fill="url(#yardG)"/>`;
 
     // Bird feeder on a tall thin pole (drawn before the snow so the pole's
     // base gets buried; the tray sits above the MAX_DEPTH line).
-    const px = w * FEEDER_X, poleTop = fgTop - h * 0.1, pw = Math.max(3, S * 0.009), tw = S * 0.15;
+    const px = w * FEEDER_X, poleTop = fgTop - h * 0.08, pw = Math.max(3, S * 0.009), tw = S * 0.14;
     fg += `<rect x="${px - pw / 2}" y="${poleTop}" width="${pw}" height="${groundY - poleTop + 6}" fill="#3d4352"/>
       <rect x="${px - pw / 2}" y="${poleTop}" width="${pw * 0.35}" height="${groundY - poleTop + 6}" fill="#596075"/>
       <rect x="${px - tw / 2}" y="${poleTop - 4}" width="${tw}" height="5" rx="1.5" fill="#7a5638"/>
@@ -762,34 +834,71 @@
       ground += `<path d="${tuft}" stroke="${rng() < 0.5 ? '#8f8b57' : '#a39a63'}" stroke-width="1.1" fill="none" stroke-linecap="round"/>`;
     }
 
-    // Snow layer: flat-topped, full width, at exactly the current depth
-    const snow = `<rect id="snowRect" x="0" y="${groundY}" width="${w}" height="0" fill="url(#snowG)"/>
+    // Snow layer: flat-topped, full width, at exactly the current depth.
+    // While the Match overlay is up it is clipped to the strips left and
+    // right of the overlay (inside the overlay the snow fill shows depth
+    // over time instead).
+    const snow = `<g id="snowLayerGroup"><rect id="snowRect" x="0" y="${groundY}" width="${w}" height="0" fill="url(#snowG)"/>
       <rect id="snowTexRect" x="0" y="${groundY}" width="${w}" height="0" fill="url(#snowTex)"/>
-      <line id="snowTopLine" x1="0" x2="${w}" y1="${groundY}" y2="${groundY}" stroke="#ffffff" stroke-width="1.6" opacity="0"/>`;
+      <line id="snowTopLine" x1="0" x2="${w}" y1="${groundY}" y2="${groundY}" stroke="#ffffff" stroke-width="1.6" opacity="0"/></g>`;
+
+    // Match overlay (Section 2): the chosen graph laid over the foreground
+    // at the scene's own scale — hour 0 on the stake, one hour as wide as
+    // one inch is tall, 0 on the ground line, MAX_DEPTH at the stake top.
+    const X = hr => ox + hr * L.pxPerInch;
+    let ov = `<g id="overlay" style="display:none">
+      <path id="ovFill" fill="url(#snowG)"/><path id="ovFillTex" fill="url(#snowTex)"/>
+      <path id="ovEdge" fill="none" stroke="#ffffff" stroke-width="1.6"/>
+      <rect id="ovSplit" x="0" y="${fgTop}" width="0" height="${groundY - fgTop}" fill="#ff4f8b" opacity="0.16" style="display:none"/><g id="ovGrid">`;
+    for (let hr = 0; hr <= SM.MAX_HOURS; hr++) ov += `<line x1="${X(hr)}" x2="${X(hr)}" y1="${L.yForDepth(SM.MAX_DEPTH)}" y2="${groundY}" stroke="#8ea2c8" stroke-width="0.7" opacity="${hr % SM.LABEL_EVERY === 0 ? 0.7 : 0.4}"/>`;
+    for (let inch = 0; inch <= SM.MAX_DEPTH; inch++) ov += `<line x1="${ox}" x2="${X(SM.MAX_HOURS)}" y1="${L.yForDepth(inch)}" y2="${L.yForDepth(inch)}" stroke="#8ea2c8" stroke-width="0.7" opacity="${inch % SM.LABEL_EVERY === 0 ? 0.7 : 0.4}"/>`;
+    const lfs = Math.max(12, Math.min(16, (h - groundY) * 0.8));
+    for (const hr of SM.axisLabels(SM.MAX_HOURS)) {
+      if (hr === 0) continue; // hour 0 is the stake itself
+      ov += `<text x="${X(hr)}" y="${(groundY + (h - groundY) * 0.5 + lfs * 0.35).toFixed(1)}" text-anchor="middle" font-family="Space Mono" font-size="${lfs.toFixed(1)}" font-weight="700" fill="#ffffff" stroke="#1c2541" stroke-width="2.4" stroke-linejoin="round" paint-order="stroke">${hr}</text>`;
+    }
+    ov += `</g>
+      <path id="ovChosenHalo" fill="none" stroke="#1c2541" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"/>
+      <path id="ovChosen" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+      <path id="ovTrueHalo" fill="none" stroke="#1c2541" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+      <path id="ovTrue" fill="none" stroke="#ff4f8b" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+      <line id="ovLink" stroke="#ffd740" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <circle id="ovDot" r="5.5" fill="#ffd740" stroke="#1c2541" stroke-width="1.5"/>
+    </g>`;
 
     // Measuring stake (drawn over the snow so it stays readable when buried)
-    const sx = w * STAKE_X, sTop = L.yForDepth(SM.MAX_DEPTH) - 8;
+    const sTop = L.yForDepth(SM.MAX_DEPTH) - 8;
     let stake = `<rect x="${sx - 4}" y="${sTop}" width="8" height="${groundY - sTop + 10}" rx="1" fill="#8a5a3a" stroke="#5e3c26" stroke-width="1"/>`;
     const labels = new Set(SM.axisLabels(SM.MAX_DEPTH));
     const fs = Math.max(11, Math.min(14, L.pxPerInch * 1.15));
     for (let inch = 0; inch <= SM.MAX_DEPTH; inch++) {
       const y = L.yForDepth(inch).toFixed(2);
       const major = labels.has(inch);
-      const x2 = sx + (major ? 13 : 7);
-      stake += `<line class="stake-mark" data-inch="${inch}" x1="${sx - 5}" x2="${x2}" y1="${y}" y2="${y}" stroke="#1c2541" stroke-width="3.2"/>`;
-      stake += `<line x1="${sx - 5}" x2="${x2}" y1="${y}" y2="${y}" stroke="#ffffff" stroke-width="1.3"/>`;
-      if (major) stake += `<text x="${sx + 17}" y="${(+y + fs * 0.36).toFixed(1)}" font-family="Space Mono" font-size="${fs.toFixed(1)}" font-weight="700" fill="#ffffff" stroke="#1c2541" stroke-width="2.2" stroke-linejoin="round" paint-order="stroke">${inch}</text>`;
+      // Numbers sit to the LEFT of the stake (like a y-axis), so nothing
+      // covers the graph that the Match overlay lays to its right.
+      const x1 = sx - (major ? 12 : 7), x2 = sx + STAKE_HALF + 1;
+      stake += `<line class="stake-mark" data-inch="${inch}" x1="${x1}" x2="${x2}" y1="${y}" y2="${y}" stroke="#1c2541" stroke-width="3.2"/>`;
+      stake += `<line x1="${x1}" x2="${x2}" y1="${y}" y2="${y}" stroke="#ffffff" stroke-width="1.3"/>`;
+      if (major) stake += `<text x="${sx - 15}" y="${(+y + fs * 0.36).toFixed(1)}" text-anchor="end" font-family="Space Mono" font-size="${fs.toFixed(1)}" font-weight="700" fill="#ffffff" stroke="#1c2541" stroke-width="2.2" stroke-linejoin="round" paint-order="stroke">${inch}</text>`;
     }
     stake += `<circle id="stakeAnchor" cx="${sx}" cy="${groundY}" r="4" fill="#ffd740" stroke="#1c2541" stroke-width="1"/>`;
 
-    sceneSvg.innerHTML = `<defs>${defs}</defs>${sky}${hills}${fg}${ground}${snow}${stake}<g id="birdLayer"></g>`;
+    sceneSvg.innerHTML = `<defs>${defs}</defs>${sky}${hills}${fg}${ground}${snow}${ov}${stake}<g id="birdLayer"></g>`;
+    const q = s => sceneSvg.querySelector(s);
     el = {
-      snowRect: sceneSvg.querySelector('#snowRect'), snowTex: sceneSvg.querySelector('#snowTexRect'),
-      snowTop: sceneSvg.querySelector('#snowTopLine'), anchor: sceneSvg.querySelector('#stakeAnchor'),
-      clouds: sceneSvg.querySelector('#cloudGroup'), sun: sceneSvg.querySelector('#sunGroup'), moon: sceneSvg.querySelector('#moonGroup'),
-      hillSnow: sceneSvg.querySelectorAll('.hillSnow'), birdLayer: sceneSvg.querySelector('#birdLayer'),
+      snowGroup: q('#snowLayerGroup'), snowRect: q('#snowRect'), snowTex: q('#snowTexRect'),
+      snowTop: q('#snowTopLine'), anchor: q('#stakeAnchor'),
+      clouds: q('#cloudGroup'), sun: q('#sunGroup'), moon: q('#moonGroup'), stars: q('#stars'),
+      skyStops: sceneSvg.querySelectorAll('.skyStop'), yardStops: sceneSvg.querySelectorAll('.yardStop'),
+      groundStops: sceneSvg.querySelectorAll('.groundStop'), hillFar: q('#hillFar'), hillNear: q('#hillNear'),
+      trees: sceneSvg.querySelectorAll('.farTree'), hillSnow: sceneSvg.querySelectorAll('.hillSnow'),
+      birdLayer: q('#birdLayer'),
       perches: [{ x: px - tw * 0.4, y: poleTop - 4 }, { x: px + tw * 0.4, y: poleTop - 4 }],
       birdScale: Math.max(0.8, S / 360),
+      sunRise: (skyBottom + band * 0.6) - sunY + sr * 1.2, // px below noon: hidden behind the hills
+      ov: q('#overlay'), ovFill: q('#ovFill'), ovFillTex: q('#ovFillTex'), ovEdge: q('#ovEdge'), ovSplit: q('#ovSplit'),
+      ovChosen: q('#ovChosen'), ovChosenHalo: q('#ovChosenHalo'), ovTrue: q('#ovTrue'), ovTrueHalo: q('#ovTrueHalo'),
+      ovLink: q('#ovLink'), ovDot: q('#ovDot'), ovX0: ox, ovW,
     };
     applyScene();
     refreshLinkLine();
@@ -802,20 +911,50 @@
     scene.forecast = forecast; scene.hour = hour; scene.neutral = !!(opts && opts.neutral);
     return applyScene();
   }
+  function paintSky(sun, cloud, snowy) {
+    const P = scenePalette(scene.type, sun, cloud);
+    [P.sky0, P.sky1, P.sky2].forEach((c, i) => el.skyStops[i].setAttribute('stop-color', c));
+    [P.yard0, P.yard1].forEach((c, i) => el.yardStops[i].setAttribute('stop-color', c));
+    [P.ground0, P.ground1].forEach((c, i) => el.groundStops[i].setAttribute('stop-color', c));
+    el.hillFar.setAttribute('fill', P.hillFar); el.hillNear.setAttribute('fill', P.hillNear);
+    el.trees.forEach(tr => tr.setAttribute('fill', P.tree));
+    const night = scene.type === 'night';
+    el.stars.style.opacity = night ? (1 - sun).toFixed(3) : 0;
+    el.moon.style.opacity = night ? (1 - sun).toFixed(3) : 0;
+    el.sun.style.opacity = sun.toFixed(3);
+    // Night: the sun rises from behind the hills. Day: the clouds part.
+    // With reduced motion it fades in place instead of travelling.
+    const rise = night && !prefersReducedMotion ? (1 - sun) * el.sunRise : 0;
+    el.sun.style.transform = `translateY(${rise.toFixed(1)}px)`;
+    el.clouds.style.opacity = cloud.toFixed(3);
+    el.clouds.style.transform = `translateX(${((1 - cloud) * L.width * 0.25).toFixed(1)}px)`;
+    el.clouds.style.fill = mixHex(P.cloudCloudy, P.cloudSnow, snowy);
+
+  }
   function applyScene() {
     const f = scene.forecast;
-    const d = f ? SM.depthAt(f, scene.hour) : 0;
-    const wa = f && !scene.neutral ? SM.weatherAt(f, scene.hour) : null;
+    const t = scene.hour;
+    const d = f ? SM.depthAt(f, t) : 0;
+    const live = !!f && !scene.neutral;
+    const wa = live ? SM.weatherAt(f, t) : null;
     const weather = wa ? wa.seg.weather : 'none';
     const rate = wa ? SM.segmentRate(wa.seg) : 0;
-    scene.depth = d; scene.weather = weather;
+    const sun = live ? SM.skyLevel(f, t) : 0;
+    const cloud = live ? SM.cloudLevel(f, t) : 0;
+    const snowy = live ? SM.blendAt(f, t, s => (s.weather === 'snow' ? 1 : 0)) : 0;
+    scene.depth = d; scene.weather = weather; scene.sun = sun;
     scene.tier = weather === 'snow' ? tierForRate(rate) : 0;
+    scene.bright = scene.type === 'day' || sun > 0.5; // flakes get a cool-gray edge on bright skies
     if (wa && weather === 'snow') weatherBadge.textContent = `❄️ Snowing — ${SM.rateLabel(wa.seg.rise, wa.seg.run, 'snow').replace('snows ', '')}`;
     else if (weather === 'sun') weatherBadge.textContent = d <= 1e-9 ? '☀️ All melted.' : '☀️ Sunny — melting';
     else if (weather === 'cloudy') weatherBadge.textContent = '☁️ Cloudy';
     else weatherBadge.textContent = '—';
     if (!L) return d;
 
+    // Colors: everything brightens with the sun; day scenes go gray under
+    // cloud. Skipped when the sky hasn't changed (most frames mid-storm).
+    const skyKey = `${scene.type}|${sun.toFixed(3)}|${cloud.toFixed(3)}|${snowy.toFixed(3)}|${L.width}x${L.height}`;
+    if (skyKey !== el.skyKey) { el.skyKey = skyKey; paintSky(sun, cloud, snowy); }
     const top = L.yForDepth(d);
     const show = d > 0.02;
     for (const r of [el.snowRect, el.snowTex]) { r.setAttribute('y', top); r.setAttribute('height', Math.max(0, L.groundY - top)); }
@@ -825,15 +964,70 @@
     el.anchor.setAttribute('cy', top);
     const whiten = d / SM.MAX_DEPTH;
     el.hillSnow.forEach(hs => hs.setAttribute('opacity', (0.8 * whiten).toFixed(3)));
-    // Clouds roll in from the distance for snow and cloudy (darker for
-    // snow); the sun rises for melting and the moon fades.
-    const cloudy = weather === 'snow' || weather === 'cloudy';
-    el.clouds.style.opacity = cloudy ? 1 : 0;
-    el.clouds.style.transform = cloudy ? 'translateX(0)' : `translateX(${L.width * 0.25}px)`;
-    el.clouds.style.fill = weather === 'snow' ? '#7d87ac' : '#aab3d2';
-    el.sun.style.opacity = weather === 'sun' ? 1 : 0;
-    el.sun.style.transform = weather === 'sun' ? 'translateY(0)' : `translateY(${L.height * 0.08}px)`;
-    el.moon.style.opacity = weather === 'sun' ? 0 : 1;
+    drawOverlay();
+    return d;
+  }
+
+  // ── Match overlay drawing ──
+  // The true forecast's history is the snow fill (0 → now). The student's
+  // chosen graph is the white ink line. Where the true line leaves the
+  // chosen one it is drawn in pink as the dot reaches it, and the first
+  // piece where they split is shaded.
+  function drawOverlay() {
+    const ov = scene.overlay;
+    if (!ov || !L) {
+      if (el.ov) el.ov.style.display = 'none';
+      if (el.snowGroup) el.snowGroup.removeAttribute('clip-path');
+      return;
+    }
+    el.ov.style.display = '';
+    el.snowGroup.setAttribute('clip-path', 'url(#ovSnowClip)');
+    const X = hr => el.ovX0 + hr * L.pxPerInch, Y = dd => L.yForDepth(dd);
+    const truth = ov.truth, total = SM.forecastTotalHours(truth);
+    const t = Math.max(0, Math.min(total, scene.hour));
+    const corners = SM.forecastPoints(truth).map(p => p.t).filter(hr => hr > 0 && hr < t);
+    const line = [0].concat(corners, [t]).map(hr => `${X(hr).toFixed(2)} ${Y(SM.depthAt(truth, hr)).toFixed(2)}`);
+    const fillD = `M ${X(0)} ${L.groundY} L ${line.join(' L ')} L ${X(t)} ${L.groundY} Z`;
+    el.ovFill.setAttribute('d', t > 0 ? fillD : '');
+    el.ovFillTex.setAttribute('d', t > 0 ? fillD : '');
+    el.ovEdge.setAttribute('d', t > 0 ? 'M ' + line.join(' L ') : '');
+
+    const chosenD = 'M ' + ov.chosen.points.map(p => `${X(p.t).toFixed(2)} ${Y(p.d).toFixed(2)}`).join(' L ');
+    el.ovChosen.setAttribute('d', chosenD); el.ovChosenHalo.setAttribute('d', chosenD);
+
+    const tDraw = ov.revealAll ? total : t;
+    const trueD = divergingPath(truth, ov.chosen.forecast, tDraw, X, Y);
+    el.ovTrue.setAttribute('d', trueD); el.ovTrueHalo.setAttribute('d', trueD);
+
+    const sp = ov.split;
+    if (sp && (ov.revealAll || t > sp.hour)) {
+      let a = 0, i = 0;
+      for (; i < sp.pieceIndex; i++) a += truth.segments[i].hours;
+      const b = a + truth.segments[sp.pieceIndex].hours;
+      el.ovSplit.setAttribute('x', X(a)); el.ovSplit.setAttribute('width', X(b) - X(a));
+      el.ovSplit.style.display = '';
+    } else el.ovSplit.style.display = 'none';
+
+    const dy = Y(SM.depthAt(truth, t));
+    el.ovDot.setAttribute('cx', X(t)); el.ovDot.setAttribute('cy', dy);
+    el.ovLink.setAttribute('x1', el.ovX0 - 8); el.ovLink.setAttribute('x2', X(t));
+    el.ovLink.setAttribute('y1', dy); el.ovLink.setAttribute('y2', dy);
+  }
+  // The true line from hour 0 to `upto`, keeping only the stretches where
+  // it is NOT on the other graph (breakpoints at both graphs' corners, so
+  // each stretch is straight on both).
+  function divergingPath(truth, other, upto, X, Y) {
+    const hrs = new Set([0, upto]);
+    for (const p of SM.forecastPoints(truth)) if (p.t < upto) hrs.add(p.t);
+    for (const p of SM.forecastPoints(other)) if (p.t < upto) hrs.add(p.t);
+    const ts = Array.from(hrs).sort((a, b) => a - b);
+    const off = hr => Math.abs(SM.depthAt(truth, hr) - SM.depthAt(other, hr)) > 1e-6;
+    let d = '';
+    for (let k = 0; k < ts.length - 1; k++) {
+      const a = ts[k], b = ts[k + 1];
+      if (b <= a || (!off(a) && !off(b))) continue;
+      d += `M ${X(a).toFixed(2)} ${Y(SM.depthAt(truth, a)).toFixed(2)} L ${X(b).toFixed(2)} ${Y(SM.depthAt(truth, b)).toFixed(2)} `;
+    }
     return d;
   }
 
@@ -855,6 +1049,72 @@
       sway: (fgLayer ? 10 : 5) * Math.random(), phase: Math.random() * 6.28, landedAt: 0,
     });
   }
+  // ── Flavor events (Phase 1A.2, Section 5) ──
+  // Rare, one at a time, drawn on the snow canvas: a plane (blinking lights
+  // at night, a faint trail by day), a shooting star (night only), or a few
+  // birds crossing the sky (day only). Never in the first 2 seconds; never
+  // with reduced motion (the animation loop doesn't run then).
+  const FLAVOR_MIN_S = 20, FLAVOR_MAX_S = 60;
+  const FLAVOR_KINDS = ['plane', 'shooting', 'birds'];
+  const forcedFlavor = FLAVOR_KINDS.includes(URLP.flavor) ? URLP.flavor : null;
+  const flavorGap = () => (FLAVOR_MIN_S + Math.random() * (FLAVOR_MAX_S - FLAVOR_MIN_S)) * 1000;
+  let nextFlavorAt = performance.now() + (URLP.flavor ? 1000 : Math.max(2000, flavorGap()));
+  let flavor = null;
+  function startFlavor(now) {
+    const kinds = forcedFlavor ? [forcedFlavor] : (scene.type === 'night' && scene.sun < 0.5 ? ['plane', 'shooting'] : ['plane', 'birds']);
+    const kind = kinds[Math.floor(Math.random() * kinds.length)];
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const band = L.fgTop - L.skyBottom;
+    if (kind === 'plane') flavor = { kind, t0: now, dur: 16000, dir, y: L.skyBottom + band * (0.1 + Math.random() * 0.2) };
+    else if (kind === 'shooting') flavor = { kind, t0: now, dur: 900, x0: L.width * (0.45 + Math.random() * 0.45), y0: L.skyBottom * (0.1 + Math.random() * 0.3), dx: -L.width * 0.35, dy: L.skyBottom * 0.45 };
+    else flavor = { kind, t0: now, dur: 9000, dir, y: L.skyBottom * (0.35 + Math.random() * 0.35), n: 2 + Math.floor(Math.random() * 2) };
+  }
+  function drawFlavor(now) {
+    const f = flavor, p = (now - f.t0) / f.dur;
+    if (p >= 1) { flavor = null; nextFlavorAt = now + flavorGap(); return; }
+    const W = L.width, ctx = fctx;
+    ctx.save();
+    if (f.kind === 'plane') {
+      const x = f.dir > 0 ? -30 + (W + 60) * p : W + 30 - (W + 60) * p;
+      const dark = scene.type === 'night' && scene.sun < 0.5;
+      if (!dark) {
+        const g = ctx.createLinearGradient(x, f.y, x - f.dir * W * 0.35, f.y);
+        g.addColorStop(0, 'rgba(255,255,255,0.55)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.strokeStyle = g; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(x - f.dir * 7, f.y); ctx.lineTo(x - f.dir * W * 0.35, f.y); ctx.stroke();
+      }
+      ctx.translate(x, f.y); ctx.scale(f.dir, 1);
+      ctx.fillStyle = dark ? '#151a2e' : '#eef1f6';
+      ctx.beginPath(); ctx.ellipse(0, 0, 7, 1.4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-1, 0); ctx.lineTo(-4, -4.5); ctx.lineTo(-2, -4.5); ctx.lineTo(2, 0); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(-7.5, -3); ctx.lineTo(-6.3, -3); ctx.lineTo(-4.8, 0); ctx.closePath(); ctx.fill();
+      if (dark) {
+        ctx.fillStyle = Math.floor(now / 600) % 2 ? '#ff4545' : '#45ff78';
+        ctx.beginPath(); ctx.arc(-3.5, -4.3, 1.2, 0, Math.PI * 2); ctx.fill();
+        if (Math.floor(now / 200) % 6 === 0) { ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(0.5, -1.2, 1.3, 0, Math.PI * 2); ctx.fill(); }
+      }
+    } else if (f.kind === 'shooting') {
+      const x = f.x0 + f.dx * p, y = f.y0 + f.dy * p;
+      const tp = Math.max(0, p - 0.35);
+      const tx = f.x0 + f.dx * tp, ty = f.y0 + f.dy * tp;
+      const a = p < 0.8 ? 1 : (1 - p) / 0.2;
+      const g = ctx.createLinearGradient(x, y, tx, ty);
+      g.addColorStop(0, `rgba(255,255,255,${(0.95 * a).toFixed(2)})`); g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.strokeStyle = g; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(tx, ty); ctx.stroke();
+    } else {
+      ctx.strokeStyle = '#2c3340'; ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+      for (let k = 0; k < f.n; k++) {
+        const bx = (f.dir > 0 ? -20 + (W + 40) * p : W + 20 - (W + 40) * p) - f.dir * k * 16;
+        const by = f.y + k * 7 + Math.sin(now / 400 + k) * 2;
+        const flap = Math.sin(now / 110 + k * 1.7) * 3;
+        ctx.beginPath(); ctx.moveTo(bx - 5, by - flap); ctx.quadraticCurveTo(bx - 2, by - 1, bx, by + 1);
+        ctx.quadraticCurveTo(bx + 2, by - 1, bx + 5, by - flap); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
   let lastFrame = performance.now(), lastTier = 0;
   function frame(now) {
     const dt = Math.min(0.05, (now - lastFrame) / 1000);
@@ -873,7 +1133,11 @@
       const surface = L.yForDepth(scene.depth);
       const fadeTop = L.skyBottom, fadeBottom = L.fgTop;
       fctx.clearRect(0, 0, L.width, L.height);
-      fctx.fillStyle = '#ffffff';
+      if (!flavor && now >= nextFlavorAt) startFlavor(now);
+      if (flavor) drawFlavor(now);
+      // On bright skies white flakes vanish: give them a cool-gray edge.
+      fctx.fillStyle = scene.bright ? '#f6f8fc' : '#ffffff';
+      fctx.strokeStyle = 'rgba(92,108,140,0.6)'; fctx.lineWidth = 0.7;
       for (let i = flakes.length - 1; i >= 0; i--) {
         const f = flakes[i];
         let alpha = f.layer === 'fg' ? 0.95 : 0.7, sx = 1, sy = 1;
@@ -897,6 +1161,7 @@
         fctx.beginPath();
         fctx.ellipse(f.x, f.y, f.r * sx, f.r * sy, 0, 0, Math.PI * 2);
         fctx.fill();
+        if (scene.bright) fctx.stroke();
       }
       fctx.globalAlpha = 1;
       updateBirds(now, dt);
@@ -1037,7 +1302,7 @@
   // The forecast the slider is scrubbing right now (null = nothing to scrub).
   function activeForecast() {
     if (mode === 'explorer') return currentExplorerForecast();
-    return currentMatchItem && matchResolved ? currentMatchItem.correct : null;
+    return currentMatchItem && matchPhase !== 'pick' ? currentMatchItem.correct : null;
   }
   function seek(t) {
     const f = activeForecast();
@@ -1047,6 +1312,8 @@
     const d = setScene(f, playbackHour);
     updateLinkLine(mode === 'explorer' ? d : null);
     updateSliderUI();
+    // Match: the verdict arrives when the trace reaches the end.
+    if (mode === 'match' && matchPhase === 'reveal' && playbackHour >= SM.forecastTotalHours(f) - 1e-9) showVerdict();
   }
   timeSlider.addEventListener('input', () => { stopPlayback(); seek(+timeSlider.value); });
   timeSlider.addEventListener('keydown', e => {
@@ -1060,6 +1327,18 @@
     stopPlayback();
     seek(target);
   });
+
+  const tlHint = document.getElementById('tlHint');
+  const HINT_SHOW_MS = 4000;
+  let hintTimer = null;
+  function showHint() {
+    tlHint.classList.add('show');
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => tlHint.classList.remove('show'), HINT_SHOW_MS);
+  }
+  timeSlider.addEventListener('mouseenter', showHint);
+  timeSlider.addEventListener('focus', showHint);
+  timeSlider.addEventListener('pointerdown', showHint);
 
   // ══════════════════════════════════════════════════════════════
   // EXPLORER — builder state + live graph/story
@@ -1195,6 +1474,7 @@
     }
     if (uptoHour > 0) drawn.push({ x: uptoHour, y: SM.depthAt(forecast, uptoHour) });
     chart.data.datasets[0].data = drawn;
+    chart.data.datasets[3].data = uptoHour > 0 ? drawn : [];
     if (toggleSteps.checked) {
       const { runPts, risePts, labels } = stepPoints(forecast, uptoHour);
       chart.data.datasets[1].data = runPts;
@@ -1265,8 +1545,6 @@
   const matchFeedbackEl = document.getElementById('matchFeedback');
   const nextItemBtn = document.getElementById('nextItemBtn');
   let currentMatchItem = null;
-  let matchResolved = false;
-  let matchFirstPickCorrect = null;
 
   // Small choice graph: MAX_HOURS x MAX_DEPTH units, every unit MG.U wide
   // AND tall (unit squares). Margins hold the tick numbers.
@@ -1315,21 +1593,36 @@
 
   function setPlaybackEnabled(on) { playBtn.disabled = !on; replayBtn.disabled = !on; }
 
+  // ── Match round state (Phase 1A.2, Section 2) ──
+  //   'pick'    — choose a graph; nothing about the true forecast shows.
+  //   'reveal'  — the pick is locked in (and scored), the chosen graph sits
+  //               on the scene, and the student plays/drags to test it.
+  //   'verdict' — right/wrong, the mistake line, score chips update, Next.
+  let matchPhase = 'pick';
+  let pickResult = null;   // recordAttempt() result, shown at the verdict
+  let pickedIndex = null;
   let seedPending = URLP.seed != null;
+  const showResultBtn = document.getElementById('showResultBtn');
+  const OVERLAY_SLIDE_MS = 400;
+
   function newMatchItem() {
     stopPlayback();
     setPlaybackEnabled(false);
     matchFeedbackEl.classList.add('hidden');
+    matchFeedbackEl.classList.remove('is-right', 'is-wrong');
     nextItemBtn.classList.add('hidden');
-    matchResolved = false;
-    matchFirstPickCorrect = null;
+    showResultBtn.classList.add('hidden');
+    matchPhase = 'pick';
+    pickResult = null; pickedIndex = null;
+    scene.overlay = null;
 
-    let item = null;
+    let item = null, roundSeed = 0;
     // ?seed=N makes the FIRST round reproducible; "Next" is random after that.
     const seed = seedPending ? URLP.seed : null;
     seedPending = false;
     for (let tries = 0; tries < 40 && !item; tries++) {
-      const rng = SM.makeRng(seed != null ? seed * 101 + tries : (Date.now() ^ (Math.random() * 1e9) ^ tries));
+      roundSeed = (seed != null ? seed * 101 + tries : (Date.now() ^ (Math.random() * 1e9) ^ tries)) >>> 0;
+      const rng = SM.makeRng(roundSeed);
       const forecast = SM.generateForecast(rng, { numSegments: currentLevel() });
       const key = SM.pointsKey(SM.forecastPoints(forecast));
       if (seed == null && SM.wasLastItem(key)) continue;
@@ -1339,8 +1632,10 @@
     if (!item) { matchStoryEl.textContent = 'Could not build a round — try again.'; return; }
     currentMatchItem = item;
     matchStoryEl.textContent = item.story;
-    // Leak rule (4a/6a): before a pick the scene shows the story's true
-    // starting depth at hour 0 with no weather, and the slider is locked.
+    // Day or night, tied to the round's seed (?scene= forces it).
+    scene.type = URLP.scene || SM.sceneTypeFor(roundSeed);
+    // Leak rule: before a pick the scene shows the story's true starting
+    // depth at hour 0 with no weather, and the slider is locked.
     playbackHour = 0;
     setScene(item.correct, 0, { neutral: true });
     setTimeline(SM.forecastTotalHours(item.correct), true);
@@ -1359,48 +1654,87 @@
     layoutMatchChoices();
   }
 
-  function pickMatchChoice(i, el) {
-    if (matchResolved) return;
+  function pickMatchChoice(i, card) {
+    if (matchPhase !== 'pick') return;
     const choice = currentMatchItem.choices[i];
-    // Score each round exactly once, on the very first pick.
-    let medalResult = null;
-    if (matchFirstPickCorrect === null) {
-      matchFirstPickCorrect = choice.isCorrect;
-      medalResult = SM.recordAttempt(choice.isCorrect);
-      refreshScoreDisplay();
-    }
-
-    if (choice.isCorrect) {
-      matchResolved = true;
-      setPlaybackEnabled(true);
-      el.classList.add('correct-pick');
-      const earnedNewMedal = medalResult && medalResult.earnedNewMedal;
-      const newMedal = medalResult && medalResult.newMedal;
-      matchFeedbackEl.classList.remove('hidden');
-      matchFeedbackEl.textContent = matchFirstPickCorrect
-        ? 'Correct on the first try! Watch it play out.'
-        : 'That’s the one — watch it play out.';
-      if (earnedNewMedal) matchFeedbackEl.textContent += ` New medal: ${MEDAL_EMOJI[newMedal]}`;
-      if (medalResult && medalResult.leveledUp) {
-        matchFeedbackEl.textContent += ` Level up! Next forecasts have ${currentLevel()} pieces.`;
-      } else if (medalResult && matchFirstPickCorrect && currentLevel() < SM.MAX_LEVEL) {
-        const left = SM.LEVEL_UP_STREAK - SM.getScoreState().levelProgress;
-        matchFeedbackEl.textContent += ` ${left} more in a row for Level ${currentLevel() + 1}.`;
-      }
-      nextItemBtn.classList.remove('hidden');
-      Array.from(matchChoicesEl.children).forEach(c => c.classList.add('resolved'));
-      // Unlock the slider and play the correct forecast.
-      setTimeline(SM.forecastTotalHours(currentMatchItem.correct), false);
-      playbackHour = 0;
-      seek(0);
-      startPlayback();
-    } else {
-      el.classList.add('wrong-pick');
-      el.classList.add('resolved');
-      matchFeedbackEl.classList.remove('hidden');
-      matchFeedbackEl.textContent = SM.RULE_FEEDBACK[choice.rule] || 'Not quite — look again.';
-    }
+    // The pick locks in and is scored now (first try, one score per
+    // round), but the score chips only change at the verdict.
+    pickResult = SM.recordAttempt(choice.isCorrect);
+    pickedIndex = i;
+    matchPhase = 'reveal';
+    Array.from(matchChoicesEl.children).forEach((c, j) => {
+      c.classList.add(j === i ? 'your-pick' : 'dimmed');
+      c.classList.add('resolved');
+      c.tabIndex = -1;
+    });
+    // The chosen graph goes onto the scene; no autoplay.
+    scene.overlay = { chosen: choice, truth: currentMatchItem.correct, split: SM.firstSplit(currentMatchItem.correct, choice.forecast), revealAll: false };
+    slideCardToScene(card);
+    setPlaybackEnabled(true);
+    setTimeline(SM.forecastTotalHours(currentMatchItem.correct), false);
+    playbackHour = 0;
+    seek(0);
+    matchFeedbackEl.classList.remove('hidden');
+    matchFeedbackEl.textContent = 'Play the story or drag the slider to test your pick.';
+    showResultBtn.classList.remove('hidden');
   }
+
+  // A copy of the chosen card glides from the grid to where the overlay
+  // sits on the scene, then fades as the overlay takes its place.
+  function slideCardToScene(card) {
+    if (!L || !el.ov) return;
+    if (prefersReducedMotion) return;
+    const from = card.getBoundingClientRect();
+    const svgRect = sceneSvg.getBoundingClientRect();
+    const to = { left: svgRect.left + el.ovX0 - 30, top: svgRect.top + L.fgTop - 10,
+      width: el.ovW + 40, height: (L.height - L.fgTop) + 10 };
+    const ghost = card.cloneNode(true);
+    ghost.classList.add('match-ghost');
+    Object.assign(ghost.style, { left: from.left + 'px', top: from.top + 'px', width: from.width + 'px', height: from.height + 'px' });
+    document.body.appendChild(ghost);
+    el.ov.style.opacity = '0';
+    const anim = ghost.animate([
+      { transform: 'translate(0,0) scale(1,1)', opacity: 1 },
+      { transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.width / from.width}, ${to.height / from.height})`, opacity: 0.15 },
+    ], { duration: OVERLAY_SLIDE_MS, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'forwards' });
+    anim.onfinish = () => { ghost.remove(); el.ov.style.transition = 'opacity 150ms'; el.ov.style.opacity = '1'; };
+  }
+
+  // The verdict: when the trace reaches the end, or on "Show result".
+  function showVerdict() {
+    if (matchPhase !== 'reveal') return;
+    matchPhase = 'verdict';
+    const choice = currentMatchItem.choices[pickedIndex];
+    const card = matchChoicesEl.children[pickedIndex];
+    card.classList.remove('your-pick');
+    card.classList.add(choice.isCorrect ? 'correct-pick' : 'wrong-pick');
+    if (!choice.isCorrect) {
+      const right = currentMatchItem.choices.findIndex(c => c.isCorrect);
+      matchChoicesEl.children[right].classList.remove('dimmed');
+      matchChoicesEl.children[right].classList.add('correct-pick', 'answer-was');
+    }
+    scene.overlay.revealAll = true;
+    applyScene();
+    refreshScoreDisplay();
+    matchFeedbackEl.classList.add(choice.isCorrect ? 'is-right' : 'is-wrong');
+    let msg = choice.isCorrect ? 'Right! The snow followed your graph all the way.' : (SM.RULE_FEEDBACK[choice.rule] || 'Not quite.');
+    const sp = scene.overlay.split;
+    if (!choice.isCorrect && sp) {
+      const truth = currentMatchItem.correct;
+      const differAt = Math.abs(SM.depthAt(truth, sp.hour) - SM.depthAt(choice.forecast, sp.hour)) > 1e-9;
+      msg += differAt ? ` Your graph is already off at hour ${sp.hour}.` : ` Your graph leaves the snow's path right after hour ${sp.hour}.`;
+    }
+    const r = pickResult;
+    if (r && r.earnedNewMedal) msg += ` New medal: ${MEDAL_EMOJI[r.newMedal]}`;
+    if (r && r.leveledUp) msg += ` Level up! Next forecasts have ${currentLevel()} pieces.`;
+    else if (r && choice.isCorrect && currentLevel() < SM.MAX_LEVEL) {
+      msg += ` ${SM.LEVEL_UP_STREAK - SM.getScoreState().levelProgress} more in a row for Level ${currentLevel() + 1}.`;
+    }
+    matchFeedbackEl.textContent = msg;
+    showResultBtn.classList.add('hidden');
+    nextItemBtn.classList.remove('hidden');
+  }
+  showResultBtn.onclick = showVerdict;
   nextItemBtn.onclick = newMatchItem;
 
   // ── init ──

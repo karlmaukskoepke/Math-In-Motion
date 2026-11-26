@@ -82,6 +82,15 @@ for (const { name, model: M } of SCALES) {
         if (p.d < 0 || p.d > D) fail(`[${name}] seed ${seed}: ${c.rule} distractor depth ${p.d} out of [0,${D}]`);
       }
       if (c.points[c.points.length - 1].t > H) fail(`[${name}] seed ${seed}: ${c.rule} distractor runs past hour ${H}`);
+      if (c.points[c.points.length - 1].t !== points[points.length - 1].t) fail(`[${name}] seed ${seed}: ${c.rule} distractor ends at a different hour`);
+      const split = M.firstSplit(forecast, c.forecast);
+      if (!split) fail(`[${name}] seed ${seed}: firstSplit found no difference for a distractor`);
+      else {
+        const k = split.hour;
+        const same = t => Math.abs(M.depthAt(forecast, t) - M.depthAt(c.forecast, t)) < 1e-9;
+        for (let t = 0; t <= k; t++) if (!same(t) && !(t === k && k === 0)) fail(`[${name}] seed ${seed}: graphs already differ at hour ${t}, before the split at ${k}`);
+        if (same(k) && same(k + 1)) fail(`[${name}] seed ${seed}: no difference on [${k}, ${k + 1}] where the split was reported`);
+      }
     }
   }
 
@@ -97,6 +106,7 @@ for (const { name, model: M } of SCALES) {
     `fast rate in ${(100 * fastRounds / SEEDS).toFixed(0)}% of rounds.`);
 
   // Every level can produce rounds with its number of pieces.
+  const levelRates = [];
   for (let level = 1; level <= M.MAX_LEVEL; level++) {
     let built = 0;
     for (let seed = 1; seed <= 1000; seed++) {
@@ -105,8 +115,11 @@ for (const { name, model: M } of SCALES) {
       if (f.segments.length !== level) fail(`[${name}] level ${level}: forecast has ${f.segments.length} pieces`);
       if (M.buildMatchItem(rng, f, 3)) built++;
     }
-    if (built < 500) fail(`[${name}] level ${level}: only ${built}/1000 forecasts produced a round`);
+    // The page tries up to 40 forecasts per round, so 40% is far more than enough.
+    if (built < 400) fail(`[${name}] level ${level}: only ${built}/1000 forecasts produced a round`);
+    levelRates.push(`L${level} ${(built / 10).toFixed(0)}%`);
   }
+  console.log(`[${name}] rounds possible per forecast: ${levelRates.join(', ')}`);
 
   // Axis labels: every 3 plus the top line, always.
   const labels = M.axisLabels(D);
@@ -214,6 +227,49 @@ for (const { name, model: M } of SCALES) {
     if (D % 3 !== 2 && !greyed.length && opts.length > 2) { /* room happens to fit */ }
     for (const o of greyed) if (!o.reason.includes(String(D))) fail(`[${name}] overflow reason should name ${D} inches`);
   }
+}
+
+// ── Sky blends (Phase 1A.2): skyLevel / cloudLevel stay in [0, 1], are
+// continuous, hold each piece's value at its middle, and ease at boundaries.
+for (let seed = 1; seed <= 2000; seed++) {
+  const f = SnowModel.generateForecast(SnowModel.makeRng(seed));
+  const total = SnowModel.forecastTotalHours(f);
+  let prev = SnowModel.skyLevel(f, 0);
+  for (let t = 0; t <= total; t += 0.05) {
+    const v = SnowModel.skyLevel(f, t), c = SnowModel.cloudLevel(f, t);
+    if (v < 0 || v > 1 || c < 0 || c > 1) fail(`seed ${seed}: sky/cloud level out of [0,1] at hour ${t}`);
+    if (Math.abs(v - prev) > 0.2) fail(`seed ${seed}: skyLevel jumps at hour ${t}`);
+    prev = v;
+  }
+  let t0 = 0;
+  for (const seg of f.segments) {
+    const mid = t0 + seg.hours / 2;
+    const want = seg.weather === 'sun' ? 1 : 0;
+    if (Math.abs(SnowModel.skyLevel(f, mid) - want) > 1e-9) fail(`seed ${seed}: skyLevel at the middle of a ${seg.weather} piece is ${SnowModel.skyLevel(f, mid)}`);
+    if (Math.abs(SnowModel.cloudLevel(f, mid) - (1 - want)) > 1e-9) fail(`seed ${seed}: cloudLevel wrong mid-piece`);
+    t0 += seg.hours;
+  }
+}
+// Scene type is stable for a seed and both types occur.
+{
+  const types = new Set();
+  for (let seed = 1; seed <= 200; seed++) {
+    const a = SnowModel.sceneTypeFor(seed);
+    if (a !== SnowModel.sceneTypeFor(seed)) fail(`sceneTypeFor(${seed}) is not stable`);
+    types.add(a);
+  }
+  if (types.size !== 2) fail('sceneTypeFor should give both night and day');
+}
+// firstSplit on hand examples.
+{
+  const T = { start: 2, segments: [{ weather: 'snow', rise: 1, run: 1, hours: 3 }, { weather: 'cloudy', hours: 2 }] };
+  if (SnowModel.firstSplit(T, SnowModel.cloneForecast(T)) !== null) fail('firstSplit of a graph with itself should be null');
+  const wrongStart = Object.assign(SnowModel.cloneForecast(T), { start: 3 });
+  const s1 = SnowModel.firstSplit(T, wrongStart);
+  if (!s1 || s1.hour !== 0 || s1.pieceIndex !== 0) fail(`firstSplit wrong start: ${JSON.stringify(s1)}`);
+  const melt = SnowModel.cloneForecast(T); melt.segments[1] = { weather: 'sun', rise: -1, run: 1, hours: 2 };
+  const s2 = SnowModel.firstSplit(T, melt);
+  if (!s2 || s2.hour !== 3 || s2.pieceIndex !== 1) fail(`firstSplit cloudy-as-melt: ${JSON.stringify(s2)}`);
 }
 
 // Story text: correct plurals and a capital letter starting each sentence.

@@ -30,8 +30,14 @@
   // Scene bands as shares of the picture's height (Section 3a/3b). Depth 0
   // sits on the ground line, GROUND_STRIP above the bottom edge; MAX_DEPTH
   // sits at the top of the foreground band.
-  const SCENE_BANDS = { sky: 0.30, background: 0.20, foreground: 0.50 };
-  const GROUND_STRIP = 0.06;
+  // Phase 1A.2: the foreground is taller than the v2 spec's 50% so that the
+  // Match overlay (one inch = PX_PER_INCH) reaches ~16 px cells at 1366x768
+  // while the story banner sits above the scene. (Was 0.30 / 0.20 / 0.50, 0.06.)
+  const SCENE_BANDS = { sky: 0.20, background: 0.15, foreground: 0.65 };
+  const GROUND_STRIP = 0.05;
+  // Sky changes (sunrise, clouds rolling in) ease over this many hours,
+  // centred on the boundary between two pieces.
+  const SKY_EASE_H = 1;
 
   // ── Fixed teaching constants (independent of scale) ──
   // Allowed snowing rates, as exact (rise, run) pairs so every corner
@@ -145,6 +151,58 @@
       t0 = end;
     }
     return null;
+  }
+
+  // ── Smooth weather blends for the scene (Phase 1A.2, Section 4) ──
+  // valueOf(seg) gives each piece a target in [0, 1]. The blend holds that
+  // value in the middle of a piece and eases (smoothstep) to the next
+  // piece's value over SKY_EASE_H hours centred on the boundary, so
+  // scrubbing, hovering and playing all move the sky the same way.
+  function smoothstep(x) { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
+  function blendAt(forecast, t, valueOf) {
+    const segs = forecast.segments;
+    if (!segs.length) return 0;
+    let v = valueOf(segs[0]), b = 0;
+    for (let i = 0; i < segs.length - 1; i++) {
+      b += segs[i].hours;
+      const delta = valueOf(segs[i + 1]) - valueOf(segs[i]);
+      if (delta) v += delta * smoothstep((t - (b - SKY_EASE_H / 2)) / SKY_EASE_H);
+    }
+    return Math.max(0, Math.min(1, v));
+  }
+  // 0 = no sun, 1 = sun fully out.
+  function skyLevel(forecast, t) { return blendAt(forecast, t, s => (s.weather === 'sun' ? 1 : 0)); }
+  // 0 = clear, 1 = fully clouded over (snowing or cloudy).
+  function cloudLevel(forecast, t) { return blendAt(forecast, t, s => (s.weather === 'sun' ? 0 : 1)); }
+
+  // Day or night for a round, tied to its seed so a replay looks the same.
+  function sceneTypeFor(seed) {
+    return makeRng((seed >>> 0) ^ 0x5eed5eed)() < 0.5 ? 'night' : 'day';
+  }
+
+  // Where two graphs first part ways. Corners are on whole hours, so both
+  // are straight between whole hours: they agree on [k, k+1] exactly when
+  // they agree at k and k+1. Returns null if they never differ; otherwise
+  // { hour } where the split starts and { pieceIndex } of `truth` there.
+  function firstSplit(truth, other) {
+    const end = Math.max(forecastTotalHours(truth), forecastTotalHours(other));
+    const at = (f, t) => (t > forecastTotalHours(f) ? NaN : depthOnLine(f, t));
+    const same = t => { const a = at(truth, t), b = at(other, t); return a === b || Math.abs(a - b) < 1e-9; };
+    let hour = null;
+    if (!same(0)) hour = 0;
+    else for (let k = 0; k < end; k++) if (!same(k + 1)) { hour = k; break; }
+    if (hour === null) return null;
+    const w = weatherAt(truth, Math.min(hour + 0.5, forecastTotalHours(truth)));
+    return { hour, pieceIndex: w ? w.index : null };
+  }
+  // Depth on the forecast's own line (no clamping) — for comparing graphs.
+  function depthOnLine(f, t) {
+    let d = f.start, t0 = 0;
+    for (const seg of f.segments) {
+      if (t <= t0 + seg.hours) return d + segmentRate(seg) * (t - t0);
+      d += segmentDelta(seg); t0 += seg.hours;
+    }
+    return d;
   }
 
   // ── Scoring / medals (localStorage, device-only, no logins) ──
@@ -394,15 +452,26 @@
           out.segments[i] = Object.assign({}, out.segments[i], { rise: Math.abs(out.segments[i].rise) }); // melting drawn going up
           return { forecast: out, rule: 'meltSignOrLength', segmentIndex: i };
         }
-        // Fallback: one snow/sun piece one run too long or too short.
+        // Fallback: one snow/sun piece one run too long or too short. All
+        // four graphs in a round end at the same hour (Phase 1A.2 default),
+        // so the difference moves into another piece; a forecast with no
+        // piece that can absorb it can't use this mistake.
         const rateIdxs = f.segments.map((s, i) => i).filter(i => f.segments[i].weather !== 'cloudy');
         if (!rateIdxs.length) return null;
         const i = pick(rng, rateIdxs);
         const out = cloneForecast(f);
         const seg = out.segments[i];
-        const newHours = seg.hours + (rng() < 0.5 ? seg.run : -seg.run);
-        if (newHours <= 0) return null;
-        out.segments[i] = Object.assign({}, seg, { hours: newHours });
+        const delta = rng() < 0.5 ? seg.run : -seg.run;
+        if (seg.hours + delta <= 0) return null;
+        out.segments[i] = Object.assign({}, seg, { hours: seg.hours + delta });
+        const absorbers = out.segments.map((s, j) => j).filter(j => {
+          if (j === i) return false;
+          const s = out.segments[j], h = s.hours - delta;
+          return h >= 1 && (s.weather === 'cloudy' || h % s.run === 0);
+        });
+        if (!absorbers.length) return null;
+        const j = pick(rng, absorbers);
+        out.segments[j] = Object.assign({}, out.segments[j], { hours: out.segments[j].hours - delta });
         return { forecast: out, rule: 'meltSignOrLength', segmentIndex: i };
       },
     };
@@ -430,6 +499,7 @@
             if (!result) break;
             const pts = forecastPoints(result.forecast);
             if (!isPlausibleGraph(pts)) continue;
+            if (pts[pts.length - 1].t !== correctPoints[correctPoints.length - 1].t) continue; // all four end together
             const key = pointsKey(pts);
             if (seenKeys.has(key)) continue;
             seenKeys.add(key);
@@ -605,6 +675,8 @@
       removeCheck, addCheck, hoursLeftFor, evalPiece,
       // scoring
       getScoreState, recordAttempt, medalForStreak, rememberLastItem, wasLastItem, resetProgress,
+      // scene (Phase 1A.2)
+      SKY_EASE_H, blendAt, skyLevel, cloudLevel, sceneTypeFor, firstSplit,
       // other scales
       createModel, DEFAULT_SCALE,
     };
