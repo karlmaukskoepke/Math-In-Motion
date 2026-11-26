@@ -20,7 +20,6 @@
       --text:      #e8eaf6;
       --muted:     #7986cb;
       --border:    #2e3356;
-      --left-w:    420px;
       /* Karl's class conventions for this challenge specifically (spec
          section 2) — distinct from the site's general accent palette
          above, which is why they're their own variables. */
@@ -68,15 +67,26 @@
 
     /* ── CONTENT ── */
     #content { display: flex; flex: 1; overflow: hidden; position: relative; }
+    /* Graph + controls on the LEFT, the scene (and the story above it) on the RIGHT. */
+    #graphPane { flex: 1; display: flex; flex-direction: column; padding: 14px 18px; gap: 10px; overflow: hidden; min-width: 0; }
     #scenePane {
-      width: var(--left-w); flex-shrink: 0; background: var(--surface);
-      border-right: 1px solid var(--border); display: flex; flex-direction: column;
+      width: clamp(360px, 38vw, 560px); flex-shrink: 0; background: var(--surface);
+      border-left: 1px solid var(--border); display: flex; flex-direction: column;
       padding: 14px; gap: 10px; overflow: hidden;
     }
-    #graphPane { flex: 1; display: flex; flex-direction: column; padding: 14px 18px; gap: 10px; overflow: hidden; min-width: 0; }
+    .story-banner {
+      font-size: clamp(1.05rem, 1.55vw, 1.5rem); font-weight: 600; line-height: 1.38; color: var(--text);
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+    }
+    .story-banner.hidden { display: none; }
 
     /* ── SCENE ── */
-    #sceneSvg { width: 100%; flex: 1; min-height: 0; background: linear-gradient(to bottom, #1c2541, #2a3458); border-radius: 10px; }
+    #sceneSvg { width: 100%; flex: 1; min-height: 0; background: linear-gradient(to bottom, #151d38, #3f5083); border-radius: 10px; }
+    /* Clouds drift in from the distance; the sun rises. Opacity/position are
+       set from JS (renderSceneAt); these transitions make the change gradual. */
+    #cloudGroup { transition: opacity 1s ease, transform 1.4s ease, fill 1s ease; }
+    #sunGroup   { transition: opacity 0.8s ease, transform 1.2s ease; }
+    .hillSnow   { transition: opacity 0.4s linear; }
     .clock-readout {
       font-family: 'Space Mono', monospace; font-size: 0.78rem; color: var(--text);
       background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
@@ -103,15 +113,18 @@
     }
 
     /* ── GRAPH PANE ── */
-    #chartWrap { flex: 1; min-height: 0; position: relative; }
+    #explorerLayout { display: flex; gap: 16px; flex: 1; min-height: 0; }
+    #explorerLayout.hidden { display: none; }
+    #controlsCol { width: 244px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; min-height: 0; }
+    #chartBox { flex: 1; min-width: 0; min-height: 0; container-type: size; display: flex; align-items: center; justify-content: center; }
+    /* The plot area is exactly square (12 hours x 12 inches), so a unit square
+       is a real square. The axis labels take a fixed 58px (left) / 52px
+       (bottom) and 14px / 10px of padding (right / top) — set to match in the
+       Chart.js options — and --P is the biggest square plot that fits. */
+    #chartWrap { position: relative; --P: min(100cqw - 72px, 100cqh - 62px); width: calc(var(--P) + 72px); height: calc(var(--P) + 62px); }
     #chart { width: 100% !important; height: 100% !important; }
-    .toggle-row { display: flex; gap: 14px; font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--muted); }
-    .toggle-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
-    #storyText {
-      font-size: 0.85rem; line-height: 1.5; color: var(--text); background: var(--surface);
-      border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; min-height: 2.2em;
-    }
-    #storyText.hidden { display: none; }
+    .toggle-row { display: flex; flex-direction: column; gap: 10px; font-family: 'Space Mono', monospace; font-size: 0.74rem; color: var(--muted); }
+    .toggle-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 
     /* ── EXPLORER BUILDER ── */
     #builderControls { display: flex; flex-direction: column; gap: 8px; }
@@ -120,10 +133,12 @@
       background: var(--surface2); color: var(--text); border: 1px solid var(--border);
       border-radius: 6px; padding: 4px 6px; font-family: 'Space Mono', monospace; font-size: 0.72rem;
     }
+    #segmentRows { display: flex; flex-direction: column; gap: 8px; }
     .segment-row {
       display: flex; align-items: center; gap: 6px; background: var(--surface);
       border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; flex-wrap: wrap;
     }
+    .segment-row select { min-width: 0; max-width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-family: 'Space Mono', monospace; font-size: 0.72rem; }
     .seg-remove {
       background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 50%;
       width: 20px; height: 20px; cursor: pointer; font-size: 0.7rem; line-height: 1;
@@ -138,40 +153,41 @@
     #addSegmentBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
     /* ── MATCH THE FORECAST ── */
-    #matchArea { display: none; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
+    #matchArea { display: none; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
     #matchArea.active { display: flex; }
     #builderControls.hidden, #chartWrap.hidden, .toggle-row.hidden { display: none; }
-    #matchStory {
-      font-size: 0.95rem; line-height: 1.5; color: var(--text); background: var(--surface);
-      border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
-    }
+    /* matchBox gives the 2x2 grid the biggest SQUARE that fits, so every
+       choice is a square cell and the graphs inside have unit squares. */
+    #matchBox { flex: 1; min-height: 0; container-type: size; display: flex; align-items: center; justify-content: center; }
     #matchChoices {
       display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px;
-      flex: 1; min-height: 0;
+      width: min(100cqw, 100cqh); aspect-ratio: 1;
     }
     .match-choice {
       background: var(--surface); border: 2px solid var(--border); border-radius: 10px;
       cursor: pointer; padding: 6px; transition: border-color 0.15s, transform 0.1s;
       display: flex; align-items: center; justify-content: center;
-      min-height: 0; overflow: hidden; /* let grid rows shrink so the feedback line never covers them */
+      min-height: 0; min-width: 0; overflow: hidden;
     }
     .match-choice:hover:not(.resolved) { border-color: var(--accent4); }
     .match-choice.correct-pick { border-color: var(--accent3); }
     .match-choice.wrong-pick { border-color: var(--accent2); }
     .match-choice svg { width: 100%; height: 100%; }
+    /* The feedback row always keeps its height (hidden = invisible, not
+       gone), so the graphs don't jump when a message appears. */
+    #matchFooter { display: flex; align-items: stretch; gap: 10px; height: 66px; flex-shrink: 0; }
     #matchFeedback {
-      font-size: 0.85rem; color: var(--text); background: var(--surface2);
-      border-radius: 8px; padding: 10px 12px; min-height: 1.4em;
+      flex: 1; font-size: 0.95rem; line-height: 1.35; color: var(--text); background: var(--surface2);
+      border-radius: 8px; padding: 8px 12px; display: flex; align-items: center; overflow-y: auto;
     }
-    #matchFeedback.hidden { display: none; }
-    #nextItemBtn { align-self: flex-start; }
-    #nextItemBtn.hidden { display: none; }
+    #matchFeedback.hidden, #nextItemBtn.hidden { visibility: hidden; }
 
     /* ── LINK LINE (stake ↔ graph) ── */
     #linkLineSvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
 
     @media (prefers-reduced-motion: reduce) {
       .flake { display: none !important; }
+      #cloudGroup, #sunGroup, .hillSnow { transition: none !important; }
     }
   </style>
 </head>
@@ -194,51 +210,96 @@
     <div id="content">
       <svg id="linkLineSvg"><line id="linkLine" x1="0" y1="0" x2="0" y2="0" stroke="var(--accent4)" stroke-width="1.5" stroke-dasharray="4 4" opacity="0"/><circle id="linkDot" r="5" fill="var(--accent4)" opacity="0"/></svg>
 
-      <!-- SCENE (left) -->
+      <!-- GRAPH + CONTROLS (left) -->
+      <div id="graphPane">
+        <div id="explorerLayout">
+          <div id="controlsCol">
+            <div class="toggle-row" id="explorerToggles">
+              <label><input type="checkbox" id="toggleSteps"> Show rise/run steps</label>
+              <label><input type="checkbox" id="toggleStory"> Show the story</label>
+            </div>
+            <div id="builderControls">
+              <div class="builder-row">
+                <span>Starting depth:</span>
+                <select id="startDepth"></select>
+                <span>inches</span>
+              </div>
+              <div id="segmentRows"></div>
+              <button id="addSegmentBtn" type="button">+ Add Segment</button>
+            </div>
+          </div>
+          <!-- chartBox sizes chartWrap so the plot area is an exact square:
+               one hour is as wide as one inch is tall (see #chartWrap CSS) -->
+          <div id="chartBox"><div id="chartWrap"><canvas id="chart"></canvas></div></div>
+        </div>
+
+        <div id="matchArea">
+          <div id="matchBox"><div id="matchChoices"></div></div>
+          <div id="matchFooter">
+            <div id="matchFeedback" class="hidden"></div>
+            <button class="play-btn hidden" id="nextItemBtn" type="button">Next →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCENE (right): the story sits above the picture -->
       <div id="scenePane">
-        <svg id="sceneSvg" viewBox="0 0 260 320" xmlns="http://www.w3.org/2000/svg">
+        <div id="storyText" class="story-banner hidden"></div>
+        <svg id="sceneSvg" viewBox="0 0 400 360" preserveAspectRatio="xMidYMax meet" xmlns="http://www.w3.org/2000/svg">
           <defs>
-            <!-- Snow and ground run well past the 260-wide viewBox so they
-                 fill the pane at any aspect ratio (no bare sky strips). -->
-            <clipPath id="snowClip"><rect id="snowClipRect" x="-400" y="0" width="1060" height="260"/></clipPath>
+            <linearGradient id="groundGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#58505a"/><stop offset="1" stop-color="#2b2730"/>
+            </linearGradient>
+            <radialGradient id="sunGlow"><stop offset="0" stop-color="#ffe9a0" stop-opacity="0.7"/><stop offset="1" stop-color="#ffd740" stop-opacity="0"/></radialGradient>
+            <linearGradient id="moundGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d6e1f7"/>
+            </linearGradient>
           </defs>
-          <!-- sky handled by pane background -->
-          <!-- sun -->
-          <g id="sunGroup" opacity="0">
-            <circle cx="205" cy="55" r="22" fill="#ffd740"/>
-            <g id="sunDrips" stroke="#8ec9ff" stroke-width="2" stroke-linecap="round"></g>
+
+          <!-- ═ FAR AWAY: sky, sun, clouds rolling in, hills, one small tree ═
+               Everything here runs well past the 400-wide viewBox so it fills
+               the pane at any aspect ratio (no bare strips at the sides). -->
+          <g id="sunGroup" style="opacity:0">
+            <circle cx="330" cy="70" r="44" fill="url(#sunGlow)"/>
+            <circle cx="330" cy="70" r="21" fill="#ffd740"/>
           </g>
-          <!-- clouds -->
-          <g id="cloudGroup" opacity="0" fill="#aab4d6">
-            <ellipse cx="90" cy="48" rx="30" ry="14"/>
-            <ellipse cx="115" cy="42" rx="24" ry="12"/>
-            <ellipse cx="160" cy="55" rx="34" ry="15"/>
-            <ellipse cx="185" cy="46" rx="22" ry="11"/>
+          <g id="cloudGroup" style="opacity:0">
+            <ellipse cx="70"  cy="48" rx="36" ry="12"/><ellipse cx="100" cy="41" rx="24" ry="10"/>
+            <ellipse cx="190" cy="64" rx="42" ry="13"/><ellipse cx="224" cy="56" rx="26" ry="10"/>
+            <ellipse cx="312" cy="40" rx="38" ry="12"/><ellipse cx="342" cy="34" rx="22" ry="9"/>
+            <ellipse cx="142" cy="96" rx="28" ry="9"/><ellipse cx="276" cy="100" rx="30" ry="9"/>
           </g>
-          <!-- tree -->
+          <g id="hillsFar">
+            <path d="M-400 250 L-400 200 C-250 160 -120 175 0 190 C120 205 200 150 330 165 C450 180 560 200 800 170 L800 250 Z" fill="#34416b"/>
+            <path class="hillSnow" d="M-400 250 L-400 200 C-250 160 -120 175 0 190 C120 205 200 150 330 165 C450 180 560 200 800 170 L800 250 Z" fill="#e8f0ff" opacity="0"/>
+          </g>
+          <g id="hillsNear">
+            <path d="M-400 262 L-400 232 C-200 218 -60 228 80 224 C200 220 260 206 330 214 C420 224 520 226 800 218 L800 262 Z" fill="#2d4258"/>
+            <path class="hillSnow" d="M-400 262 L-400 232 C-200 218 -60 228 80 224 C200 220 260 206 330 214 C420 224 520 226 800 218 L800 262 Z" fill="#e8f0ff" opacity="0"/>
+          </g>
+          <!-- the tree: small, because it is far away -->
           <g id="treeGroup">
-            <rect x="196" y="190" width="10" height="55" fill="#6b4a2f"/>
-            <polygon points="201,120 170,210 232,210" fill="#2e6b4a"/>
-            <polygon points="201,145 176,225 226,225" fill="#357a54"/>
-            <polygon points="201,170 182,245 220,245" fill="#3d8a5f"/>
+            <rect x="297" y="208" width="6" height="14" fill="#6b4a2f"/>
+            <polygon points="300,144 281,184 319,184" fill="#2e6b4a"/>
+            <polygon points="300,160 277,202 323,202" fill="#357a54"/>
+            <polygon points="300,178 272,216 328,216" fill="#3d8a5f"/>
           </g>
-          <!-- ground -->
-          <rect x="-400" y="260" width="1060" height="400" fill="#3a3f5c"/>
-          <!-- snow layer, clipped, height driven by current depth -->
-          <g clip-path="url(#snowClip)">
-            <rect id="snowLayer" x="-400" y="260" width="1060" height="0" fill="#f4f8ff" stroke="#c9d4f0" stroke-width="1"/>
-          </g>
-          <!-- measuring stake, planted at x=40, ticks every inch 0-12
+
+          <!-- ═ CLOSE UP: the ground in front of you, the snow, the stake ═ -->
+          <rect x="-400" y="236" width="1200" height="400" fill="url(#groundGrad)"/>
+          <rect id="groundSnow" x="-400" y="236" width="1200" height="400" fill="#eef3ff" opacity="0"/>
+          <!-- the drift, drawn by renderSceneAt() as depth changes -->
+          <path id="snowLayer" d="" fill="url(#moundGrad)" stroke="#c9d4f0" stroke-width="1"/>
+          <!-- measuring stake, planted at x=46, ticks every inch 0-12
                bottom-up. Drawn AFTER the snow so it stays readable when
                buried, like a real stake poking out of a drift. -->
           <g id="stakeGroup">
-            <rect x="37" y="0" width="5" height="0" fill="#8a5a3a" id="stakeBody"/>
-            <g id="stakeTicks" font-family="Space Mono" font-size="8" font-weight="700"></g>
+            <rect id="stakeBody" x="42" y="0" width="8" height="0" fill="#8a5a3a"/>
+            <g id="stakeTicks" font-family="Space Mono" font-size="14" font-weight="700"></g>
           </g>
-          <!-- flakes -->
           <g id="flakeGroup"></g>
-          <!-- top-of-snow dashed anchor (picked up by the full-page link line) -->
-          <circle id="stakeAnchor" cx="40" cy="260" r="3" fill="var(--accent4)" opacity="0"/>
+          <!-- top-of-snow dot on the stake (the full-page link line starts here) -->
+          <circle id="stakeAnchor" cx="46" cy="318" r="3.5" fill="var(--accent4)" opacity="0"/>
         </svg>
         <div class="clock-readout" id="clockReadout">Hour 0</div>
         <div class="weather-badge" id="weatherBadge">—</div>
@@ -250,34 +311,6 @@
             <option value="normal" selected>Normal</option>
             <option value="fast">Fast</option>
           </select>
-        </div>
-      </div>
-
-      <!-- GRAPH + CONTROLS (right) -->
-      <div id="graphPane">
-        <div class="toggle-row" id="explorerToggles">
-          <label><input type="checkbox" id="toggleSteps"> Show rise/run steps</label>
-          <label><input type="checkbox" id="toggleStory"> Show the story</label>
-        </div>
-        <div id="storyText" class="hidden"></div>
-
-        <div id="chartWrap"><canvas id="chart"></canvas></div>
-
-        <div id="builderControls">
-          <div class="builder-row">
-            <span>Starting depth:</span>
-            <select id="startDepth"></select>
-            <span>inches</span>
-          </div>
-          <div id="segmentRows"></div>
-          <button id="addSegmentBtn" type="button">+ Add Segment</button>
-        </div>
-
-        <div id="matchArea">
-          <div id="matchStory"></div>
-          <div id="matchChoices"></div>
-          <div id="matchFeedback" class="hidden"></div>
-          <button class="play-btn hidden" id="nextItemBtn" type="button">Next →</button>
         </div>
       </div>
     </div>
@@ -349,6 +382,7 @@
   const modeMatchBtn = document.getElementById('modeMatchBtn');
   const matchArea = document.getElementById('matchArea');
   const chartWrap = document.getElementById('chartWrap');
+  const explorerLayout = document.getElementById('explorerLayout');
   const builderControls = document.getElementById('builderControls');
   const explorerToggles = document.getElementById('explorerToggles');
   let mode = 'explorer';
@@ -358,10 +392,11 @@
     modeExplorerBtn.classList.toggle('active', mode === 'explorer');
     modeMatchBtn.classList.toggle('active', mode === 'match');
     matchArea.classList.toggle('active', mode === 'match');
+    explorerLayout.classList.toggle('hidden', mode === 'match');
     chartWrap.classList.toggle('hidden', mode === 'match');
     builderControls.classList.toggle('hidden', mode === 'match');
     explorerToggles.classList.toggle('hidden', mode === 'match');
-    document.getElementById('storyText').classList.toggle('hidden', mode === 'match' || !document.getElementById('toggleStory').checked);
+    document.getElementById('storyText').classList.toggle('hidden', mode === 'explorer' && !document.getElementById('toggleStory').checked);
     if (mode === 'match') { updateLinkLine(null); newMatchItem(); }
     else { setPlaybackEnabled(true); renderExplorerAtRest(); }
   }
@@ -437,12 +472,17 @@
     plugins: [stepLabelPlugin],
     type: 'line',
     data: { datasets: [
-      { label: 'depth', data: [], borderColor: chartTextColor, backgroundColor: 'transparent', borderWidth: 3, pointRadius: 0, tension: 0 },
+      { label: 'depth', data: [], borderColor: chartTextColor, backgroundColor: 'transparent', borderWidth: 2, pointRadius: 0, tension: 0 },
       { label: 'run', data: [], showLine: true, borderColor: runBlue, backgroundColor: 'transparent', borderWidth: 2, pointRadius: 0, borderDash: [5,3], tension: 0 },
       { label: 'rise', data: [], showLine: true, borderColor: riseOrange, backgroundColor: 'transparent', borderWidth: 2, pointRadius: 0, borderDash: [5,3], tension: 0 },
     ]},
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
+      // Axis labels get a FIXED size (58px left, 52px bottom) plus 14px/10px
+      // of padding, so #chartWrap can be sized to leave an exactly square
+      // plot area — one hour wide = one inch tall. Keep in step with the
+      // --P calc in the #chartWrap CSS.
+      layout: { padding: { top: 10, right: 14, bottom: 0, left: 0 } },
       // The chart resizes itself asynchronously (initial layout, story box
       // toggling, window resize) — re-aim the link line once it settles.
       onResize: () => requestAnimationFrame(refreshLinkLine),
@@ -450,12 +490,14 @@
       scales: {
         x: {
           type: 'linear', min: 0, max: 12,
+          afterFit(scale) { scale.height = 52; },
           title: { display: true, text: 'Time (hours)', color: chartTextColor, font: { family: 'Space Mono', size: 13, weight: 'bold' } },
           ticks: { color: chartTextColor, font: { family: 'Space Mono', size: 12, weight: 'bold' }, stepSize: 1 },
           grid: { color: gridColor() },
         },
         y: {
           min: 0, max: 12,
+          afterFit(scale) { scale.width = 58; },
           title: { display: true, text: 'Snow depth (inches)', color: chartTextColor, font: { family: 'Space Mono', size: 13, weight: 'bold' } },
           ticks: { color: chartTextColor, font: { family: 'Space Mono', size: 12, weight: 'bold' }, stepSize: 1 },
           grid: { color: gridColor() },
@@ -480,56 +522,73 @@
   const sceneSvg = document.getElementById('sceneSvg');
   const snowLayer = document.getElementById('snowLayer');
   const stakeTicks = document.getElementById('stakeTicks');
+  const stakeBody = document.getElementById('stakeBody');
   const stakeAnchor = document.getElementById('stakeAnchor');
   const flakeGroup = document.getElementById('flakeGroup');
   const sunGroup = document.getElementById('sunGroup');
   const cloudGroup = document.getElementById('cloudGroup');
+  const hillSnow = document.querySelectorAll('.hillSnow');
+  const groundSnow = document.getElementById('groundSnow');
   const clockReadout = document.getElementById('clockReadout');
   const weatherBadge = document.getElementById('weatherBadge');
   const linkLine = document.getElementById('linkLine');
 
-  // Stake geometry: ground at svg-y=260, 0in at y=260, each inch = 16px up,
-  // matching MAX_DEPTH=12 -> top of stake usable range at y=260-12*16=68.
-  const PX_PER_INCH = 16;
-  const GROUND_Y = 260;
-  // Stake spans the full 0-12 inch range (plus a little top) so every
-  // tick sits on wood. Ticks every inch, longer + labeled every 3 inches.
-  // Each mark has a dark outline so it reads on white snow AND dark sky.
+  // ── Scene geometry (viewBox 0 0 400 360) ──
+  // The picture is "your head near the ground": the stake and the drift of
+  // snow are CLOSE UP on the left; the hill, the small tree and the clouds
+  // are FAR AWAY behind them. Depth is read where the snow meets the stake:
+  // 0 inches is the GROUND_Y line, and every inch is PX_PER_INCH tall.
   const SVGNS = 'http://www.w3.org/2000/svg';
-  const stakeBody = document.getElementById('stakeBody');
+  const PX_PER_INCH = 12;
+  const GROUND_Y = 318;
+  const STAKE_X = 46;
+  // The drift: flat on top where the stake stands, then a soft shoulder
+  // sloping down to the ground. `top` is the snow surface's y at the stake.
+  function moundPath(top) {
+    return `M -400 ${GROUND_Y} L -400 ${top} L 96 ${top} C 150 ${top} 170 ${GROUND_Y} 250 ${GROUND_Y} Z`;
+  }
+
+  // Stake spans the full 0-12 inch range (plus a little top) so every
+  // tick sits on wood, and pokes a little way into the ground. Ticks every
+  // inch, longer + labeled every 3 inches. Each mark has a dark outline so
+  // it reads on white snow AND dark sky.
   stakeBody.setAttribute('y', GROUND_Y - 12.6 * PX_PER_INCH);
-  stakeBody.setAttribute('height', 12.6 * PX_PER_INCH);
+  stakeBody.setAttribute('height', 12.6 * PX_PER_INCH + 14);
   for (let inch = 0; inch <= 12; inch++) {
     const y = GROUND_Y - inch * PX_PER_INCH;
     const major = inch % 3 === 0;
-    const x2 = major ? 50 : 45;
+    const x1 = STAKE_X - 4, x2 = STAKE_X + (major ? 13 : 5);
     [['#1c2541', 3.5], ['#ffffff', 1.5]].forEach(([color, w]) => {
       const line = document.createElementNS(SVGNS, 'line');
-      line.setAttribute('x1', 37); line.setAttribute('x2', x2); line.setAttribute('y1', y); line.setAttribute('y2', y);
+      line.setAttribute('x1', x1); line.setAttribute('x2', x2); line.setAttribute('y1', y); line.setAttribute('y2', y);
       line.setAttribute('stroke', color); line.setAttribute('stroke-width', w);
       stakeTicks.appendChild(line);
     });
     if (!major) continue;
     const label = document.createElementNS(SVGNS, 'text');
-    label.setAttribute('x', 53); label.setAttribute('y', y + 3);
+    label.setAttribute('x', STAKE_X + 17); label.setAttribute('y', y + 5);
     label.setAttribute('fill', '#ffffff');
-    label.setAttribute('stroke', '#1c2541'); label.setAttribute('stroke-width', 2.5);
+    label.setAttribute('stroke', '#1c2541'); label.setAttribute('stroke-width', 3.5);
     label.setAttribute('paint-order', 'stroke');
     label.textContent = String(inch);
     stakeTicks.appendChild(label);
   }
 
   // Flake pool — reused elements, count/visibility driven by rate tier.
-  const MAX_FLAKES = 40;
+  // Flakes vary in size: bigger = closer = falls faster, which gives the
+  // snowfall some depth. They stop at the snow surface.
+  const MAX_FLAKES = 60;
   const flakes = [];
+  let snowTopNow = GROUND_Y;
   for (let i = 0; i < MAX_FLAKES; i++) {
-    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    const r = 1.2 + Math.random() * 2.0;
+    const c = document.createElementNS(SVGNS, 'circle');
     c.setAttribute('class', 'flake');
-    c.setAttribute('r', 2);
+    c.setAttribute('r', r.toFixed(2));
     c.setAttribute('fill', '#ffffff');
     c.style.opacity = 0;
     flakeGroup.appendChild(c);
-    flakes.push({ el: c, x: Math.random() * 220 + 20, y: Math.random() * 240, speed: 0.6 + Math.random() * 0.8 });
+    flakes.push({ el: c, x: -20 + Math.random() * 440, y: 30 + Math.random() * 280, speed: 0.5 + r * 0.45 });
   }
   let flakeAnimHandle = null;
   function setFlakeDensity(activeCount) {
@@ -538,7 +597,10 @@
   function tickFlakes() {
     for (const f of flakes) {
       if (+f.el.style.opacity === 0) continue;
-      f.y += f.speed; if (f.y > 258) f.y = 0;
+      f.y += f.speed;
+      // land on the drift near the stake, on the ground elsewhere
+      const landing = f.x < 150 ? snowTopNow : GROUND_Y - 22;
+      if (f.y > landing) f.y = 30 + Math.random() * 12;
       f.el.setAttribute('cx', f.x); f.el.setAttribute('cy', f.y);
     }
     flakeAnimHandle = requestAnimationFrame(tickFlakes);
@@ -548,14 +610,14 @@
   function snowDensityCount(rise) {
     // light/medium/heavy by magnitude, independent of run.
     const mag = Math.abs(rise);
-    if (mag <= 1) return 10;
-    if (mag <= 2) return 24;
+    if (mag <= 1) return 14;
+    if (mag <= 2) return 32;
     return MAX_FLAKES;
   }
 
   function renderSceneAt(forecast, hour) {
     // Interpolate depth at `hour` across the forecast's segments.
-    let t = 0, d = forecast.start, weather = 'cloudy', rise = 0, run = 1;
+    let t = 0, d = forecast.start, weather = forecast.segments.length ? 'cloudy' : 'none', rise = 0, run = 1;
     for (const seg of forecast.segments) {
       const segEnd = t + seg.hours;
       const isLast = seg === forecast.segments[forecast.segments.length - 1];
@@ -571,19 +633,34 @@
     }
     d = Math.max(0, Math.min(12, d));
 
-    snowLayer.setAttribute('y', GROUND_Y - d * PX_PER_INCH);
-    snowLayer.setAttribute('height', d * PX_PER_INCH);
-    stakeAnchor.setAttribute('cy', GROUND_Y - d * PX_PER_INCH);
+    const top = GROUND_Y - d * PX_PER_INCH;
+    snowTopNow = top;
+    snowLayer.setAttribute('d', moundPath(top));
+    snowLayer.style.display = d < 0.05 ? 'none' : ''; // no stray outline at 0 inches
+    stakeAnchor.setAttribute('cx', STAKE_X);
+    stakeAnchor.setAttribute('cy', top);
     stakeAnchor.setAttribute('opacity', 1);
 
-    sunGroup.setAttribute('opacity', weather === 'sun' ? 1 : 0);
-    cloudGroup.setAttribute('opacity', weather === 'cloudy' ? 1 : 0);
+    // The far-off hill and the ground whiten as the snow gets deeper.
+    const whiten = d / 12;
+    hillSnow.forEach(h => h.setAttribute('opacity', (0.85 * whiten).toFixed(3)));
+    groundSnow.setAttribute('opacity', (0.8 * whiten).toFixed(3));
+
+    // Weather: clouds roll in from the right for snow and cloudy (darker
+    // for snow); the sun rises for melting.
+    const clouds = weather === 'snow' || weather === 'cloudy';
+    cloudGroup.style.opacity = clouds ? 1 : 0;
+    cloudGroup.style.transform = clouds ? 'translateX(0)' : 'translateX(70px)';
+    cloudGroup.style.fill = weather === 'snow' ? '#8993b8' : '#b6bfdc';
+    sunGroup.style.opacity = weather === 'sun' ? 1 : 0;
+    sunGroup.style.transform = weather === 'sun' ? 'translateY(0)' : 'translateY(30px)';
     if (!prefersReducedMotion) setFlakeDensity(weather === 'snow' ? snowDensityCount(rise) : 0);
 
     clockReadout.textContent = `Hour ${Math.round(hour * 10) / 10}`;
     weatherBadge.textContent = weather === 'snow'
       ? `❄️ Snowing (${SM.rateLabel(rise, run, 'snow')})`
-      : weather === 'sun' ? `☀️ Sunny — melting` : `☁️ Cloudy`;
+      : weather === 'sun' ? `☀️ Sunny — melting`
+      : weather === 'cloudy' ? `☁️ Cloudy` : '—';
 
     return d;
   }
@@ -734,6 +811,7 @@
   toggleStory.onchange = () => {
     storyText.classList.toggle('hidden', !toggleStory.checked);
     storyText.textContent = SM.forecastStory(currentExplorerForecast());
+    requestAnimationFrame(refreshLinkLine); // the scene just got shorter/taller
   };
   toggleSteps.onchange = () => drawExplorerGraph(playbackHour);
 
@@ -876,7 +954,7 @@
   // ══════════════════════════════════════════════════════════════
   // MATCH THE FORECAST
   // ══════════════════════════════════════════════════════════════
-  const matchStoryEl = document.getElementById('matchStory');
+  const matchStoryEl = document.getElementById('storyText'); // the banner above the scene
   const matchChoicesEl = document.getElementById('matchChoices');
   const matchFeedbackEl = document.getElementById('matchFeedback');
   const nextItemBtn = document.getElementById('nextItemBtn');
@@ -886,9 +964,12 @@
 
   function miniGraphSvg(points, opts) {
     opts = opts || {};
-    const W = 300, H = 180, PAD = 22;
-    const sx = x => PAD + (x / 12) * (W - PAD * 2);
-    const sy = y => (H - PAD) - (y / 12) * (H - PAD * 2);
+    // The plot is a 200 x 200 square for 12 x 12 units, so one hour is as
+    // wide as one inch is tall (unit squares). Margins hold the tick numbers.
+    const P = 200, L = 32, R = 10, T = 10, B = 32;
+    const W = L + P + R, H = T + P + B;
+    const sx = x => L + (x / 12) * P;
+    const sy = y => T + P - (y / 12) * P;
     let path = '';
     points.forEach((p, i) => { path += (i === 0 ? 'M' : 'L') + sx(p.t) + ',' + sy(p.d) + ' '; });
     const stroke = opts.color || 'var(--text)';
@@ -898,17 +979,17 @@
     let grid = '';
     for (let v = 0; v <= 12; v++) {
       const major = v % 3 === 0;
-      const op = major ? 0.55 : 0.22;
+      const op = major ? 0.55 : 0.24;
       grid += `<line x1="${sx(v)}" y1="${sy(0)}" x2="${sx(v)}" y2="${sy(12)}" stroke="var(--muted)" stroke-width="0.7" opacity="${op}"/>`;
       grid += `<line x1="${sx(0)}" y1="${sy(v)}" x2="${sx(12)}" y2="${sy(v)}" stroke="var(--muted)" stroke-width="0.7" opacity="${op}"/>`;
       if (major) {
-        grid += `<text x="${sx(v)}" y="${H - PAD + 12}" text-anchor="middle" font-family="Space Mono" font-size="9" fill="var(--muted)">${v}</text>`;
-        grid += `<text x="${PAD - 5}" y="${sy(v) + 3}" text-anchor="end" font-family="Space Mono" font-size="9" fill="var(--muted)">${v}</text>`;
+        grid += `<text x="${sx(v)}" y="${T + P + 18}" text-anchor="middle" font-family="Space Mono" font-size="12" fill="var(--muted)">${v}</text>`;
+        grid += `<text x="${L - 6}" y="${sy(v) + 4.5}" text-anchor="end" font-family="Space Mono" font-size="12" fill="var(--muted)">${v}</text>`;
       }
     }
     return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
       ${grid}
-      <path d="${path.trim()}" fill="none" stroke="${stroke}" stroke-width="3"/>
+      <path d="${path.trim()}" fill="none" stroke="${stroke}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
     </svg>`;
   }
 
