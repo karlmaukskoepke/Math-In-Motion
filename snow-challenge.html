@@ -25,6 +25,10 @@
          above, which is why they're their own variables. */
       --run-blue:  #1A56DB;
       --rise-orange: #E07B00;
+      /* Graph scale in units (hours across, inches up). Set from
+         snowModel.js at startup so the plot keeps unit squares. */
+      --hours: 12;
+      --depth: 15;
     }
     html[data-theme="light"] {
       --bg:        #f4f5fa;
@@ -58,6 +62,7 @@
     }
     .hdr-btn:hover { border-color: var(--accent4); color: var(--accent4); }
     .hdr-btn.active { border-color: var(--accent4); color: var(--accent4); background: rgba(255,215,64,0.08); }
+    .hdr-btn:focus-visible, .play-btn:focus-visible, .seg-remove:focus-visible, #addSegmentBtn:focus-visible { outline: 2px solid var(--accent4); outline-offset: 2px; }
     .score-badge {
       font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--muted);
       display: flex; align-items: center; gap: 8px; padding: 0 6px;
@@ -80,22 +85,58 @@
     }
     .story-banner.hidden { display: none; }
 
-    /* ── SCENE ── */
-    #sceneSvg { width: 100%; flex: 1; min-height: 0; background: linear-gradient(to bottom, #151d38, #3f5083); border-radius: 10px; }
-    /* Clouds drift in from the distance; the sun rises. Opacity/position are
-       set from JS (renderSceneAt); these transitions make the change gradual. */
+    /* ── SCENE ── The SVG's coordinate system is re-measured to the panel's
+       real size (1 unit = 1 CSS px), so the sky / background / foreground
+       bands are true shares of the visible picture. Falling snow is drawn
+       on a <canvas> over it, which stays smooth on Chromebooks. */
+    #sceneWrap { position: relative; flex: 1; min-height: 0; border-radius: 10px; overflow: hidden; background: #0d1430; }
+    #sceneSvg, #flakeCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #flakeCanvas { pointer-events: none; }
     #cloudGroup { transition: opacity 1s ease, transform 1.4s ease, fill 1s ease; }
     #sunGroup   { transition: opacity 0.8s ease, transform 1.2s ease; }
+    #moonGroup  { transition: opacity 0.8s ease; }
     .hillSnow   { transition: opacity 0.4s linear; }
-    .clock-readout {
-      font-family: 'Space Mono', monospace; font-size: 0.78rem; color: var(--text);
-      background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
-      padding: 6px 10px; text-align: center;
-    }
     .weather-badge {
-      font-family: 'Space Mono', monospace; font-size: 0.7rem; color: var(--muted);
-      text-align: center;
+      font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--muted);
+      text-align: center; min-height: 1.2em;
     }
+
+    /* ── TIMELINE SLIDER (replaces the old "Hour N" bar) ── */
+    .timeline {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 6px 12px 4px; display: flex; flex-direction: column; gap: 2px;
+    }
+    .timeline.is-locked { opacity: 0.55; }
+    .tl-head { font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--muted); display: flex; align-items: baseline; gap: 6px; }
+    .tl-head b { color: var(--text); font-size: 0.9rem; min-width: 2.6em; }
+    .tl-lock { margin-left: auto; font-size: 0.68rem; }
+    .tl-track { position: relative; padding-bottom: 16px; }
+    #timeSlider {
+      --pct: 0%;
+      -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; cursor: pointer; display: block;
+    }
+    #timeSlider:disabled { cursor: not-allowed; }
+    #timeSlider::-webkit-slider-runnable-track {
+      height: 6px; border-radius: 3px;
+      background: linear-gradient(to right, var(--accent4) 0 var(--pct), var(--border) var(--pct) 100%);
+    }
+    #timeSlider::-moz-range-track { height: 6px; border-radius: 3px; background: var(--border); }
+    #timeSlider::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--accent4); }
+    #timeSlider::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%;
+      background: var(--accent4); border: 3px solid var(--surface); margin-top: -6px; box-shadow: 0 0 0 1px var(--accent4);
+    }
+    #timeSlider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--accent4); border: 3px solid var(--surface); }
+    #timeSlider:focus { outline: none; }
+    #timeSlider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--accent4); }
+    #timeSlider:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--accent4); }
+    #timeSlider:focus-visible { outline: 2px dashed var(--accent4); outline-offset: 3px; border-radius: 4px; }
+    /* Ticks sit under the track; inset by half the thumb so hour 0 and the
+       last hour line up with the thumb's centre at each end. */
+    .tl-ticks { position: absolute; left: 9px; right: 9px; top: 18px; height: 16px; pointer-events: none; }
+    .tl-tick { position: absolute; top: 0; width: 1px; height: 4px; background: var(--muted); opacity: 0.6; transform: translateX(-0.5px); }
+    .tl-tick.major { height: 6px; opacity: 1; }
+    .tl-tick span { position: absolute; top: 6px; left: 0; transform: translateX(-50%); font-family: 'Space Mono', monospace; font-size: 0.62rem; color: var(--muted); }
 
     /* ── PLAYBACK CONTROLS ── */
     .playback-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -115,13 +156,17 @@
     /* ── GRAPH PANE ── */
     #explorerLayout { display: flex; gap: 16px; flex: 1; min-height: 0; }
     #explorerLayout.hidden { display: none; }
-    #controlsCol { width: 244px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; min-height: 0; }
+    #controlsCol { width: 244px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; min-height: 0; padding: 2px; }
     #chartBox { flex: 1; min-width: 0; min-height: 0; container-type: size; display: flex; align-items: center; justify-content: center; }
-    /* The plot area is exactly square (12 hours x 12 inches), so a unit square
-       is a real square. The axis labels take a fixed 58px (left) / 52px
-       (bottom) and 14px / 10px of padding (right / top) — set to match in the
-       Chart.js options — and --P is the biggest square plot that fits. */
-    #chartWrap { position: relative; --P: min(100cqw - 72px, 100cqh - 62px); width: calc(var(--P) + 72px); height: calc(var(--P) + 62px); }
+    /* The plot is --hours units wide and --depth units tall with the SAME
+       pixel size per unit (--u), so a grid cell is a real square. The axis
+       labels take a fixed 58px (left) / 52px (bottom) and 14px / 10px of
+       padding (right / top) — set to match in the Chart.js options. */
+    #chartWrap {
+      position: relative;
+      --u: min((100cqw - 72px) / var(--hours), (100cqh - 62px) / var(--depth));
+      width: calc(var(--u) * var(--hours) + 72px); height: calc(var(--u) * var(--depth) + 62px);
+    }
     #chart { width: 100% !important; height: 100% !important; }
     .toggle-row { display: flex; flex-direction: column; gap: 10px; font-family: 'Space Mono', monospace; font-size: 0.74rem; color: var(--muted); }
     .toggle-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
@@ -129,40 +174,64 @@
     /* ── EXPLORER BUILDER ── */
     #builderControls { display: flex; flex-direction: column; gap: 8px; }
     .builder-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--muted); }
-    .builder-row select, .builder-row input[type=number] {
-      background: var(--surface2); color: var(--text); border: 1px solid var(--border);
-      border-radius: 6px; padding: 4px 6px; font-family: 'Space Mono', monospace; font-size: 0.72rem;
-    }
     #segmentRows { display: flex; flex-direction: column; gap: 8px; }
     .segment-row {
       display: flex; align-items: center; gap: 6px; background: var(--surface);
       border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; flex-wrap: wrap;
     }
-    .segment-row select { min-width: 0; max-width: 100%; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-family: 'Space Mono', monospace; font-size: 0.72rem; }
     .seg-remove {
       background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 50%;
-      width: 20px; height: 20px; cursor: pointer; font-size: 0.7rem; line-height: 1;
+      width: 22px; height: 22px; cursor: pointer; font-size: 0.7rem; line-height: 1;
     }
     .seg-remove:hover { border-color: var(--accent2); color: var(--accent2); }
+    .seg-remove[aria-disabled="true"] { opacity: 0.35; cursor: not-allowed; }
+    .seg-remove[aria-disabled="true"]:hover { border-color: var(--border); color: var(--muted); }
     #addSegmentBtn {
       background: none; border: 1px dashed var(--border); color: var(--muted);
       border-radius: 8px; padding: 6px 10px; font-family: 'Space Mono', monospace; font-size: 0.72rem;
       cursor: pointer; align-self: flex-start;
     }
     #addSegmentBtn:hover { border-color: var(--accent4); color: var(--accent4); }
-    #addSegmentBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+    #addSegmentBtn[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
+    #addSegmentBtn[aria-disabled="true"]:hover { border-color: var(--border); color: var(--muted); }
+    .builder-msg { font-size: 0.8rem; line-height: 1.35; color: var(--accent2); min-height: 1.1em; }
+
+    /* ── STYLED DROPDOWN ("picker") ── No native <select> in the builder.
+       Greyed options stay visible and show WHY on hover, keyboard focus or
+       tap (Karl, 11/26: "That would push a later piece past 15 inches"). */
+    .picker {
+      display: inline-flex; align-items: center; justify-content: space-between; gap: 6px; max-width: 100%;
+      background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 7px;
+      padding: 5px 8px; font-family: 'Space Mono', monospace; font-size: 0.72rem; cursor: pointer; text-align: left;
+      transition: border-color 0.15s;
+    }
+    .picker:hover, .picker[aria-expanded="true"] { border-color: var(--accent4); }
+    .picker:focus-visible { outline: 2px solid var(--accent4); outline-offset: 2px; }
+    .picker-caret { color: var(--muted); font-size: 0.7rem; }
+    .picker-menu {
+      position: fixed; z-index: 100; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.4); padding: 4px; max-height: 60vh; overflow-y: auto;
+      font-family: 'Space Mono', monospace; font-size: 0.74rem; min-width: 120px; max-width: 320px;
+    }
+    .picker-option { padding: 6px 10px; border-radius: 6px; cursor: pointer; color: var(--text); display: flex; flex-direction: column; gap: 3px; }
+    .picker-option:hover, .picker-option:focus { background: var(--surface2); outline: none; }
+    .picker-option:focus-visible { box-shadow: inset 0 0 0 1px var(--accent4); }
+    .picker-option.is-selected .opt-label { color: var(--accent4); font-weight: 700; }
+    .picker-option.is-disabled { cursor: not-allowed; }
+    .picker-option.is-disabled .opt-label { color: var(--muted); opacity: 0.6; text-decoration: line-through; text-decoration-thickness: 1px; }
+    .opt-reason { display: none; font-family: 'DM Sans', sans-serif; font-size: 0.78rem; line-height: 1.3; color: var(--accent2); white-space: normal; }
+    .picker-option.is-disabled:hover .opt-reason,
+    .picker-option.is-disabled:focus .opt-reason,
+    .picker-option.show-reason .opt-reason { display: block; }
 
     /* ── MATCH THE FORECAST ── */
     #matchArea { display: none; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
     #matchArea.active { display: flex; }
     #builderControls.hidden, #chartWrap.hidden, .toggle-row.hidden { display: none; }
-    /* matchBox gives the 2x2 grid the biggest SQUARE that fits, so every
-       choice is a square cell and the graphs inside have unit squares. */
-    #matchBox { flex: 1; min-height: 0; container-type: size; display: flex; align-items: center; justify-content: center; }
-    #matchChoices {
-      display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px;
-      width: min(100cqw, 100cqh); aspect-ratio: 1;
-    }
+    /* The four choice graphs are taller than wide (unit squares). JS measures
+       #matchBox and picks 2x2 or 1x4, whichever gives bigger grid cells. */
+    #matchBox { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+    #matchChoices { display: grid; gap: 12px; justify-content: center; align-content: center; }
     .match-choice {
       background: var(--surface); border: 2px solid var(--border); border-radius: 10px;
       cursor: pointer; padding: 6px; transition: border-color 0.15s, transform 0.1s;
@@ -170,11 +239,10 @@
       min-height: 0; min-width: 0; overflow: hidden;
     }
     .match-choice:hover:not(.resolved) { border-color: var(--accent4); }
+    .match-choice:focus-visible { outline: 2px solid var(--accent4); outline-offset: 2px; }
     .match-choice.correct-pick { border-color: var(--accent3); }
     .match-choice.wrong-pick { border-color: var(--accent2); }
-    .match-choice svg { width: 100%; height: 100%; }
-    /* The feedback row always keeps its height (hidden = invisible, not
-       gone), so the graphs don't jump when a message appears. */
+    .match-choice svg { width: 100%; height: 100%; display: block; }
     #matchFooter { display: flex; align-items: stretch; gap: 10px; height: 66px; flex-shrink: 0; }
     #matchFeedback {
       flex: 1; font-size: 0.95rem; line-height: 1.35; color: var(--text); background: var(--surface2);
@@ -186,8 +254,7 @@
     #linkLineSvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
 
     @media (prefers-reduced-motion: reduce) {
-      .flake { display: none !important; }
-      #cloudGroup, #sunGroup, .hillSnow { transition: none !important; }
+      #cloudGroup, #sunGroup, #moonGroup, .hillSnow { transition: none !important; }
     }
   </style>
 </head>
@@ -221,14 +288,15 @@
             <div id="builderControls">
               <div class="builder-row">
                 <span>Starting depth:</span>
-                <select id="startDepth"></select>
+                <span id="startDepthHost"></span>
                 <span>inches</span>
               </div>
               <div id="segmentRows"></div>
               <button id="addSegmentBtn" type="button">+ Add Segment</button>
+              <div class="builder-msg" id="builderMsg" role="status" aria-live="polite"></div>
             </div>
           </div>
-          <!-- chartBox sizes chartWrap so the plot area is an exact square:
+          <!-- chartBox sizes chartWrap so the plot keeps unit squares:
                one hour is as wide as one inch is tall (see #chartWrap CSS) -->
           <div id="chartBox"><div id="chartWrap"><canvas id="chart"></canvas></div></div>
         </div>
@@ -245,73 +313,30 @@
       <!-- SCENE (right): the story sits above the picture -->
       <div id="scenePane">
         <div id="storyText" class="story-banner hidden"></div>
-        <svg id="sceneSvg" viewBox="0 0 400 360" preserveAspectRatio="xMidYMax meet" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <linearGradient id="groundGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#58505a"/><stop offset="1" stop-color="#2b2730"/>
-            </linearGradient>
-            <radialGradient id="sunGlow"><stop offset="0" stop-color="#ffe9a0" stop-opacity="0.7"/><stop offset="1" stop-color="#ffd740" stop-opacity="0"/></radialGradient>
-            <linearGradient id="moundGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d6e1f7"/>
-            </linearGradient>
-          </defs>
-
-          <!-- ═ FAR AWAY: sky, sun, clouds rolling in, hills, one small tree ═
-               Everything here runs well past the 400-wide viewBox so it fills
-               the pane at any aspect ratio (no bare strips at the sides). -->
-          <g id="sunGroup" style="opacity:0">
-            <circle cx="330" cy="70" r="44" fill="url(#sunGlow)"/>
-            <circle cx="330" cy="70" r="21" fill="#ffd740"/>
-          </g>
-          <g id="cloudGroup" style="opacity:0">
-            <ellipse cx="70"  cy="48" rx="36" ry="12"/><ellipse cx="100" cy="41" rx="24" ry="10"/>
-            <ellipse cx="190" cy="64" rx="42" ry="13"/><ellipse cx="224" cy="56" rx="26" ry="10"/>
-            <ellipse cx="312" cy="40" rx="38" ry="12"/><ellipse cx="342" cy="34" rx="22" ry="9"/>
-            <ellipse cx="142" cy="96" rx="28" ry="9"/><ellipse cx="276" cy="100" rx="30" ry="9"/>
-          </g>
-          <g id="hillsFar">
-            <path d="M-400 250 L-400 200 C-250 160 -120 175 0 190 C120 205 200 150 330 165 C450 180 560 200 800 170 L800 250 Z" fill="#34416b"/>
-            <path class="hillSnow" d="M-400 250 L-400 200 C-250 160 -120 175 0 190 C120 205 200 150 330 165 C450 180 560 200 800 170 L800 250 Z" fill="#e8f0ff" opacity="0"/>
-          </g>
-          <g id="hillsNear">
-            <path d="M-400 262 L-400 232 C-200 218 -60 228 80 224 C200 220 260 206 330 214 C420 224 520 226 800 218 L800 262 Z" fill="#2d4258"/>
-            <path class="hillSnow" d="M-400 262 L-400 232 C-200 218 -60 228 80 224 C200 220 260 206 330 214 C420 224 520 226 800 218 L800 262 Z" fill="#e8f0ff" opacity="0"/>
-          </g>
-          <!-- the tree: small, because it is far away -->
-          <g id="treeGroup">
-            <rect x="297" y="208" width="6" height="14" fill="#6b4a2f"/>
-            <polygon points="300,144 281,184 319,184" fill="#2e6b4a"/>
-            <polygon points="300,160 277,202 323,202" fill="#357a54"/>
-            <polygon points="300,178 272,216 328,216" fill="#3d8a5f"/>
-          </g>
-
-          <!-- ═ CLOSE UP: the ground in front of you, the snow, the stake ═ -->
-          <rect x="-400" y="236" width="1200" height="400" fill="url(#groundGrad)"/>
-          <rect id="groundSnow" x="-400" y="236" width="1200" height="400" fill="#eef3ff" opacity="0"/>
-          <!-- the drift, drawn by renderSceneAt() as depth changes -->
-          <path id="snowLayer" d="" fill="url(#moundGrad)" stroke="#c9d4f0" stroke-width="1"/>
-          <!-- measuring stake, planted at x=46, ticks every inch 0-12
-               bottom-up. Drawn AFTER the snow so it stays readable when
-               buried, like a real stake poking out of a drift. -->
-          <g id="stakeGroup">
-            <rect id="stakeBody" x="42" y="0" width="8" height="0" fill="#8a5a3a"/>
-            <g id="stakeTicks" font-family="Space Mono" font-size="14" font-weight="700"></g>
-          </g>
-          <g id="flakeGroup"></g>
-          <!-- top-of-snow dot on the stake (the full-page link line starts here) -->
-          <circle id="stakeAnchor" cx="46" cy="318" r="3.5" fill="var(--accent4)" opacity="0"/>
-        </svg>
-        <div class="clock-readout" id="clockReadout">Hour 0</div>
-        <div class="weather-badge" id="weatherBadge">—</div>
+        <div id="sceneWrap">
+          <svg id="sceneSvg" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Snow piling up against a measuring stake"></svg>
+          <canvas id="flakeCanvas" aria-hidden="true"></canvas>
+        </div>
+        <div class="timeline" id="timeline">
+          <div class="tl-head">
+            <span>Hour</span><b id="hourReadout">0</b><span id="hourOf">of 6</span>
+            <span class="tl-lock" id="tlLock" hidden>🔒 after you pick</span>
+          </div>
+          <div class="tl-track">
+            <input type="range" id="timeSlider" min="0" max="6" step="0.01" value="0" aria-label="Time in hours">
+            <div class="tl-ticks" id="tlTicks"></div>
+          </div>
+        </div>
         <div class="playback-row">
           <button class="play-btn" id="playBtn" type="button">▶ Play</button>
           <button class="hdr-btn" id="replayBtn" type="button">↻ Replay</button>
-          <select class="speed-select" id="speedSelect">
+          <select class="speed-select" id="speedSelect" aria-label="Playback speed">
             <option value="slow">Slow</option>
             <option value="normal" selected>Normal</option>
             <option value="fast">Fast</option>
           </select>
         </div>
+        <div class="weather-badge" id="weatherBadge">—</div>
       </div>
     </div>
   </div>
@@ -319,16 +344,18 @@
 <script>
 (function () {
   'use strict';
-  const SM = window.SnowModel;
 
   // ── URL settings, so a link can open a specific situation ──
-  //   ?mode=match            open Match the Forecast
-  //   ?level=1..3            Match level for this visit (not saved)
-  //   ?seed=N                reproducible Match round
+  //   ?mode=explorer | match   which mode to open (no mode = Explorer, for now)
+  //   ?level=1..3              Match level for this visit (not saved)
+  //   ?seed=N                  reproducible first Match round
   //   ?start=2&segs=snow:1:3:6,cloudy:2,sun:-1:1:1   Explorer forecast
-  //   ?steps=1  ?story=1     tick the Explorer toggles
-  //   ?at=end | ?at=H        show the graph drawn to the end / to hour H
-  //   ?theme=light|dark      ?reset=1  clear saved score/level
+  //   ?steps=1  ?story=1       tick the Explorer toggles
+  //   ?at=end | ?at=H          show Explorer at the end / at hour H
+  //   ?theme=light|dark        ?reset=1  clear saved score/level
+  //   ?hours=10 ?depth=12      preview another graph scale (not saved)
+  //   ?tile=2x2 | 1x4          force the Match grid layout
+  //   ?birds=soon              first bird visit after ~1 second (for review)
   const URLP = (function () {
     const q = new URLSearchParams(location.search);
     const num = k => (q.has(k) && q.get(k) !== '' && !isNaN(+q.get(k)) ? +q.get(k) : null);
@@ -340,8 +367,17 @@
       });
     }
     return { mode: q.get('mode'), level: num('level'), seed: num('seed'), start: num('start'), segs,
-      steps: q.get('steps') === '1', story: q.get('story') === '1', at: q.get('at'), theme: q.get('theme'), reset: q.get('reset') === '1' };
+      steps: q.get('steps') === '1', story: q.get('story') === '1', at: q.get('at'), theme: q.get('theme'), reset: q.get('reset') === '1',
+      hours: num('hours'), depth: num('depth'), tile: q.get('tile'), birdsSoon: q.get('birds') === 'soon' };
   })();
+
+  // The model at this visit's scale (default 12 h x 15 in, from snowModel.js).
+  const SM = (URLP.hours || URLP.depth)
+    ? window.SnowModel.createModel({ maxHours: URLP.hours || undefined, maxDepth: URLP.depth || undefined })
+    : window.SnowModel;
+  document.documentElement.style.setProperty('--hours', SM.MAX_HOURS);
+  document.documentElement.style.setProperty('--depth', SM.MAX_DEPTH);
+
   if (URLP.reset) SM.resetProgress();
   if (URLP.theme === 'light' || URLP.theme === 'dark') { try { sessionStorage.setItem('mm_theme', URLP.theme); } catch (e) {} }
   function currentLevel() {
@@ -349,6 +385,7 @@
     return SM.getScoreState().level;
   }
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const DEPTH_LABELS = new Set(SM.axisLabels(SM.MAX_DEPTH));
 
   // ── THEME (same key/pattern as the rest of the site) ──
   const THEME_KEY = 'mm_theme';
@@ -388,6 +425,7 @@
   let mode = 'explorer';
   function setMode(next) {
     stopPlayback();
+    closePicker();
     mode = next;
     modeExplorerBtn.classList.toggle('active', mode === 'explorer');
     modeMatchBtn.classList.toggle('active', mode === 'match');
@@ -404,9 +442,85 @@
   modeMatchBtn.onclick = () => setMode('match');
 
   // ══════════════════════════════════════════════════════════════
-  // CHART.JS SETUP (Explorer's main graph — matches the site's axis
-  // conventions: Space Mono labels, 0 line emphasized, gridlines every
-  // whole unit, axis titles).
+  // STYLED DROPDOWN ("picker")
+  // A button that opens a list. Options: {value, label, ok, reason}.
+  // ok:false options stay in the list, greyed, and show their reason on
+  // hover, keyboard focus or tap — they can't be chosen.
+  // ══════════════════════════════════════════════════════════════
+  let openPicker = null;
+  function makePicker({ label, options, value, onChange }) {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'picker';
+    btn.setAttribute('aria-haspopup', 'listbox'); btn.setAttribute('aria-expanded', 'false');
+    const cur = options.find(o => o.value === value) || options[0];
+    btn.setAttribute('aria-label', `${label}: ${cur ? cur.label : ''}`);
+    btn.innerHTML = '<span class="picker-value"></span><span class="picker-caret" aria-hidden="true">▾</span>';
+    btn.querySelector('.picker-value').textContent = cur ? cur.label : '';
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (openPicker && openPicker.btn === btn) { closePicker(); return; }
+      showPickerMenu(btn, label, options, value, onChange);
+    });
+    btn.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); showPickerMenu(btn, label, options, value, onChange); }
+    });
+    return btn;
+  }
+  function showPickerMenu(btn, label, options, value, onChange) {
+    closePicker();
+    const menu = document.createElement('div');
+    menu.className = 'picker-menu'; menu.setAttribute('role', 'listbox'); menu.setAttribute('aria-label', label);
+    options.forEach(o => {
+      const item = document.createElement('div');
+      const disabled = o.ok === false;
+      item.className = 'picker-option' + (disabled ? ' is-disabled' : '') + (o.value === value ? ' is-selected' : '');
+      item.setAttribute('role', 'option'); item.tabIndex = -1;
+      item.setAttribute('aria-selected', String(o.value === value));
+      if (disabled) item.setAttribute('aria-disabled', 'true');
+      const lab = document.createElement('span'); lab.className = 'opt-label'; lab.textContent = o.label; item.appendChild(lab);
+      if (disabled) {
+        const why = document.createElement('span'); why.className = 'opt-reason'; why.textContent = o.reason; item.appendChild(why);
+        item.title = o.reason;
+      }
+      item.addEventListener('click', e => {
+        e.stopPropagation();
+        if (disabled) { item.classList.add('show-reason'); item.focus(); return; } // tap shows why
+        closePicker(); btn.focus(); onChange(o.value);
+      });
+      item.addEventListener('mouseenter', () => item.focus({ preventScroll: true }));
+      menu.appendChild(item);
+    });
+    document.body.appendChild(menu);
+    const r = btn.getBoundingClientRect();
+    menu.style.minWidth = r.width + 'px';
+    const mh = menu.offsetHeight, mw = menu.offsetWidth;
+    menu.style.left = Math.max(8, Math.min(r.left, innerWidth - mw - 8)) + 'px';
+    const below = innerHeight - r.bottom;
+    menu.style.top = (below >= mh + 8 || below >= r.top ? r.bottom + 4 : Math.max(8, r.top - mh - 4)) + 'px';
+    menu.addEventListener('keydown', e => {
+      const items = Array.from(menu.children);
+      const idx = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); items[Math.min(items.length - 1, idx + 1)].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); items[Math.max(0, idx - 1)].focus(); }
+      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (idx >= 0) items[idx].click(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closePicker(); btn.focus(); }
+      else if (e.key === 'Tab') { closePicker(); }
+    });
+    openPicker = { btn, menu };
+    btn.setAttribute('aria-expanded', 'true');
+    (menu.querySelector('.is-selected') || menu.firstChild).focus({ preventScroll: true });
+  }
+  function closePicker() {
+    if (!openPicker) return;
+    openPicker.menu.remove();
+    openPicker.btn.setAttribute('aria-expanded', 'false');
+    openPicker = null;
+  }
+  document.addEventListener('click', closePicker);
+  window.addEventListener('resize', closePicker);
+
+  // ══════════════════════════════════════════════════════════════
+  // CHART.JS SETUP (Explorer's main graph)
   // ══════════════════════════════════════════════════════════════
   let chartTextColor = getTheme() === 'light' ? '#1a1d27' : '#ffffff';
   // Light mode needed noticeably darker gridlines to be readable on white.
@@ -415,11 +529,9 @@
   const riseOrange = getComputedStyle(document.documentElement).getPropertyValue('--rise-orange').trim() || '#E07B00';
 
   // Number captions on the rise/run staircase: "3 hours" under each blue
-  // run leg, "+1 inch" beside each orange rise leg. Run captions sit on
-  // the side of the leg AWAY from the graph line (below when snowing,
-  // above when melting). If a step is too narrow for its caption (e.g.
-  // twelve 1-hour steps on a small screen), only each piece's first step
-  // is captioned so the labels never pile up (see the overlap check below).
+  // run leg, "+1 inch" beside each orange rise leg. If any caption would
+  // not fit or would overlap another, only each piece's first step is
+  // captioned so the labels never pile up.
   let stepLabels = [];
   const stepLabelPlugin = {
     id: 'stepLabels',
@@ -435,19 +547,22 @@
         ctx.strokeStyle = halo; ctx.lineWidth = 4; ctx.strokeText(text, px, py);
         ctx.fillStyle = color; ctx.fillText(text, px, py);
       };
-      // Work out where every caption would go, as a box, then check two
-      // things: each run caption fits inside its own step, and no two
-      // captions overlap. If either fails (small screen, or short repeated
-      // steps like "1 inch every hour"), caption only the first step of
-      // each piece — the repeating pattern is still visible in the dashes.
       const TEXT_H = 13;
+      const area = c.chartArea;
       const placed = stepLabels.map(l => {
         const w = ctx.measureText(l.text).width;
         if (l.kind === 'run') {
           const x0 = x.getPixelForValue(l.x0), x1 = x.getPixelForValue(l.x1);
-          const px = (x0 + x1) / 2, py = y.getPixelForValue(l.y) + (l.melting ? -6 : 6);
-          const top = l.melting ? py - TEXT_H : py;
-          return { l, px, py, fits: (x1 - x0) > w + 6, box: [px - w / 2, top, px + w / 2, top + TEXT_H] };
+          const ly = y.getPixelForValue(l.y);
+          // Away from the graph line: below when snowing, above when
+          // melting — unless that would leave the plot (a run along depth 0
+          // or the top line), then the other side.
+          let above = l.melting;
+          if (!above && ly + 6 + TEXT_H > area.bottom) above = true;
+          if (above && ly - 6 - TEXT_H < area.top) above = false;
+          const py = ly + (above ? -6 : 6);
+          const top = above ? py - TEXT_H : py;
+          return { l, px: (x0 + x1) / 2, py, above, fits: (x1 - x0) > w + 6, box: [(x0 + x1) / 2 - w / 2, top, (x0 + x1) / 2 + w / 2, top + TEXT_H] };
         }
         const px = x.getPixelForValue(l.x) + 6;
         const py = (y.getPixelForValue(l.y0) + y.getPixelForValue(l.y1)) / 2;
@@ -458,7 +573,7 @@
         placed.some((p, i) => placed.some((q, j) => j > i && overlaps(p.box, q.box)));
       for (const p of placed) {
         if (crowded && !p.l.firstOfSeg) continue;
-        if (p.l.kind === 'run') drawText(p.l.text, p.px, p.py, 'center', p.l.melting ? 'bottom' : 'top', runBlueLabel());
+        if (p.l.kind === 'run') drawText(p.l.text, p.px, p.py, 'center', p.above ? 'bottom' : 'top', runBlueLabel());
         else drawText(p.l.text, p.px, p.py, 'left', 'middle', riseOrange);
       }
       ctx.restore();
@@ -479,27 +594,26 @@
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
       // Axis labels get a FIXED size (58px left, 52px bottom) plus 14px/10px
-      // of padding, so #chartWrap can be sized to leave an exactly square
-      // plot area — one hour wide = one inch tall. Keep in step with the
-      // --P calc in the #chartWrap CSS.
+      // of padding, so #chartWrap can be sized to leave a plot with unit
+      // squares. Keep in step with the #chartWrap CSS.
       layout: { padding: { top: 10, right: 14, bottom: 0, left: 0 } },
-      // The chart resizes itself asynchronously (initial layout, story box
-      // toggling, window resize) — re-aim the link line once it settles.
       onResize: () => requestAnimationFrame(refreshLinkLine),
       plugins: { legend: { display: false }, tooltip: { enabled: false } },
       scales: {
         x: {
-          type: 'linear', min: 0, max: 12,
+          type: 'linear', min: 0, max: SM.MAX_HOURS,
           afterFit(scale) { scale.height = 52; },
           title: { display: true, text: 'Time (hours)', color: chartTextColor, font: { family: 'Space Mono', size: 13, weight: 'bold' } },
-          ticks: { color: chartTextColor, font: { family: 'Space Mono', size: 12, weight: 'bold' }, stepSize: 1 },
+          ticks: { color: chartTextColor, font: { family: 'Space Mono', size: 12, weight: 'bold' }, stepSize: 1, autoSkip: false },
           grid: { color: gridColor() },
         },
         y: {
-          min: 0, max: 12,
+          min: 0, max: SM.MAX_DEPTH,
           afterFit(scale) { scale.width = 58; },
           title: { display: true, text: 'Snow depth (inches)', color: chartTextColor, font: { family: 'Space Mono', size: 13, weight: 'bold' } },
-          ticks: { color: chartTextColor, font: { family: 'Space Mono', size: 12, weight: 'bold' }, stepSize: 1 },
+          // A gridline every inch, a number every 3 (and always the top).
+          ticks: { color: chartTextColor, font: { family: 'Space Mono', size: 12, weight: 'bold' }, stepSize: 1, autoSkip: false,
+            callback: v => (DEPTH_LABELS.has(v) ? v : '') },
           grid: { color: gridColor() },
         },
       },
@@ -516,167 +630,348 @@
   }
 
   // ══════════════════════════════════════════════════════════════
-  // SCENE RENDERING — shared by both modes (Match the Forecast plays
-  // the scene using the CORRECT forecast after a pick).
+  // SCENE (Spec v2, Section 3)
+  // Three bands top to bottom: sky (30%), distant hills (20%), and the
+  // foreground (50%) where the snowpack rises from the ground line to the
+  // MAX_DEPTH line at the top of the band. SM.sceneLayout() owns that
+  // geometry; the stake, snow top and link line all use its one scale.
   // ══════════════════════════════════════════════════════════════
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const sceneWrap = document.getElementById('sceneWrap');
   const sceneSvg = document.getElementById('sceneSvg');
-  const snowLayer = document.getElementById('snowLayer');
-  const stakeTicks = document.getElementById('stakeTicks');
-  const stakeBody = document.getElementById('stakeBody');
-  const stakeAnchor = document.getElementById('stakeAnchor');
-  const flakeGroup = document.getElementById('flakeGroup');
-  const sunGroup = document.getElementById('sunGroup');
-  const cloudGroup = document.getElementById('cloudGroup');
-  const hillSnow = document.querySelectorAll('.hillSnow');
-  const groundSnow = document.getElementById('groundSnow');
-  const clockReadout = document.getElementById('clockReadout');
+  const flakeCanvas = document.getElementById('flakeCanvas');
+  const fctx = flakeCanvas.getContext('2d');
   const weatherBadge = document.getElementById('weatherBadge');
   const linkLine = document.getElementById('linkLine');
 
-  // ── Scene geometry (viewBox 0 0 400 360) ──
-  // The picture is "your head near the ground": the stake and the drift of
-  // snow are CLOSE UP on the left; the hill, the small tree and the clouds
-  // are FAR AWAY behind them. Depth is read where the snow meets the stake:
-  // 0 inches is the GROUND_Y line, and every inch is PX_PER_INCH tall.
-  const SVGNS = 'http://www.w3.org/2000/svg';
-  const PX_PER_INCH = 12;
-  const GROUND_Y = 318;
-  const STAKE_X = 46;
-  // The drift: flat on top where the stake stands, then a soft shoulder
-  // sloping down to the ground. `top` is the snow surface's y at the stake.
-  function moundPath(top) {
-    return `M -400 ${GROUND_Y} L -400 ${top} L 96 ${top} C 150 ${top} 170 ${GROUND_Y} 250 ${GROUND_Y} Z`;
+  const LAND_MS = 250;                  // a landing flake squashes and fades this long
+  const BIRD_MIN_S = 15, BIRD_MAX_S = 40; // seconds between bird visits
+  // Flake density tiers, set by the snowing RATE (inches per hour):
+  // light below 1, medium 1 to under 2, heavy 2 and up. [background, foreground]
+  const FLAKE_TIERS = { 0: [0, 0], 1: [24, 14], 2: [48, 30], 3: [85, 55] };
+  const tierForRate = r => (r <= 0 ? 0 : r < 1 ? 1 : r < 2 ? 2 : 3);
+  const STAKE_X = 0.16;                 // stake position, share of scene width
+  const FEEDER_X = 0.80;                // bird feeder pole, share of scene width
+
+  let L = null;          // current SM.sceneLayout()
+  let el = {};           // refs to dynamic scene parts, rebuilt with the scene
+  const scene = { forecast: null, hour: 0, neutral: false, depth: 0, tier: 0, weather: 'none' };
+
+  function svgEl(tag, attrs, parent) {
+    const n = document.createElementNS(SVGNS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
   }
 
-  // Stake spans the full 0-12 inch range (plus a little top) so every
-  // tick sits on wood, and pokes a little way into the ground. Ticks every
-  // inch, longer + labeled every 3 inches. Each mark has a dark outline so
-  // it reads on white snow AND dark sky.
-  stakeBody.setAttribute('y', GROUND_Y - 12.6 * PX_PER_INCH);
-  stakeBody.setAttribute('height', 12.6 * PX_PER_INCH + 14);
-  for (let inch = 0; inch <= 12; inch++) {
-    const y = GROUND_Y - inch * PX_PER_INCH;
-    const major = inch % 3 === 0;
-    const x1 = STAKE_X - 4, x2 = STAKE_X + (major ? 13 : 5);
-    [['#1c2541', 3.5], ['#ffffff', 1.5]].forEach(([color, w]) => {
-      const line = document.createElementNS(SVGNS, 'line');
-      line.setAttribute('x1', x1); line.setAttribute('x2', x2); line.setAttribute('y1', y); line.setAttribute('y2', y);
-      line.setAttribute('stroke', color); line.setAttribute('stroke-width', w);
-      stakeTicks.appendChild(line);
-    });
-    if (!major) continue;
-    const label = document.createElementNS(SVGNS, 'text');
-    label.setAttribute('x', STAKE_X + 17); label.setAttribute('y', y + 5);
-    label.setAttribute('fill', '#ffffff');
-    label.setAttribute('stroke', '#1c2541'); label.setAttribute('stroke-width', 3.5);
-    label.setAttribute('paint-order', 'stroke');
-    label.textContent = String(inch);
-    stakeTicks.appendChild(label);
-  }
+  function buildScene() {
+    const w = Math.round(sceneWrap.clientWidth), h = Math.round(sceneWrap.clientHeight);
+    if (!w || !h) return;
+    L = SM.sceneLayout(w, h);
+    const { skyBottom, fgTop, groundY } = L;
+    sceneSvg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    const dpr = window.devicePixelRatio || 1;
+    flakeCanvas.width = Math.round(w * dpr); flakeCanvas.height = Math.round(h * dpr);
+    fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    flakes.length = 0; birds.length = 0;
 
-  // Flake pool — reused elements, count/visibility driven by rate tier.
-  // Flakes vary in size: bigger = closer = falls faster, which gives the
-  // snowfall some depth. They stop at the snow surface.
-  const MAX_FLAKES = 60;
-  const flakes = [];
-  let snowTopNow = GROUND_Y;
-  for (let i = 0; i < MAX_FLAKES; i++) {
-    const r = 1.2 + Math.random() * 2.0;
-    const c = document.createElementNS(SVGNS, 'circle');
-    c.setAttribute('class', 'flake');
-    c.setAttribute('r', r.toFixed(2));
-    c.setAttribute('fill', '#ffffff');
-    c.style.opacity = 0;
-    flakeGroup.appendChild(c);
-    flakes.push({ el: c, x: -20 + Math.random() * 440, y: 30 + Math.random() * 280, speed: 0.5 + r * 0.45 });
-  }
-  let flakeAnimHandle = null;
-  function setFlakeDensity(activeCount) {
-    for (let i = 0; i < flakes.length; i++) flakes[i].el.style.opacity = i < activeCount ? 0.9 : 0;
-  }
-  function tickFlakes() {
-    for (const f of flakes) {
-      if (+f.el.style.opacity === 0) continue;
-      f.y += f.speed;
-      // land on the drift near the stake, on the ground elsewhere
-      const landing = f.x < 150 ? snowTopNow : GROUND_Y - 22;
-      if (f.y > landing) f.y = 30 + Math.random() * 12;
-      f.el.setAttribute('cx', f.x); f.el.setAttribute('cy', f.y);
+    const rng = SM.makeRng(20261126); // fixed seed: the texture looks the same every time
+    const R = (a, b) => a + rng() * (b - a);
+    const S = Math.min(w, h);
+    let defs = `
+      <linearGradient id="skyG" x1="0" y1="0" x2="0" y2="${fgTop}" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#0b1230"/><stop offset="0.6" stop-color="#1b2752"/><stop offset="1" stop-color="#2d3b6a"/></linearGradient>
+      <radialGradient id="moonGlow"><stop offset="0" stop-color="#e9efff" stop-opacity="0.45"/><stop offset="1" stop-color="#e9efff" stop-opacity="0"/></radialGradient>
+      <radialGradient id="sunGlow"><stop offset="0" stop-color="#ffe9a0" stop-opacity="0.75"/><stop offset="1" stop-color="#ffd740" stop-opacity="0"/></radialGradient>
+      <linearGradient id="yardG" x1="0" y1="${fgTop}" x2="0" y2="${groundY}" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#1c2540"/><stop offset="1" stop-color="#111727"/></linearGradient>
+      <linearGradient id="groundG" x1="0" y1="${groundY}" x2="0" y2="${h}" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#6e4d33"/><stop offset="1" stop-color="#3b291b"/></linearGradient>
+      <linearGradient id="snowG" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d9e3f5"/></linearGradient>
+      <pattern id="snowTex" width="22" height="18" patternUnits="userSpaceOnUse">
+        <circle cx="3" cy="4" r="0.8" fill="#aebfe0" opacity="0.55"/><circle cx="14" cy="11" r="0.7" fill="#aebfe0" opacity="0.5"/>
+        <circle cx="9" cy="15" r="0.6" fill="#ffffff" opacity="0.9"/><circle cx="19" cy="3" r="0.6" fill="#ffffff" opacity="0.8"/></pattern>`;
+
+    // Sky, stars, moon, sun, clouds (top band)
+    let sky = `<rect x="0" y="0" width="${w}" height="${fgTop + 2}" fill="url(#skyG)"/>`;
+    for (let i = 0; i < Math.round(w / 18); i++) {
+      sky += `<circle cx="${R(0, w).toFixed(1)}" cy="${R(4, skyBottom * 0.95).toFixed(1)}" r="${R(0.4, 1.1).toFixed(2)}" fill="#ffffff" opacity="${R(0.25, 0.7).toFixed(2)}"/>`;
     }
-    flakeAnimHandle = requestAnimationFrame(tickFlakes);
-  }
-  if (!prefersReducedMotion) flakeAnimHandle = requestAnimationFrame(tickFlakes);
+    const mr = S * 0.035;
+    sky += `<g id="moonGroup"><circle cx="${w * 0.36}" cy="${h * 0.1}" r="${mr * 2.6}" fill="url(#moonGlow)"/>
+      <circle cx="${w * 0.36}" cy="${h * 0.1}" r="${mr}" fill="#eef2ff"/><circle cx="${w * 0.36 + mr * 0.35}" cy="${h * 0.1 - mr * 0.15}" r="${mr * 0.85}" fill="#1b2752" opacity="0.18"/></g>`;
+    const sr = S * 0.055;
+    sky += `<g id="sunGroup" style="opacity:0"><circle cx="${w * 0.6}" cy="${h * 0.13}" r="${sr * 2.3}" fill="url(#sunGlow)"/>
+      <circle cx="${w * 0.6}" cy="${h * 0.13}" r="${sr}" fill="#ffd740"/></g>`;
+    let clouds = '';
+    const puffs = [[0.08, 0.07, 0.11], [0.2, 0.05, 0.08], [0.38, 0.12, 0.12], [0.5, 0.1, 0.07], [0.68, 0.06, 0.12], [0.82, 0.09, 0.09], [0.95, 0.15, 0.1], [0.27, 0.2, 0.09], [0.6, 0.22, 0.1], [0.86, 0.24, 0.08]];
+    for (const [cx, cy, rx] of puffs) {
+      clouds += `<ellipse cx="${(cx * w).toFixed(1)}" cy="${(cy * h).toFixed(1)}" rx="${(rx * w).toFixed(1)}" ry="${(rx * w * 0.32).toFixed(1)}"/>`;
+      clouds += `<ellipse cx="${((cx + rx * 0.45) * w).toFixed(1)}" cy="${(cy * h - rx * w * 0.18).toFixed(1)}" rx="${(rx * w * 0.6).toFixed(1)}" ry="${(rx * w * 0.28).toFixed(1)}"/>`;
+    }
+    sky += `<g id="cloudGroup" style="opacity:0">${clouds}</g>`;
 
-  function snowDensityCount(rise) {
-    // light/medium/heavy by magnitude, independent of run.
-    const mag = Math.abs(rise);
-    if (mag <= 1) return 14;
-    if (mag <= 2) return 32;
-    return MAX_FLAKES;
-  }
+    // Distant hills and small trees (background band) — hazy, low contrast
+    const band = fgTop - skyBottom;
+    const hill = (base, amp, phase) => {
+      let d = `M 0 ${fgTop + 2} L 0 ${base}`;
+      for (let x = 0; x <= w; x += w / 8) d += ` Q ${x + w / 16} ${base - amp * Math.sin(phase + x / w * 5)} ${x + w / 8} ${base - amp * 0.4 * Math.cos(phase + x / w * 3)}`;
+      return d + ` L ${w} ${fgTop + 2} Z`;
+    };
+    const far = hill(skyBottom + band * 0.45, band * 0.35, 0.6), near = hill(skyBottom + band * 0.78, band * 0.22, 2.1);
+    let hills = `<path d="${far}" fill="#2a3762"/><path class="hillSnow" d="${far}" fill="#dfe8ff" opacity="0"/>`;
+    for (const [tx, ty, th] of [[0.5, 0.62, 0.55], [0.56, 0.66, 0.42], [0.34, 0.7, 0.45]]) {
+      const x = tx * w, y = skyBottom + band * ty, hh = band * th;
+      hills += `<g opacity="0.75"><rect x="${x - 1.2}" y="${y - hh * 0.25}" width="2.4" height="${hh * 0.3}" fill="#3b3530"/>
+        <polygon points="${x},${y - hh} ${x - hh * 0.32},${y - hh * 0.2} ${x + hh * 0.32},${y - hh * 0.2}" fill="#27493f"/></g>`;
+    }
+    hills += `<path d="${near}" fill="#243152"/><path class="hillSnow" d="${near}" fill="#e8efff" opacity="0"/>`;
 
-  function renderSceneAt(forecast, hour) {
-    // Interpolate depth at `hour` across the forecast's segments.
-    let t = 0, d = forecast.start, weather = forecast.segments.length ? 'cloudy' : 'none', rise = 0, run = 1;
-    for (const seg of forecast.segments) {
-      const segEnd = t + seg.hours;
-      const isLast = seg === forecast.segments[forecast.segments.length - 1];
-      if (hour <= segEnd || isLast) {
-        const into = Math.max(0, Math.min(seg.hours, hour - t));
-        const frac = seg.hours === 0 ? 0 : into / seg.hours;
-        d = d + SM.segmentDelta(seg) * frac;
-        weather = seg.weather; rise = seg.rise || 0; run = seg.run || 1;
-        break;
+    // Foreground: dark night-yard backdrop so the white snow top reads clearly
+    let fg = `<rect x="0" y="${fgTop}" width="${w}" height="${groundY - fgTop + 1}" fill="url(#yardG)"/>`;
+
+    // Bird feeder on a tall thin pole (drawn before the snow so the pole's
+    // base gets buried; the tray sits above the MAX_DEPTH line).
+    const px = w * FEEDER_X, poleTop = fgTop - h * 0.1, pw = Math.max(3, S * 0.009), tw = S * 0.15;
+    fg += `<rect x="${px - pw / 2}" y="${poleTop}" width="${pw}" height="${groundY - poleTop + 6}" fill="#3d4352"/>
+      <rect x="${px - pw / 2}" y="${poleTop}" width="${pw * 0.35}" height="${groundY - poleTop + 6}" fill="#596075"/>
+      <rect x="${px - tw / 2}" y="${poleTop - 4}" width="${tw}" height="5" rx="1.5" fill="#7a5638"/>
+      <rect x="${px - tw * 0.32}" y="${poleTop - tw * 0.42}" width="${tw * 0.64}" height="${tw * 0.38}" fill="#a57a50" stroke="#6b4a2f" stroke-width="1"/>
+      <rect x="${px - tw * 0.14}" y="${poleTop - tw * 0.3}" width="${tw * 0.28}" height="${tw * 0.18}" fill="#3a2a1d"/>
+      <polygon points="${px - tw * 0.45},${poleTop - tw * 0.4} ${px},${poleTop - tw * 0.72} ${px + tw * 0.45},${poleTop - tw * 0.4}" fill="#8a3b32" stroke="#5d2722" stroke-width="1"/>`;
+    for (let i = 0; i < 7; i++) fg += `<circle cx="${(px + R(-tw * 0.45, tw * 0.45)).toFixed(1)}" cy="${(poleTop - 4.5).toFixed(1)}" r="1.1" fill="#d9b26a"/>`;
+
+    // Ground strip: soil speckle, small stones, dry grass tufts on top edge
+    let ground = `<rect x="0" y="${groundY}" width="${w}" height="${h - groundY + 1}" fill="url(#groundG)"/>`;
+    const soil = ['#7d5a3d', '#4b3322', '#8a6a4c', '#2f2117', '#5e4330'];
+    for (let i = 0; i < Math.round(w * 0.9); i++) {
+      ground += `<circle cx="${R(0, w).toFixed(1)}" cy="${R(groundY + 2, h).toFixed(1)}" r="${R(0.4, 1.3).toFixed(2)}" fill="${soil[Math.floor(rng() * soil.length)]}" opacity="${R(0.4, 0.85).toFixed(2)}"/>`;
+    }
+    for (let i = 0; i < Math.round(w / 32); i++) {
+      const rx = R(1.8, 4.5);
+      ground += `<ellipse cx="${R(0, w).toFixed(1)}" cy="${R(groundY + 3, h - 2).toFixed(1)}" rx="${rx.toFixed(1)}" ry="${(rx * R(0.55, 0.75)).toFixed(1)}" fill="${rng() < 0.5 ? '#8b8580' : '#6f6a66'}" stroke="#3d3833" stroke-width="0.6"/>`;
+    }
+    for (let i = 0; i < Math.round(w / 20); i++) {
+      const x = R(0, w);
+      let tuft = '';
+      for (let b = 0; b < 4; b++) {
+        const lean = R(-3, 3), tall = R(3.5, 8);
+        tuft += `M ${(x + b * 1.2).toFixed(1)} ${groundY + 1} q ${(lean * 0.4).toFixed(1)} ${(-tall * 0.6).toFixed(1)} ${lean.toFixed(1)} ${(-tall).toFixed(1)} `;
       }
-      t = segEnd;
-      d += SM.segmentDelta(seg);
+      ground += `<path d="${tuft}" stroke="${rng() < 0.5 ? '#8f8b57' : '#a39a63'}" stroke-width="1.1" fill="none" stroke-linecap="round"/>`;
     }
-    d = Math.max(0, Math.min(12, d));
 
-    const top = GROUND_Y - d * PX_PER_INCH;
-    snowTopNow = top;
-    snowLayer.setAttribute('d', moundPath(top));
-    snowLayer.style.display = d < 0.05 ? 'none' : ''; // no stray outline at 0 inches
-    stakeAnchor.setAttribute('cx', STAKE_X);
-    stakeAnchor.setAttribute('cy', top);
-    stakeAnchor.setAttribute('opacity', 1);
+    // Snow layer: flat-topped, full width, at exactly the current depth
+    const snow = `<rect id="snowRect" x="0" y="${groundY}" width="${w}" height="0" fill="url(#snowG)"/>
+      <rect id="snowTexRect" x="0" y="${groundY}" width="${w}" height="0" fill="url(#snowTex)"/>
+      <line id="snowTopLine" x1="0" x2="${w}" y1="${groundY}" y2="${groundY}" stroke="#ffffff" stroke-width="1.6" opacity="0"/>`;
 
-    // The far-off hill and the ground whiten as the snow gets deeper.
-    const whiten = d / 12;
-    hillSnow.forEach(h => h.setAttribute('opacity', (0.85 * whiten).toFixed(3)));
-    groundSnow.setAttribute('opacity', (0.8 * whiten).toFixed(3));
+    // Measuring stake (drawn over the snow so it stays readable when buried)
+    const sx = w * STAKE_X, sTop = L.yForDepth(SM.MAX_DEPTH) - 8;
+    let stake = `<rect x="${sx - 4}" y="${sTop}" width="8" height="${groundY - sTop + 10}" rx="1" fill="#8a5a3a" stroke="#5e3c26" stroke-width="1"/>`;
+    const labels = new Set(SM.axisLabels(SM.MAX_DEPTH));
+    const fs = Math.max(11, Math.min(14, L.pxPerInch * 1.15));
+    for (let inch = 0; inch <= SM.MAX_DEPTH; inch++) {
+      const y = L.yForDepth(inch).toFixed(2);
+      const major = labels.has(inch);
+      const x2 = sx + (major ? 13 : 7);
+      stake += `<line class="stake-mark" data-inch="${inch}" x1="${sx - 5}" x2="${x2}" y1="${y}" y2="${y}" stroke="#1c2541" stroke-width="3.2"/>`;
+      stake += `<line x1="${sx - 5}" x2="${x2}" y1="${y}" y2="${y}" stroke="#ffffff" stroke-width="1.3"/>`;
+      if (major) stake += `<text x="${sx + 17}" y="${(+y + fs * 0.36).toFixed(1)}" font-family="Space Mono" font-size="${fs.toFixed(1)}" font-weight="700" fill="#ffffff" stroke="#1c2541" stroke-width="2.2" stroke-linejoin="round" paint-order="stroke">${inch}</text>`;
+    }
+    stake += `<circle id="stakeAnchor" cx="${sx}" cy="${groundY}" r="4" fill="#ffd740" stroke="#1c2541" stroke-width="1"/>`;
 
-    // Weather: clouds roll in from the right for snow and cloudy (darker
-    // for snow); the sun rises for melting.
-    const clouds = weather === 'snow' || weather === 'cloudy';
-    cloudGroup.style.opacity = clouds ? 1 : 0;
-    cloudGroup.style.transform = clouds ? 'translateX(0)' : 'translateX(70px)';
-    cloudGroup.style.fill = weather === 'snow' ? '#8993b8' : '#b6bfdc';
-    sunGroup.style.opacity = weather === 'sun' ? 1 : 0;
-    sunGroup.style.transform = weather === 'sun' ? 'translateY(0)' : 'translateY(30px)';
-    if (!prefersReducedMotion) setFlakeDensity(weather === 'snow' ? snowDensityCount(rise) : 0);
+    sceneSvg.innerHTML = `<defs>${defs}</defs>${sky}${hills}${fg}${ground}${snow}${stake}<g id="birdLayer"></g>`;
+    el = {
+      snowRect: sceneSvg.querySelector('#snowRect'), snowTex: sceneSvg.querySelector('#snowTexRect'),
+      snowTop: sceneSvg.querySelector('#snowTopLine'), anchor: sceneSvg.querySelector('#stakeAnchor'),
+      clouds: sceneSvg.querySelector('#cloudGroup'), sun: sceneSvg.querySelector('#sunGroup'), moon: sceneSvg.querySelector('#moonGroup'),
+      hillSnow: sceneSvg.querySelectorAll('.hillSnow'), birdLayer: sceneSvg.querySelector('#birdLayer'),
+      perches: [{ x: px - tw * 0.4, y: poleTop - 4 }, { x: px + tw * 0.4, y: poleTop - 4 }],
+      birdScale: Math.max(0.8, S / 360),
+    };
+    applyScene();
+    refreshLinkLine();
+  }
 
-    clockReadout.textContent = `Hour ${Math.round(hour * 10) / 10}`;
-    weatherBadge.textContent = weather === 'snow'
-      ? `❄️ Snowing (${SM.rateLabel(rise, run, 'snow')})`
-      : weather === 'sun' ? `☀️ Sunny — melting`
-      : weather === 'cloudy' ? `☁️ Cloudy` : '—';
+  // Put the scene at (forecast, hour). neutral: show the depth only, with
+  // no weather — used in Match before a pick, so the scene can't leak the
+  // first piece's weather.
+  function setScene(forecast, hour, opts) {
+    scene.forecast = forecast; scene.hour = hour; scene.neutral = !!(opts && opts.neutral);
+    return applyScene();
+  }
+  function applyScene() {
+    const f = scene.forecast;
+    const d = f ? SM.depthAt(f, scene.hour) : 0;
+    const wa = f && !scene.neutral ? SM.weatherAt(f, scene.hour) : null;
+    const weather = wa ? wa.seg.weather : 'none';
+    const rate = wa ? SM.segmentRate(wa.seg) : 0;
+    scene.depth = d; scene.weather = weather;
+    scene.tier = weather === 'snow' ? tierForRate(rate) : 0;
+    if (wa && weather === 'snow') weatherBadge.textContent = `❄️ Snowing — ${SM.rateLabel(wa.seg.rise, wa.seg.run, 'snow').replace('snows ', '')}`;
+    else if (weather === 'sun') weatherBadge.textContent = d <= 1e-9 ? '☀️ All melted.' : '☀️ Sunny — melting';
+    else if (weather === 'cloudy') weatherBadge.textContent = '☁️ Cloudy';
+    else weatherBadge.textContent = '—';
+    if (!L) return d;
 
+    const top = L.yForDepth(d);
+    const show = d > 0.02;
+    for (const r of [el.snowRect, el.snowTex]) { r.setAttribute('y', top); r.setAttribute('height', Math.max(0, L.groundY - top)); }
+    el.snowRect.style.display = el.snowTex.style.display = show ? '' : 'none';
+    el.snowTop.setAttribute('y1', top); el.snowTop.setAttribute('y2', top);
+    el.snowTop.setAttribute('opacity', show ? 0.95 : 0);
+    el.anchor.setAttribute('cy', top);
+    const whiten = d / SM.MAX_DEPTH;
+    el.hillSnow.forEach(hs => hs.setAttribute('opacity', (0.8 * whiten).toFixed(3)));
+    // Clouds roll in from the distance for snow and cloudy (darker for
+    // snow); the sun rises for melting and the moon fades.
+    const cloudy = weather === 'snow' || weather === 'cloudy';
+    el.clouds.style.opacity = cloudy ? 1 : 0;
+    el.clouds.style.transform = cloudy ? 'translateX(0)' : `translateX(${L.width * 0.25}px)`;
+    el.clouds.style.fill = weather === 'snow' ? '#7d87ac' : '#aab3d2';
+    el.sun.style.opacity = weather === 'sun' ? 1 : 0;
+    el.sun.style.transform = weather === 'sun' ? 'translateY(0)' : `translateY(${L.height * 0.08}px)`;
+    el.moon.style.opacity = weather === 'sun' ? 0 : 1;
     return d;
   }
 
+  // ── Falling snow (canvas) and the occasional bird ──
+  // Background flakes are small and slow and fade out over the hills;
+  // foreground flakes are bigger and faster and fall to the snow surface,
+  // where they squash and fade in about a quarter second.
+  const flakes = [];
+  const birds = [];
+  let nextBirdAt = performance.now() + (URLP.birdsSoon ? 1000 : (BIRD_MIN_S + Math.random() * (BIRD_MAX_S - BIRD_MIN_S)) * 1000);
+  function spawnFlake(layer, initial) {
+    const h = L.height;
+    const fgLayer = layer === 'fg';
+    const r = fgLayer ? 1.5 + Math.random() * 1.4 : 0.7 + Math.random() * 0.6;
+    flakes.push({
+      layer, r, x: Math.random() * L.width,
+      y: -r - Math.random() * h * (initial ? 0.6 : 0.12),
+      vy: h * (fgLayer ? 0.26 + Math.random() * 0.16 : 0.09 + Math.random() * 0.06),
+      sway: (fgLayer ? 10 : 5) * Math.random(), phase: Math.random() * 6.28, landedAt: 0,
+    });
+  }
+  let lastFrame = performance.now(), lastTier = 0;
+  function frame(now) {
+    const dt = Math.min(0.05, (now - lastFrame) / 1000);
+    lastFrame = now;
+    if (L) {
+      const want = FLAKE_TIERS[scene.tier];
+      let bg = 0, fgc = 0;
+      for (const f of flakes) { if (f.layer === 'bg') bg++; else fgc++; }
+      const fresh = scene.tier > 0 && lastTier === 0; // snow just started: fill from the top edge
+      let budget = fresh ? 999 : 4;
+      while (bg < want[0] && budget-- > 0) { spawnFlake('bg', fresh); bg++; }
+      budget = fresh ? 999 : 4;
+      while (fgc < want[1] && budget-- > 0) { spawnFlake('fg', fresh); fgc++; }
+      lastTier = scene.tier;
+
+      const surface = L.yForDepth(scene.depth);
+      const fadeTop = L.skyBottom, fadeBottom = L.fgTop;
+      fctx.clearRect(0, 0, L.width, L.height);
+      fctx.fillStyle = '#ffffff';
+      for (let i = flakes.length - 1; i >= 0; i--) {
+        const f = flakes[i];
+        let alpha = f.layer === 'fg' ? 0.95 : 0.7, sx = 1, sy = 1;
+        if (f.landedAt) {
+          const p = (now - f.landedAt) / LAND_MS;
+          if (p >= 1) { flakes.splice(i, 1); continue; }
+          sx = 1 + p * 0.9; sy = Math.max(0.15, 1 - p * 0.85); alpha *= 1 - p;
+          f.y = surface - f.r * sy * 0.5; // ride the surface as it rises
+        } else {
+          f.y += f.vy * dt;
+          f.x += Math.sin(f.phase + f.y * 0.03) * f.sway * dt;
+          if (f.layer === 'bg') {
+            if (f.y > fadeBottom) { flakes.splice(i, 1); continue; }
+            if (f.y > fadeTop) alpha *= Math.max(0, (fadeBottom - f.y) / (fadeBottom - fadeTop));
+          } else if (f.y + f.r >= surface) {
+            f.landedAt = now; f.y = surface - f.r * 0.5;
+          }
+        }
+        if (alpha <= 0.01) continue;
+        fctx.globalAlpha = alpha;
+        fctx.beginPath();
+        fctx.ellipse(f.x, f.y, f.r * sx, f.r * sy, 0, 0, Math.PI * 2);
+        fctx.fill();
+      }
+      fctx.globalAlpha = 1;
+      updateBirds(now, dt);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // A bird: dark body, rusty breast, flapping wing. Flies in from the side,
+  // perches on the feeder for a few seconds, flies off. Never in heavy snow.
+  function makeBird() {
+    const g = svgEl('g', { class: 'bird' }, el.birdLayer);
+    svgEl('ellipse', { cx: 0, cy: 0, rx: 6.5, ry: 4.4, fill: '#3b4054' }, g);
+    svgEl('ellipse', { cx: 2.2, cy: 1.4, rx: 3.6, ry: 2.8, fill: '#c5684b' }, g);
+    svgEl('circle', { cx: 5.2, cy: -3, r: 3.2, fill: '#3b4054' }, g);
+    svgEl('circle', { cx: 6.2, cy: -3.6, r: 0.7, fill: '#ffffff' }, g);
+    svgEl('polygon', { points: '8,-3.4 11,-2.6 8,-2', fill: '#e3a63c' }, g);
+    svgEl('polygon', { points: '-6,-1 -11,-3 -10,1', fill: '#2c3040' }, g);
+    const wing = svgEl('path', { d: 'M -3 -1 Q 1 -9 4 -1 Z', fill: '#2c3040' }, g);
+    return { g, wing };
+  }
+  function updateBirds(now, dt) {
+    if (now >= nextBirdAt) {
+      nextBirdAt = now + (BIRD_MIN_S + Math.random() * (BIRD_MAX_S - BIRD_MIN_S)) * 1000;
+      if (scene.tier < 3 && !birds.length && el.perches) {
+        const count = Math.random() < 0.35 ? 2 : 1;
+        for (let k = 0; k < count; k++) {
+          const perch = el.perches[k];
+          const fromRight = Math.random() < 0.5;
+          const b = makeBird();
+          birds.push(Object.assign(b, {
+            phase: 'in', t: 0, dur: 1.4 + k * 0.3,
+            from: { x: fromRight ? L.width + 20 : -20, y: L.height * (0.08 + Math.random() * 0.15) },
+            to: perch, stay: 3 + Math.random() * 3, dirIn: fromRight ? -1 : 1,
+          }));
+        }
+      }
+    }
+    for (let i = birds.length - 1; i >= 0; i--) {
+      const b = birds[i];
+      b.t += dt;
+      let x, y, flapping = true, dir;
+      if (b.phase === 'in') {
+        const p = Math.min(1, b.t / b.dur), e = 1 - Math.pow(1 - p, 2);
+        x = b.from.x + (b.to.x - b.from.x) * e;
+        y = b.from.y + (b.to.y - b.from.y) * e - Math.sin(p * Math.PI) * L.height * 0.05;
+        dir = b.dirIn;
+        if (p >= 1) { b.phase = 'perch'; b.t = 0; }
+      } else if (b.phase === 'perch') {
+        x = b.to.x; y = b.to.y - Math.abs(Math.sin(b.t * 2.2)) * 1.2; flapping = false; dir = b.dirIn;
+        if (b.t >= b.stay) { b.phase = 'out'; b.t = 0; b.out = { x: b.dirIn > 0 ? L.width + 30 : -30, y: L.height * 0.05 }; }
+      } else {
+        const p = Math.min(1, b.t / 1.2), e = p * p;
+        x = b.to.x + (b.out.x - b.to.x) * e; y = b.to.y + (b.out.y - b.to.y) * e;
+        dir = b.dirIn;
+        if (p >= 1) { b.g.remove(); birds.splice(i, 1); continue; }
+      }
+      const s = el.birdScale;
+      b.g.setAttribute('transform', `translate(${x.toFixed(1)},${(y - 4.4 * s).toFixed(1)}) scale(${(dir * s).toFixed(2)},${s.toFixed(2)})`);
+      b.wing.setAttribute('transform', flapping ? `scale(1,${Math.sin(performance.now() / 45) > 0 ? 1 : -0.6})` : 'scale(1,0.5)');
+    }
+  }
+
+  new ResizeObserver(() => buildScene()).observe(sceneWrap);
+  if (!prefersReducedMotion) requestAnimationFrame(frame); // no flakes or birds with reduced motion
+
   // Connects the top of the snow on the stake to the matching point on
   // the graph (current hour, current depth). The stake and the graph use
-  // different inch scales, so a flat horizontal line would point at the
-  // wrong depth — instead the line ends exactly on the plotted point,
-  // found with Chart.js's own value->pixel conversion.
+  // different scales, so the line ends exactly on the plotted point.
   const linkDot = document.getElementById('linkDot');
   const contentEl = document.getElementById('content');
   function updateLinkLine(depthInches) {
-    if (depthInches == null || mode !== 'explorer' || chartWrap.classList.contains('hidden')) {
+    if (depthInches == null || mode !== 'explorer' || chartWrap.classList.contains('hidden') || !el.anchor) {
       linkLine.setAttribute('opacity', 0); linkDot.setAttribute('opacity', 0); return;
     }
-    const anchorRect = stakeAnchor.getBoundingClientRect();
+    const anchorRect = el.anchor.getBoundingClientRect();
     const chartRect = document.getElementById('chart').getBoundingClientRect();
     const box = contentEl.getBoundingClientRect();
     const x1 = anchorRect.left + anchorRect.width / 2 - box.left;
@@ -689,120 +984,165 @@
     linkLine.setAttribute('opacity', 0.6); linkDot.setAttribute('opacity', 1);
   }
   function refreshLinkLine() {
-    if (mode === 'explorer') updateLinkLine(Math.max(0, Math.min(12, explorerDepthAt(playbackHour))));
+    if (mode === 'explorer') updateLinkLine(SM.depthAt(currentExplorerForecast(), playbackHour));
   }
   window.addEventListener('resize', refreshLinkLine);
 
   // ══════════════════════════════════════════════════════════════
-  // EXPLORER — builder state + live graph/story
+  // TIMELINE SLIDER (Spec v2, 4a). The scene always matches the thumb.
+  // Arrow keys move 1 hour (Shift: 1/4 hour), snapping to that grid.
   // ══════════════════════════════════════════════════════════════
-  const startDepthSel = document.getElementById('startDepth');
-  for (let i = 0; i <= 6; i++) { const o = document.createElement('option'); o.value = i; o.textContent = i; startDepthSel.appendChild(o); }
-  startDepthSel.value = 2;
+  const SLIDER_STEP = 1, SLIDER_FINE_STEP = 0.25;
+  const timeline = document.getElementById('timeline');
+  const timeSlider = document.getElementById('timeSlider');
+  const hourReadout = document.getElementById('hourReadout');
+  const hourOf = document.getElementById('hourOf');
+  const tlTicks = document.getElementById('tlTicks');
+  const tlLock = document.getElementById('tlLock');
+  let timelineTotal = 0;
+  let playbackHour = 0;
 
+  function formatHour(t) {
+    const q = Math.round(t * 4);
+    if (Math.abs(t * 4 - q) < 1e-6) {
+      const whole = Math.floor(q / 4), frac = ['', '¼', '½', '¾'][q % 4];
+      return whole === 0 && frac ? frac : `${whole}${frac}`;
+    }
+    return t.toFixed(1);
+  }
+  function setTimeline(total, locked) {
+    timelineTotal = total;
+    timeSlider.max = total;
+    timeSlider.disabled = !!locked;
+    timeline.classList.toggle('is-locked', !!locked);
+    tlLock.hidden = !locked;
+    hourOf.textContent = `of ${total}`;
+    const labels = new Set(SM.axisLabels(total));
+    tlTicks.innerHTML = '';
+    for (let hr = 0; hr <= total; hr++) {
+      const t = document.createElement('div');
+      t.className = 'tl-tick' + (labels.has(hr) ? ' major' : '');
+      t.style.left = (total ? hr / total * 100 : 0) + '%';
+      if (labels.has(hr)) { const s = document.createElement('span'); s.textContent = hr; t.appendChild(s); }
+      tlTicks.appendChild(t);
+    }
+    updateSliderUI();
+  }
+  function updateSliderUI() {
+    timeSlider.value = playbackHour;
+    timeSlider.style.setProperty('--pct', (timelineTotal ? playbackHour / timelineTotal * 100 : 0) + '%');
+    hourReadout.textContent = formatHour(playbackHour);
+    timeSlider.setAttribute('aria-valuetext', `Hour ${formatHour(playbackHour)}`);
+  }
+  // The forecast the slider is scrubbing right now (null = nothing to scrub).
+  function activeForecast() {
+    if (mode === 'explorer') return currentExplorerForecast();
+    return currentMatchItem && matchResolved ? currentMatchItem.correct : null;
+  }
+  function seek(t) {
+    const f = activeForecast();
+    if (!f) return;
+    playbackHour = Math.max(0, Math.min(SM.forecastTotalHours(f), t));
+    if (mode === 'explorer') drawExplorerGraph(playbackHour);
+    const d = setScene(f, playbackHour);
+    updateLinkLine(mode === 'explorer' ? d : null);
+    updateSliderUI();
+  }
+  timeSlider.addEventListener('input', () => { stopPlayback(); seek(+timeSlider.value); });
+  timeSlider.addEventListener('keydown', e => {
+    const dir = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key];
+    if (!dir) return;
+    e.preventDefault();
+    const step = e.shiftKey ? SLIDER_FINE_STEP : SLIDER_STEP;
+    const target = dir > 0
+      ? (Math.floor(playbackHour / step + 1e-6) + 1) * step
+      : (Math.ceil(playbackHour / step - 1e-6) - 1) * step;
+    stopPlayback();
+    seek(target);
+  });
+
+  // ══════════════════════════════════════════════════════════════
+  // EXPLORER — builder state + live graph/story
+  // Every choice comes from the model's Explorer rules: only options that
+  // fit are listed, and ones that would break a LATER piece are greyed
+  // with a reason. Later pieces are never changed behind the student's back.
+  // ══════════════════════════════════════════════════════════════
+  const startDepthHost = document.getElementById('startDepthHost');
   const segmentRows = document.getElementById('segmentRows');
   const addSegmentBtn = document.getElementById('addSegmentBtn');
-  let explorerSegments = [{ weather: 'snow', rise: 1, run: 3, hours: 6 }]; // friendly default, matches spec's own example
+  const builderMsg = document.getElementById('builderMsg');
+  let explorerStart = 2;
+  let explorerSegments = [{ weather: 'snow', rise: 1, run: 3, hours: 6 }]; // friendly default, matches the v1 spec's example
+  const WEATHER_LABEL = { snow: 'Snowing', cloudy: 'Cloudy', sun: 'Sunny (melting)' };
 
-  // Hours a segment may last: any whole hour for cloudy, a multiple of
-  // the run for snow/sun (so corners land on whole inches), and never
-  // more than what's left of the 12-hour graph after the other segments.
-  function allowedHoursFor(weather, run, maxHours) {
-    const step = weather === 'cloudy' ? 1 : run;
-    const out = [];
-    for (let h = step; h <= maxHours; h += step) out.push(h);
-    return out;
+  function currentExplorerForecast() {
+    return { start: explorerStart, segments: explorerSegments.map(s => Object.assign({}, s)) };
   }
-  function hoursLeftFor(i) {
-    return SM.MAX_TOTAL_HOURS - explorerSegments.reduce((sum, s, j) => j === i ? sum : sum + s.hours, 0);
-  }
-  // After any change, nudge a segment back into a legal shape: a rate
-  // whose run doesn't fit falls back to a 1-hour run, and hours snap to
-  // the nearest allowed value at or below what was there.
-  function fitSegment(seg, maxHours) {
-    if (seg.weather !== 'cloudy' && seg.run > maxHours) { seg.rise = seg.weather === 'sun' ? -1 : 1; seg.run = 1; }
-    const valid = allowedHoursFor(seg.weather, seg.run, maxHours);
-    if (!valid.includes(seg.hours)) seg.hours = valid.filter(h => h <= seg.hours).pop() || valid[0];
-  }
-  function explorerDepthAt(hour) {
-    const f = currentExplorerForecast();
-    let t = 0, d = f.start;
-    for (const seg of f.segments) {
-      if (hour <= t + seg.hours) return d + SM.segmentDelta(seg) * ((hour - t) / seg.hours);
-      t += seg.hours; d += SM.segmentDelta(seg);
-    }
-    return d;
+  function afterEdit() {
+    builderMsg.textContent = '';
+    renderSegmentRows();
+    renderExplorerAtRest();
   }
 
   function renderSegmentRows() {
+    const f = currentExplorerForecast();
+    startDepthHost.replaceChildren(makePicker({
+      label: 'Starting depth',
+      options: SM.startOptions(f).map(o => Object.assign({ label: String(o.value) }, o)),
+      value: f.start,
+      onChange: v => { explorerStart = v; afterEdit(); },
+    }));
+
     segmentRows.innerHTML = '';
-    explorerSegments.forEach((seg, i) => {
-      const maxHours = hoursLeftFor(i);
-      fitSegment(seg, maxHours);
+    f.segments.forEach((seg, i) => {
       const row = document.createElement('div');
       row.className = 'segment-row';
-
-      const weatherSel = document.createElement('select');
-      ['snow', 'cloudy', 'sun'].forEach(w => { const o = document.createElement('option'); o.value = w; o.textContent = w === 'snow' ? 'Snowing' : w === 'sun' ? 'Sunny (melting)' : 'Cloudy'; weatherSel.appendChild(o); });
-      weatherSel.value = seg.weather;
-      weatherSel.onchange = () => {
-        seg.weather = weatherSel.value;
-        if (seg.weather === 'cloudy') { delete seg.rise; delete seg.run; seg.hours = 2; }
-        else if (seg.weather === 'snow') { seg.rise = 1; seg.run = 3; seg.hours = 3; }
-        else { seg.rise = -1; seg.run = 1; seg.hours = 1; }
-        fitSegment(seg, maxHours);
-        renderSegmentRows(); renderExplorerAtRest();
-      };
-      row.appendChild(weatherSel);
-
+      row.appendChild(makePicker({
+        label: `Piece ${i + 1} weather`,
+        options: SM.weatherOptions(f, i).map(o => Object.assign({ label: WEATHER_LABEL[o.value] }, o)),
+        value: seg.weather,
+        onChange: w => { explorerSegments[i] = SM.bestPiece(f, i, w, seg); afterEdit(); },
+      }));
       if (seg.weather !== 'cloudy') {
-        const rateSel = document.createElement('select');
-        const rates = seg.weather === 'snow' ? SM.SNOW_RATES : SM.MELT_RATES;
-        rates.forEach(([r, u]) => {
-          const o = document.createElement('option');
-          o.value = `${r},${u}`;
-          o.textContent = SM.rateLabel(r, u, seg.weather);
-          o.disabled = u > maxHours; // run wouldn't fit in the hours left
-          rateSel.appendChild(o);
-        });
-        rateSel.value = `${seg.rise},${seg.run}`;
-        rateSel.onchange = () => {
-          const [r, u] = rateSel.value.split(',').map(Number);
-          seg.rise = r; seg.run = u;
-          fitSegment(seg, maxHours);
-          renderSegmentRows(); renderExplorerAtRest();
-        };
-        row.appendChild(rateSel);
+        row.appendChild(makePicker({
+          label: `Piece ${i + 1} rate`,
+          options: SM.rateOptions(f, i, seg.weather).map(o => ({ value: `${o.rise},${o.run}`, label: SM.rateLabel(o.rise, o.run, seg.weather), ok: o.ok, reason: o.reason })),
+          value: `${seg.rise},${seg.run}`,
+          onChange: v => {
+            const [r, u] = v.split(',').map(Number);
+            explorerSegments[i] = SM.bestPiece(f, i, seg.weather, { rise: r, run: u, hours: seg.hours });
+            afterEdit();
+          },
+        }));
       }
-
-      const hoursSel = document.createElement('select');
-      const validHours = allowedHoursFor(seg.weather, seg.run, maxHours);
-      validHours.forEach(h => { const o = document.createElement('option'); o.value = h; o.textContent = `${h}h`; hoursSel.appendChild(o); });
-      hoursSel.value = seg.hours;
-      hoursSel.onchange = () => { seg.hours = Number(hoursSel.value); renderExplorerAtRest(); };
-      row.appendChild(hoursSel);
-
-      if (explorerSegments.length > 1) {
+      row.appendChild(makePicker({
+        label: `Piece ${i + 1} hours`,
+        options: SM.hourOptions(f, i, seg.weather, seg.rise, seg.run).map(o => Object.assign({ label: `${o.value}h` }, o)),
+        value: seg.hours,
+        onChange: h => { explorerSegments[i] = Object.assign({}, seg, { hours: h }); afterEdit(); },
+      }));
+      if (f.segments.length > 1) {
+        const rc = SM.removeCheck(f, i);
         const rm = document.createElement('button');
         rm.className = 'seg-remove'; rm.type = 'button'; rm.textContent = '✕';
-        rm.onclick = () => { explorerSegments.splice(i, 1); renderSegmentRows(); renderExplorerAtRest(); };
+        rm.setAttribute('aria-label', `Remove piece ${i + 1}`);
+        if (!rc.ok) { rm.setAttribute('aria-disabled', 'true'); rm.title = rc.reason; }
+        rm.onclick = () => {
+          if (!rc.ok) { builderMsg.textContent = rc.reason; return; } // tap shows why
+          explorerSegments.splice(i, 1); afterEdit();
+        };
         row.appendChild(rm);
       }
       segmentRows.appendChild(row);
     });
-    const hoursUsed = explorerSegments.reduce((sum, s) => sum + s.hours, 0);
-    addSegmentBtn.disabled = explorerSegments.length >= SM.MAX_SEGMENTS || hoursUsed >= SM.MAX_TOTAL_HOURS;
-  }
-  addSegmentBtn.onclick = () => {
-    const hoursLeft = SM.MAX_TOTAL_HOURS - explorerSegments.reduce((sum, s) => sum + s.hours, 0);
-    if (explorerSegments.length >= SM.MAX_SEGMENTS || hoursLeft < 1) return;
-    explorerSegments.push(hoursLeft >= 3 ? { weather: 'snow', rise: 1, run: 3, hours: 3 } : { weather: 'cloudy', hours: hoursLeft });
-    renderSegmentRows(); renderExplorerAtRest();
-  };
-  startDepthSel.onchange = renderExplorerAtRest;
 
-  function currentExplorerForecast() {
-    return { start: Number(startDepthSel.value), segments: explorerSegments.map(s => Object.assign({}, s)) };
+    const ac = SM.addCheck(f);
+    addSegmentBtn.setAttribute('aria-disabled', String(!ac.ok));
+    addSegmentBtn.title = ac.ok ? '' : ac.reason;
+    addSegmentBtn.onclick = () => {
+      if (!ac.ok) { builderMsg.textContent = ac.reason; return; }
+      explorerSegments.push(ac.piece); afterEdit();
+    };
   }
 
   const toggleSteps = document.getElementById('toggleSteps');
@@ -811,23 +1151,18 @@
   toggleStory.onchange = () => {
     storyText.classList.toggle('hidden', !toggleStory.checked);
     storyText.textContent = SM.forecastStory(currentExplorerForecast());
-    requestAnimationFrame(refreshLinkLine); // the scene just got shorter/taller
   };
   toggleSteps.onchange = () => drawExplorerGraph(playbackHour);
 
   function stepPoints(forecast, uptoHour) {
-    // Rise/run staircase for whichever segments have been drawn up to
-    // `uptoHour` — split into a blue "run" leg and an orange "rise" leg,
-    // matching the scene's color conventions. Per the spec, the unit
-    // step (run, rise) REPEATS across a segment's full length — e.g. a
-    // 6-hour "1 inch every 3 hours" segment draws as two 3h/1in steps,
-    // not one 6h/2in step — so this walks in increments of `seg.run`,
-    // not across the whole segment at once.
+    // Rise/run staircase for whatever has been drawn up to `uptoHour`. The
+    // unit step (run, rise) REPEATS across each piece (a 6-hour "1 inch
+    // every 3 hours" piece draws two 3h/1in steps).
     const runPts = [], risePts = [], labels = [];
     let t = 0, d = forecast.start;
     for (const seg of forecast.segments) {
       if (seg.weather === 'cloudy' || t >= uptoHour) { t += seg.hours; d += SM.segmentDelta(seg); continue; }
-      const reps = seg.hours / seg.run; // integer by construction (hours is always a multiple of run)
+      const reps = seg.hours / seg.run;
       let segT = t, segD = d;
       for (let r = 0; r < reps && segT < uptoHour; r++) {
         const runEnd = Math.min(segT + seg.run, uptoHour);
@@ -835,7 +1170,6 @@
         if (runEnd >= segT + seg.run) {
           const newD = segD + seg.rise;
           risePts.push({ x: runEnd, y: segD }, { x: runEnd, y: newD }, { x: NaN, y: NaN });
-          // Labels only for finished steps, so they don't flicker in mid-draw.
           labels.push({ kind: 'run', x0: segT, x1: runEnd, y: segD, melting: seg.rise < 0, firstOfSeg: r === 0,
             text: seg.run === 1 ? '1 hour' : `${seg.run} hours` });
           labels.push({ kind: 'rise', x: runEnd, y0: segD, y1: newD, firstOfSeg: r === 0,
@@ -849,27 +1183,17 @@
     return { runPts, risePts, labels };
   }
 
-  let playbackHour = 0;
+  // The graph is drawn up to `uptoHour` (the slider), from depthAt.
   function drawExplorerGraph(uptoHour) {
     const forecast = currentExplorerForecast();
-    const drawn = [];
-    let t = 0, d = forecast.start;
-    // Explorer forecasts are hand-built, so (unlike the generator) they
-    // CAN melt past zero — clamping each plotted depth to [0,12] is what
-    // makes that read as "the line goes flat" rather than dipping
-    // negative, per spec section 3's melt-to-zero rule.
-    const clamp = v => Math.max(0, Math.min(12, v));
-    drawn.push({ x: 0, y: clamp(d) });
+    const drawn = [{ x: 0, y: SM.depthAt(forecast, 0) }];
+    let t = 0;
     for (const seg of forecast.segments) {
-      const segEnd = t + seg.hours;
-      if (uptoHour >= segEnd) { d += SM.segmentDelta(seg); drawn.push({ x: segEnd, y: clamp(d) }); }
-      else if (uptoHour > t) {
-        const frac = (uptoHour - t) / seg.hours;
-        drawn.push({ x: uptoHour, y: clamp(d + SM.segmentDelta(seg) * frac) });
-        break;
-      } else break;
-      t = segEnd;
+      t += seg.hours;
+      if (t >= uptoHour) break;
+      drawn.push({ x: t, y: SM.depthAt(forecast, t) });
     }
+    if (uptoHour > 0) drawn.push({ x: uptoHour, y: SM.depthAt(forecast, uptoHour) });
     chart.data.datasets[0].data = drawn;
     if (toggleSteps.checked) {
       const { runPts, risePts, labels } = stepPoints(forecast, uptoHour);
@@ -882,79 +1206,61 @@
       stepLabels = [];
     }
     chart.update('none');
-    return drawn.length ? drawn[drawn.length - 1].y : forecast.start;
+    return drawn[drawn.length - 1].y;
   }
 
   function renderExplorerAtRest() {
     stopPlayback();
     playbackHour = 0;
     const forecast = currentExplorerForecast();
-    drawExplorerGraph(0);
-    renderSceneAt(forecast, 0);
-    updateLinkLine(forecast.start);
+    setTimeline(SM.forecastTotalHours(forecast), false);
+    seek(0);
     if (toggleStory.checked) storyText.textContent = SM.forecastStory(forecast);
   }
 
   // ══════════════════════════════════════════════════════════════
-  // PLAYBACK LOOP — shared by Explorer and Match the Forecast's
-  // post-pick reveal. speedSelect maps to real-seconds per simulated hour.
+  // PLAYBACK — shared by Explorer and Match's post-pick reveal. Runs on
+  // animation frames, so the snow top rises smoothly; Play resumes from
+  // the thumb, Replay starts at hour 0.
   // ══════════════════════════════════════════════════════════════
   const SPEED_SEC_PER_HOUR = { slow: 2, normal: 1, fast: 0.35 };
   const speedSelect = document.getElementById('speedSelect');
   const playBtn = document.getElementById('playBtn');
   const replayBtn = document.getElementById('replayBtn');
-  let playTimer = null;
-  let playingForecast = null;
+  let playRaf = null;
   let onPlaybackDone = null;
 
   function stopPlayback() {
-    if (playTimer) { clearInterval(playTimer); playTimer = null; }
+    if (playRaf) { cancelAnimationFrame(playRaf); playRaf = null; }
     playBtn.textContent = '▶ Play';
   }
-
-  function startPlayback(forecast, onDone) {
+  function startPlayback(onDone) {
     stopPlayback();
-    playingForecast = forecast;
+    const f = activeForecast();
+    if (!f) return;
     onPlaybackDone = onDone || null;
-    const total = SM.forecastTotalHours(forecast);
-    const secPerHour = SPEED_SEC_PER_HOUR[speedSelect.value] || 1;
-    const stepMs = 50;
-    const hourPerStep = stepMs / 1000 / secPerHour;
+    const total = SM.forecastTotalHours(f);
+    if (playbackHour >= total - 1e-9) playbackHour = 0;
+    let last = performance.now();
     playBtn.textContent = '⏸ Pause';
-    playTimer = setInterval(() => {
-      playbackHour = Math.min(total, playbackHour + hourPerStep);
-      const d = mode === 'explorer' ? drawExplorerGraph(playbackHour) : null;
-      const sceneDepth = renderSceneAt(forecast, playbackHour);
-      updateLinkLine(mode === 'explorer' ? sceneDepth : null);
-      if (sceneDepth <= 0 && forecast.segments.some(s => s.weather === 'sun')) {
-        weatherBadge.textContent = 'All melted.';
-      }
-      if (playbackHour >= total) {
-        stopPlayback();
-        if (onPlaybackDone) onPlaybackDone();
-      }
-    }, stepMs);
+    const tick = now => {
+      const secPerHour = SPEED_SEC_PER_HOUR[speedSelect.value] || 1;
+      playbackHour = Math.min(total, playbackHour + Math.max(0, now - last) / 1000 / secPerHour);
+      last = now;
+      seek(playbackHour);
+      if (playbackHour >= total) { stopPlayback(); if (onPlaybackDone) onPlaybackDone(); return; }
+      playRaf = requestAnimationFrame(tick);
+    };
+    playRaf = requestAnimationFrame(tick);
   }
-
-  playBtn.onclick = () => {
-    if (playTimer) { stopPlayback(); return; }
-    if (mode === 'explorer') {
-      if (playbackHour >= SM.forecastTotalHours(currentExplorerForecast())) playbackHour = 0;
-      startPlayback(currentExplorerForecast());
-    } else if (currentMatchItem && matchResolved) { // no peeking before a pick
-      startPlayback(currentMatchItem.correct);
-    }
-  };
-  replayBtn.onclick = () => {
-    playbackHour = 0;
-    if (mode === 'explorer') { drawExplorerGraph(0); renderSceneAt(currentExplorerForecast(), 0); startPlayback(currentExplorerForecast()); }
-    else if (currentMatchItem && matchResolved) { renderSceneAt(currentMatchItem.correct, 0); startPlayback(currentMatchItem.correct, matchRevealDone); }
-  };
+  playBtn.onclick = () => { if (playRaf) stopPlayback(); else startPlayback(); };
+  replayBtn.onclick = () => { stopPlayback(); playbackHour = 0; seek(0); startPlayback(); };
 
   // ══════════════════════════════════════════════════════════════
   // MATCH THE FORECAST
   // ══════════════════════════════════════════════════════════════
   const matchStoryEl = document.getElementById('storyText'); // the banner above the scene
+  const matchBox = document.getElementById('matchBox');
   const matchChoicesEl = document.getElementById('matchChoices');
   const matchFeedbackEl = document.getElementById('matchFeedback');
   const nextItemBtn = document.getElementById('nextItemBtn');
@@ -962,36 +1268,50 @@
   let matchResolved = false;
   let matchFirstPickCorrect = null;
 
-  function miniGraphSvg(points, opts) {
-    opts = opts || {};
-    // The plot is a 200 x 200 square for 12 x 12 units, so one hour is as
-    // wide as one inch is tall (unit squares). Margins hold the tick numbers.
-    const P = 200, L = 32, R = 10, T = 10, B = 32;
-    const W = L + P + R, H = T + P + B;
-    const sx = x => L + (x / 12) * P;
-    const sy = y => T + P - (y / 12) * P;
-    let path = '';
-    points.forEach((p, i) => { path += (i === 0 ? 'M' : 'L') + sx(p.t) + ',' + sy(p.d) + ' '; });
-    const stroke = opts.color || 'var(--text)';
-    // Faint 1-hour / 1-inch grid with labels every 3 — without it a
-    // "wrong start" or "rate flipped" graph can't be told apart by
-    // reading, only by guessing at proportions.
+  // Small choice graph: MAX_HOURS x MAX_DEPTH units, every unit MG.U wide
+  // AND tall (unit squares). Margins hold the tick numbers.
+  const MG = { U: 16, L: 30, R: 8, T: 9, B: 24 };
+  const MG_W = MG.L + SM.MAX_HOURS * MG.U + MG.R, MG_H = MG.T + SM.MAX_DEPTH * MG.U + MG.B;
+  function miniGraphSvg(points) {
+    const sx = x => MG.L + x * MG.U;
+    const sy = y => MG.T + (SM.MAX_DEPTH - y) * MG.U;
+    const xl = new Set(SM.axisLabels(SM.MAX_HOURS)), yl = new Set(SM.axisLabels(SM.MAX_DEPTH));
     let grid = '';
-    for (let v = 0; v <= 12; v++) {
-      const major = v % 3 === 0;
-      const op = major ? 0.55 : 0.24;
-      grid += `<line x1="${sx(v)}" y1="${sy(0)}" x2="${sx(v)}" y2="${sy(12)}" stroke="var(--muted)" stroke-width="0.7" opacity="${op}"/>`;
-      grid += `<line x1="${sx(0)}" y1="${sy(v)}" x2="${sx(12)}" y2="${sy(v)}" stroke="var(--muted)" stroke-width="0.7" opacity="${op}"/>`;
-      if (major) {
-        grid += `<text x="${sx(v)}" y="${T + P + 18}" text-anchor="middle" font-family="Space Mono" font-size="12" fill="var(--muted)">${v}</text>`;
-        grid += `<text x="${L - 6}" y="${sy(v) + 4.5}" text-anchor="end" font-family="Space Mono" font-size="12" fill="var(--muted)">${v}</text>`;
-      }
+    for (let v = 0; v <= SM.MAX_HOURS; v++) {
+      grid += `<line x1="${sx(v)}" y1="${sy(0)}" x2="${sx(v)}" y2="${sy(SM.MAX_DEPTH)}" stroke="var(--muted)" stroke-width="0.7" opacity="${xl.has(v) ? 0.55 : 0.24}"/>`;
+      if (xl.has(v)) grid += `<text x="${sx(v)}" y="${sy(0) + 17}" text-anchor="middle" font-family="Space Mono" font-size="12" fill="var(--muted)">${v}</text>`;
     }
-    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
-      ${grid}
-      <path d="${path.trim()}" fill="none" stroke="${stroke}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
-    </svg>`;
+    for (let v = 0; v <= SM.MAX_DEPTH; v++) {
+      grid += `<line x1="${sx(0)}" y1="${sy(v)}" x2="${sx(SM.MAX_HOURS)}" y2="${sy(v)}" stroke="var(--muted)" stroke-width="0.7" opacity="${yl.has(v) ? 0.55 : 0.24}"/>`;
+      if (yl.has(v)) grid += `<text x="${MG.L - 6}" y="${sy(v) + 4.5}" text-anchor="end" font-family="Space Mono" font-size="12" fill="var(--muted)">${v}</text>`;
+    }
+    const path = points.map((p, i) => (i ? 'L' : 'M') + sx(p.t) + ',' + sy(p.d)).join(' ');
+    return `<svg viewBox="0 0 ${MG_W} ${MG_H}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${grid}
+      <path d="${path}" fill="none" stroke="var(--text)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
   }
+
+  // Lay out the four choices as 2x2 or 1x4 — whichever gives the bigger
+  // grid cells in the space available (?tile= forces one).
+  const CHOICE_CHROME = 16; // 6px padding + 2px border, each side
+  function layoutMatchChoices() {
+    const box = matchBox.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const gap = 12;
+    const fits = [{ cols: 2, rows: 2, name: '2x2' }, { cols: 4, rows: 1, name: '1x4' }].map(c => {
+      const cw = (box.width - gap * (c.cols - 1)) / c.cols, ch = (box.height - gap * (c.rows - 1)) / c.rows;
+      const s = Math.min((cw - CHOICE_CHROME) / MG_W, (ch - CHOICE_CHROME) / MG_H);
+      return Object.assign(c, { s, cellPx: s * MG.U });
+    });
+    const forced = fits.find(c => c.name === URLP.tile);
+    const pick = forced || (fits[0].s >= fits[1].s ? fits[0] : fits[1]);
+    matchChoicesEl.style.gridTemplateColumns = `repeat(${pick.cols}, ${(MG_W * pick.s + CHOICE_CHROME).toFixed(1)}px)`;
+    matchChoicesEl.style.gridTemplateRows = `repeat(${pick.rows}, ${(MG_H * pick.s + CHOICE_CHROME).toFixed(1)}px)`;
+    matchChoicesEl.dataset.layout = pick.name;
+    matchChoicesEl.dataset.cellPx = pick.cellPx.toFixed(1);
+    matchChoicesEl.dataset.cellPx2x2 = fits[0].cellPx.toFixed(1);
+    matchChoicesEl.dataset.cellPx1x4 = fits[1].cellPx.toFixed(1);
+  }
+  new ResizeObserver(layoutMatchChoices).observe(matchBox);
 
   function setPlaybackEnabled(on) { playBtn.disabled = !on; replayBtn.disabled = !on; }
 
@@ -1003,12 +1323,9 @@
     nextItemBtn.classList.add('hidden');
     matchResolved = false;
     matchFirstPickCorrect = null;
-    renderSceneAt({ start: 0, segments: [] }, 0);
-    weatherBadge.textContent = '—'; clockReadout.textContent = 'Hour 0';
 
     let item = null;
-    // ?seed=N makes the FIRST round reproducible (used by the review
-    // checklist); "Next" after that is random as usual.
+    // ?seed=N makes the FIRST round reproducible; "Next" is random after that.
     const seed = seedPending ? URLP.seed : null;
     seedPending = false;
     for (let tries = 0; tries < 40 && !item; tries++) {
@@ -1022,21 +1339,30 @@
     if (!item) { matchStoryEl.textContent = 'Could not build a round — try again.'; return; }
     currentMatchItem = item;
     matchStoryEl.textContent = item.story;
+    // Leak rule (4a/6a): before a pick the scene shows the story's true
+    // starting depth at hour 0 with no weather, and the slider is locked.
+    playbackHour = 0;
+    setScene(item.correct, 0, { neutral: true });
+    setTimeline(SM.forecastTotalHours(item.correct), true);
     matchChoicesEl.innerHTML = '';
     item.choices.forEach((choice, i) => {
       const div = document.createElement('div');
       div.className = 'match-choice';
+      div.tabIndex = 0;
+      div.setAttribute('role', 'button');
+      div.setAttribute('aria-label', `Graph ${i + 1}`);
       div.innerHTML = miniGraphSvg(choice.points);
       div.onclick = () => pickMatchChoice(i, div);
+      div.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickMatchChoice(i, div); } };
       matchChoicesEl.appendChild(div);
     });
+    layoutMatchChoices();
   }
 
   function pickMatchChoice(i, el) {
     if (matchResolved) return;
     const choice = currentMatchItem.choices[i];
-    // Score each round exactly once, on the very first pick — later
-    // retries after a wrong pick neither add nor subtract again.
+    // Score each round exactly once, on the very first pick.
     let medalResult = null;
     if (matchFirstPickCorrect === null) {
       matchFirstPickCorrect = choice.isCorrect;
@@ -1052,8 +1378,8 @@
       const newMedal = medalResult && medalResult.newMedal;
       matchFeedbackEl.classList.remove('hidden');
       matchFeedbackEl.textContent = matchFirstPickCorrect
-        ? 'Correct on the first try! Watch it play out below.'
-        : 'That’s the one — watch it play out below.';
+        ? 'Correct on the first try! Watch it play out.'
+        : 'That’s the one — watch it play out.';
       if (earnedNewMedal) matchFeedbackEl.textContent += ` New medal: ${MEDAL_EMOJI[newMedal]}`;
       if (medalResult && medalResult.leveledUp) {
         matchFeedbackEl.textContent += ` Level up! Next forecasts have ${currentLevel()} pieces.`;
@@ -1063,8 +1389,11 @@
       }
       nextItemBtn.classList.remove('hidden');
       Array.from(matchChoicesEl.children).forEach(c => c.classList.add('resolved'));
+      // Unlock the slider and play the correct forecast.
+      setTimeline(SM.forecastTotalHours(currentMatchItem.correct), false);
       playbackHour = 0;
-      startPlayback(currentMatchItem.correct, matchRevealDone);
+      seek(0);
+      startPlayback();
     } else {
       el.classList.add('wrong-pick');
       el.classList.add('resolved');
@@ -1072,24 +1401,27 @@
       matchFeedbackEl.textContent = SM.RULE_FEEDBACK[choice.rule] || 'Not quite — look again.';
     }
   }
-  function matchRevealDone() { /* scene finished playing the correct forecast — nothing further needed */ }
   nextItemBtn.onclick = newMatchItem;
 
   // ── init ──
   applyTheme(getTheme());
-  if (URLP.start != null) startDepthSel.value = Math.max(0, Math.min(6, URLP.start));
-  if (URLP.segs) explorerSegments = URLP.segs.slice(0, SM.MAX_SEGMENTS);
+  if (URLP.start != null || URLP.segs) {
+    const candidate = {
+      start: URLP.start != null ? URLP.start : explorerStart,
+      segments: URLP.segs ? URLP.segs.slice(0, SM.MAX_SEGMENTS) : explorerSegments,
+    };
+    const problem = SM.checkForecast(candidate);
+    if (!problem) { explorerStart = candidate.start; explorerSegments = candidate.segments; }
+    else console.warn('Snow Challenge: ignoring an Explorer forecast in the URL that breaks the limits —', problem);
+  }
   if (URLP.steps) toggleSteps.checked = true;
   if (URLP.story) toggleStory.checked = true;
+  buildScene();
   renderSegmentRows();
-  renderExplorerAtRest();
   setMode(URLP.mode === 'match' ? 'match' : 'explorer');
   if (mode === 'explorer' && URLP.at) {
     const total = SM.forecastTotalHours(currentExplorerForecast());
-    playbackHour = URLP.at === 'end' ? total : Math.max(0, Math.min(total, +URLP.at || 0));
-    const d = drawExplorerGraph(playbackHour);
-    renderSceneAt(currentExplorerForecast(), playbackHour);
-    updateLinkLine(d);
+    seek(URLP.at === 'end' ? total : Math.max(0, Math.min(total, +URLP.at || 0)));
   }
   requestAnimationFrame(refreshLinkLine);
 })();
