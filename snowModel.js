@@ -130,26 +130,30 @@
   }
 
   // ── Plain-English story, in the style of the v1 spec's example ──
-  function forecastStory(forecast) {
-    const parts = [];
-    parts.push(`There ${forecast.start === 1 ? 'is' : 'are'} ${pluralize(forecast.start, 'inch')} of snow on the ground.`);
-    for (const seg of forecast.segments) {
+  // forecastStoryParts splits it by piece (1A.3, Section 2): the starting
+  // depth sentence, then one sentence per weather piece, so the page can
+  // color each piece's sentence with that piece's color.
+  function forecastStoryParts(forecast) {
+    const start = `There ${forecast.start === 1 ? 'is' : 'are'} ${pluralize(forecast.start, 'inch')} of snow on the ground.`;
+    const pieces = forecast.segments.map((seg, i) => {
+      let text;
       if (seg.weather === 'cloudy') {
-        parts.push(`Then it's cloudy for ${pluralize(seg.hours, 'hour')}.`);
+        text = `Then it's cloudy for ${pluralize(seg.hours, 'hour')}.`;
       } else if (seg.weather === 'snow') {
         const every = seg.run === 1 ? 'every hour' : `every ${pluralize(seg.run, 'hour')}`; // never "every 1 hour"
-        parts.push(`Then it snows ${pluralize(seg.rise, 'inch')} ${every} for ${pluralize(seg.hours, 'hour')}.`);
+        text = `Then it snows ${pluralize(seg.rise, 'inch')} ${every} for ${pluralize(seg.hours, 'hour')}.`;
       } else {
-        parts.push(`Then the sun comes out and the snow melts ${pluralize(Math.abs(seg.rise), 'inch')} every hour for ${pluralize(seg.hours, 'hour')}.`);
+        text = `Then the sun comes out and the snow melts ${pluralize(Math.abs(seg.rise), 'inch')} every hour for ${pluralize(seg.hours, 'hour')}.`;
       }
-    }
-    // First weather line doesn't want a leading "Then", and must start
-    // with a capital once "Then " is stripped.
-    if (parts[1]) {
-      parts[1] = parts[1].replace(/^Then /, '');
-      parts[1] = parts[1].charAt(0).toUpperCase() + parts[1].slice(1);
-    }
-    return parts.join(' ');
+      // The first weather line doesn't want a leading "Then".
+      if (i === 0) { text = text.replace(/^Then /, ''); text = text.charAt(0).toUpperCase() + text.slice(1); }
+      return text;
+    });
+    return { start, pieces };
+  }
+  function forecastStory(forecast) {
+    const p = forecastStoryParts(forecast);
+    return [p.start].concat(p.pieces).join(' ');
   }
 
   // Which piece is happening at hour t (a boundary hour belongs to the
@@ -218,11 +222,164 @@
     return d;
   }
 
+  // ── Piece colors (1A.3, Section 2) ──
+  // ONE place to change them: the page copies these into --piece-1..3.
+  // Chosen for colorblind safety (teal / orchid / honey): the three stay
+  // apart under protanopia and deuteranopia, and each reads at 4.5:1 or
+  // better as text on its page theme (checked in snowModel.test.mjs).
+  // `scene` = on the measuring inset (always a dark-ish backdrop).
+  const PIECE_COLORS = {
+    dark:  ['#6fe0d0', '#e86ce8', '#d4b04a'],
+    light: ['#2d766f', '#5b1f86', '#6b4a08'],
+    scene: ['#6fe0d0', '#f07ff0', '#e2bf55'],
+  };
+  const pieceColorVar = i => `--piece-${(i % PIECE_COLORS.dark.length) + 1}`;
+
+  // ── Fractions (hover pins, rates): never decimals ──
+  function gcd(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) [a, b] = [b, a % b]; return a || 1; }
+  function reduceFrac(n, d) { if (d < 0) { n = -n; d = -d; } const g = gcd(n, d); return [n / g, d / g]; }
+  // value -> [numerator, denominator] with the smallest denominator <= maxDen
+  // that represents it exactly (to 1e-6), or null.
+  function asFraction(v, maxDen) {
+    maxDen = maxDen || 12;
+    for (let den = 1; den <= maxDen; den++) {
+      const num = Math.round(v * den);
+      if (Math.abs(num / den - v) < 1e-6) return reduceFrac(num, den);
+    }
+    return null;
+  }
+  const VULGAR = { '1/2': '½', '1/3': '⅓', '2/3': '⅔', '1/4': '¼', '3/4': '¾', '1/5': '⅕', '2/5': '⅖', '3/5': '⅗', '4/5': '⅘',
+    '1/6': '⅙', '5/6': '⅚', '1/8': '⅛', '3/8': '⅜', '5/8': '⅝', '7/8': '⅞' };
+  // 3.333.. -> "3⅓", 0.5 -> "½", 4 -> "4", 1.142857 -> "1 1/7". Mixed numbers,
+  // never decimals (spec 4b). Negative values get a true minus sign.
+  function formatMixed(v) {
+    const f = asFraction(v, 12);
+    if (!f) return (Math.round(v * 100) / 100).toString(); // not expected on this grid
+    const [n, d] = f;
+    const sign = n < 0 ? '−' : '';
+    const an = Math.abs(n);
+    if (d === 1) return sign + an;
+    const whole = Math.floor(an / d), rem = an % d;
+    const frac = VULGAR[`${rem}/${d}`] || ` ${rem}/${d}`;
+    return sign + (whole ? `${whole}${frac}` : frac.trim());
+  }
+  // A rate as a slope fraction: "1/3", "3", "−2", "3/2" (improper on purpose).
+  function formatRate(rise, run) {
+    const [n, d] = reduceFrac(rise, run);
+    const sign = n < 0 ? '−' : '';
+    return d === 1 ? `${sign}${Math.abs(n)}` : `${sign}${Math.abs(n)}/${d}`;
+  }
+
+  // ── Pieces as straight spans (1A.3, Sections 2–3) ──
+  // rise/run is the piece's OWN step in lowest terms (cloudy = 0 over 1).
+  function pieceSpans(forecast) {
+    const out = [];
+    let t = 0, d = forecast.start;
+    forecast.segments.forEach((seg, index) => {
+      const [rise, run] = seg.weather === 'cloudy' ? [0, 1] : reduceFrac(seg.rise, seg.run);
+      const d1 = d + segmentDelta(seg);
+      out.push({ index, t0: t, t1: t + seg.hours, d0: d, d1, rise, run, rate: rise / run, weather: seg.weather });
+      t += seg.hours; d = d1;
+    });
+    return out;
+  }
+  // The piece the dot is in at hour t (a boundary belongs to the piece that
+  // just ended; hour 0 belongs to piece 0). -1 with no pieces.
+  function pieceIndexAt(forecast, t) { const w = weatherAt(forecast, t); return w ? w.index : -1; }
+
+  // ── describeDifference (1A.3, Section 3) ──
+  // Where and how `mine` (the student's graph or story) differs from
+  // `truth`. Compares the pieces in order; returns null when the two are
+  // the same GRAPH. kind:
+  //   'start'  — different depth at hour 0
+  //   'slope'  — a piece with the same direction but a different rate
+  //   'shape'  — a piece going a different direction (cloudy drawn as
+  //              melting, melting drawn as snowing, ...); shown as slopes
+  //   'length' — same rate, but the piece ends at a different hour
+  // pieceIndex/hour = the first piece that differs and the hour it starts.
+  // mine/truth carry the numbers to show: { start } for 'start', otherwise
+  // that piece's span { t0, t1, d0, d1, rise, run, rate }.
+  // swapped = the rise and run are exchanged (a flipped rate).
+  function describeDifference(mine, truth) {
+    if (!firstSplit(truth, mine)) return null;
+    if (Math.abs(mine.start - truth.start) > 1e-9) {
+      return { kind: 'start', pieceIndex: null, hour: 0, mine: { start: mine.start }, truth: { start: truth.start } };
+    }
+    const A = pieceSpans(mine), B = pieceSpans(truth);
+    const n = Math.max(A.length, B.length);
+    for (let i = 0; i < n; i++) {
+      const a = A[i], b = B[i];
+      if (!a || !b) {
+        // One graph has run out of pieces: it stops early (or runs long).
+        const last = a || A[A.length - 1], other = b || B[B.length - 1];
+        return { kind: 'length', pieceIndex: Math.min(i, Math.max(A.length, B.length) - 1), hour: (a || b).t0,
+          mine: Object.assign({}, a || last, { end: A[A.length - 1].t1 }),
+          truth: Object.assign({}, b || other, { end: B[B.length - 1].t1 }), stopsEarly: !a };
+      }
+      if (Math.abs(a.rate - b.rate) > 1e-9) {
+        const kind = Math.sign(a.rate) !== Math.sign(b.rate) ? 'shape' : 'slope';
+        const swapped = a.rise !== 0 && b.rise !== 0 && Math.abs(a.rise) === b.run && a.run === Math.abs(b.rise);
+        return { kind, pieceIndex: i, hour: b.t0, mine: a, truth: b, swapped };
+      }
+      if (Math.abs(a.t1 - b.t1) > 1e-9) {
+        return { kind: 'length', pieceIndex: i, hour: b.t0, mine: Object.assign({ end: a.t1 }, a), truth: Object.assign({ end: b.t1 }, b), stopsEarly: false };
+      }
+    }
+    return null;
+  }
+  // "up 3 inches every 1 hour (3 in/hr)" — the step for one piece, in the
+  // rise/run words the staircases use.
+  function stepWords(p) {
+    if (p.rise === 0) return 'flat: no change (0 in/hr)';
+    const dir = p.rise > 0 ? 'up' : 'down';
+    return `${dir} ${pluralize(Math.abs(p.rise), 'inch')} every ${pluralize(p.run, 'hour')} (${formatRate(p.rise, p.run)} in/hr)`;
+  }
+  // Two lines for the difference panel. who = { mine: 'Your graph', truth: 'The story' }.
+  function differenceLines(diff, who) {
+    if (!diff) return [];
+    who = who || { mine: 'Your graph', truth: 'The story' };
+    if (diff.kind === 'start') return [`${who.mine} starts at ${formatMixed(diff.mine.start)}.`, `${who.truth} starts at ${formatMixed(diff.truth.start)}.`];
+    if (diff.kind === 'length') return [`${who.mine}: piece ${diff.pieceIndex + 1} ends at hour ${formatMixed(diff.mine.end)}.`, `${who.truth}: piece ${diff.pieceIndex + 1} ends at hour ${formatMixed(diff.truth.end)}.`];
+    return [`${who.mine}: ${stepWords(diff.mine)}.`, `${who.truth}: ${stepWords(diff.truth)}.`];
+  }
+  // One plain sentence naming the mistake, from the difference itself.
+  function differenceSentence(diff) {
+    if (!diff) return '';
+    if (diff.kind === 'start') return 'Check how much snow was already on the ground at hour 0.';
+    if (diff.kind === 'length') return diff.stopsEarly ? 'The graph has to go all the way to the end of the story.' : `Check how long piece ${diff.pieceIndex + 1} lasts.`;
+    if (diff.kind === 'shape') return 'Snowing goes up, cloudy stays flat, and melting goes down.';
+    if (diff.swapped) return 'The rise and the run are swapped: the inches go up, the hours go across.';
+    return 'Same direction, different rate. Compare the inches (rise) with the hours (run).';
+  }
+
+  // A drawing (corner points, left to right) as a forecast: weather from
+  // the sign of each piece's slope, rate = rise/run in lowest terms.
+  function drawingToForecast(points) {
+    const segments = [];
+    for (let k = 1; k < points.length; k++) {
+      const dt = points[k].t - points[k - 1].t, dd = points[k].d - points[k - 1].d;
+      if (dd === 0) { segments.push({ weather: 'cloudy', hours: dt }); continue; }
+      const [rise, run] = reduceFrac(dd, dt);
+      segments.push({ weather: dd > 0 ? 'snow' : 'sun', rise, run, hours: dt });
+    }
+    return { start: points.length ? points[0].d : 0, segments };
+  }
+
   // ── Scoring / medals (localStorage, device-only, no logins) ──
-  const STORAGE_KEYS = {
+  // 1A.3, Section 4: each challenge mode has its OWN score, streak, best
+  // streak, level and level progress, in one JSON key per mode. The medal
+  // is derived from the best streak (3 bronze, 5 silver, 10 gold), so it
+  // is never lost. Explorer has no score.
+  const SCORE_MODES = ['match', 'story', 'draw'];
+  const modeKey = m => `sc_mode_${m}`;
+  const lastItemKey = m => `sc_last_item_${m}`;
+  // The keys used before 1A.3 (Match the Forecast only). Migrated into
+  // mode 'match' once, then removed.
+  const LEGACY_KEYS = {
     score: 'sc_score', streak: 'sc_streak', bestMedal: 'sc_best_medal', lastKey: 'sc_last_item',
     level: 'sc_level', levelProgress: 'sc_level_progress',
   };
+  const STORAGE_KEYS = LEGACY_KEYS; // old name, kept for older callers
   // Level N = forecasts with N weather pieces. Moving up takes
   // LEVEL_UP_STREAK first-try-correct rounds in a row at the current level.
   // A wrong first pick resets that count but never drops a level.
@@ -230,6 +387,7 @@
   const LEVEL_UP_STREAK = 3;
   const MEDAL_THRESHOLDS = [[10, 'gold'], [5, 'silver'], [3, 'bronze']];
   const MEDAL_RANK = { none: 0, bronze: 1, silver: 2, gold: 3 };
+  const MEDAL_STREAK = { none: 0, bronze: 3, silver: 5, gold: 10 };
 
   function safeGet(key, fallback) {
     try { const v = localStorage.getItem(key); return v === null ? fallback : v; } catch (e) { return fallback; }
@@ -237,25 +395,57 @@
   function safeSet(key, value) {
     try { localStorage.setItem(key, value); } catch (e) { /* storage unavailable — scoring just won't persist */ }
   }
-  function getScoreState() {
-    return {
-      score: parseInt(safeGet(STORAGE_KEYS.score, '0'), 10) || 0,
-      streak: parseInt(safeGet(STORAGE_KEYS.streak, '0'), 10) || 0,
-      bestMedal: safeGet(STORAGE_KEYS.bestMedal, 'none'),
-      level: Math.min(MAX_LEVEL, Math.max(1, parseInt(safeGet(STORAGE_KEYS.level, '1'), 10) || 1)),
-      levelProgress: parseInt(safeGet(STORAGE_KEYS.levelProgress, '0'), 10) || 0,
-    };
-  }
+  function safeRemove(key) { try { localStorage.removeItem(key); } catch (e) {} }
+  const int = (v, dflt) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : dflt; };
   function medalForStreak(streak) {
     for (const [threshold, name] of MEDAL_THRESHOLDS) {
       if (streak >= threshold) return name;
     }
     return 'none';
   }
-  // Records one round's outcome; returns the new state plus whether a new
-  // medal or level was just reached (so the UI can say so once).
-  function recordAttempt(firstTryCorrect) {
-    const state = getScoreState();
+  // Old single-mode data -> mode 'match'. The old data stored the best
+  // MEDAL, not the best streak, so the best streak starts at that medal's
+  // threshold (or the current streak, if higher).
+  function migrateLegacy() {
+    if (safeGet(modeKey('match'), null) !== null) return;
+    const had = Object.values(LEGACY_KEYS).some(k => safeGet(k, null) !== null);
+    if (!had) return;
+    const streak = Math.max(0, int(safeGet(LEGACY_KEYS.streak, '0'), 0));
+    const state = {
+      score: Math.max(0, int(safeGet(LEGACY_KEYS.score, '0'), 0)),
+      streak,
+      bestStreak: Math.max(streak, MEDAL_STREAK[safeGet(LEGACY_KEYS.bestMedal, 'none')] || 0),
+      level: Math.min(MAX_LEVEL, Math.max(1, int(safeGet(LEGACY_KEYS.level, '1'), 1))),
+      levelProgress: Math.max(0, int(safeGet(LEGACY_KEYS.levelProgress, '0'), 0)),
+    };
+    safeSet(modeKey('match'), JSON.stringify(state));
+    const last = safeGet(LEGACY_KEYS.lastKey, null);
+    if (last !== null) safeSet(lastItemKey('match'), last);
+    Object.values(LEGACY_KEYS).forEach(safeRemove);
+  }
+  function getScoreState(mode) {
+    mode = mode || 'match';
+    if (mode === 'match') migrateLegacy();
+    let raw = null;
+    try { raw = JSON.parse(safeGet(modeKey(mode), 'null')); } catch (e) { raw = null; }
+    raw = raw || {};
+    const streak = Math.max(0, int(raw.streak, 0));
+    const state = {
+      score: Math.max(0, int(raw.score, 0)),
+      streak,
+      bestStreak: Math.max(streak, int(raw.bestStreak, 0)),
+      level: Math.min(MAX_LEVEL, Math.max(1, int(raw.level, 1))),
+      levelProgress: Math.max(0, int(raw.levelProgress, 0)),
+    };
+    state.bestMedal = medalForStreak(state.bestStreak);
+    return state;
+  }
+  // Records one round's outcome for that mode; returns the new state plus
+  // whether a new medal or level was just reached (so the UI can say so once).
+  function recordAttempt(firstTryCorrect, mode) {
+    mode = mode || 'match';
+    const state = getScoreState(mode);
+    const prevMedal = state.bestMedal;
     if (firstTryCorrect) {
       state.score += 1;
       state.streak += 1;
@@ -263,9 +453,10 @@
       state.score = Math.max(0, state.score - 2);
       state.streak = 0;
     }
-    const newMedal = medalForStreak(state.streak);
-    const earnedNewMedal = MEDAL_RANK[newMedal] > MEDAL_RANK[state.bestMedal];
-    if (earnedNewMedal) state.bestMedal = newMedal;
+    state.bestStreak = Math.max(state.bestStreak, state.streak);
+    state.bestMedal = medalForStreak(state.bestStreak);
+    const earnedNewMedal = MEDAL_RANK[state.bestMedal] > MEDAL_RANK[prevMedal];
+    const newMedal = state.bestMedal;
 
     let leveledUp = false;
     if (firstTryCorrect && state.level < MAX_LEVEL) {
@@ -274,19 +465,18 @@
     } else if (!firstTryCorrect) {
       state.levelProgress = 0;
     }
-
-    safeSet(STORAGE_KEYS.score, String(state.score));
-    safeSet(STORAGE_KEYS.streak, String(state.streak));
-    safeSet(STORAGE_KEYS.bestMedal, state.bestMedal);
-    safeSet(STORAGE_KEYS.level, String(state.level));
-    safeSet(STORAGE_KEYS.levelProgress, String(state.levelProgress));
+    const { score, streak, bestStreak, level, levelProgress } = state;
+    safeSet(modeKey(mode), JSON.stringify({ score, streak, bestStreak, level, levelProgress }));
     return { state, earnedNewMedal, newMedal, leveledUp };
   }
-  function resetProgress() {
-    Object.values(STORAGE_KEYS).forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+  // resetProgress() clears every mode (and the old keys); resetProgress('story') clears one.
+  function resetProgress(mode) {
+    if (mode) { safeRemove(modeKey(mode)); safeRemove(lastItemKey(mode)); return; }
+    SCORE_MODES.forEach(m => { safeRemove(modeKey(m)); safeRemove(lastItemKey(m)); });
+    Object.values(LEGACY_KEYS).forEach(safeRemove);
   }
-  function rememberLastItem(key) { safeSet(STORAGE_KEYS.lastKey, key); }
-  function wasLastItem(key) { return safeGet(STORAGE_KEYS.lastKey, null) === key; }
+  function rememberLastItem(key, mode) { safeSet(lastItemKey(mode || 'match'), key); }
+  function wasLastItem(key, mode) { return safeGet(lastItemKey(mode || 'match'), null) === key; }
 
   // One short feedback line per Match the Forecast rule — names the mistake.
   const RULE_FEEDBACK = {
@@ -581,6 +771,211 @@
     }
 
     // ══════════════════════════════════════════════════════════════
+    // MATCH THE STORY (1A.3, Section 6; spec 6b)
+    // A graph is given; four stories; the student picks the one that
+    // matches. Each distractor changes ONE piece (or the start) and is
+    // tagged with its teaching intent. Karl (11/27): all four end at the
+    // same hour; the start is usually the same; piece lengths are usually
+    // the same, so the usual test is the SLOPE. A length change appears at
+    // most once per round, and only from Level 2.
+    // ══════════════════════════════════════════════════════════════
+    const STORY_INTENT_WEIGHTS = {
+      1: [['readSlope', 0.5], ['readRatePair', 0.2], ['readShape', 0.15], ['readStart', 0.15]],
+      2: [['readSlope', 0.5], ['readRatePair', 0.25], ['readShape', 0.25]],
+    };
+    const STORY_SIDE_INTENT_CHANCE = 0.35;   // chance the third distractor tests something else
+    function pickWeighted(rng, pairs) {
+      let r = rng() * pairs.reduce((a, p) => a + p[1], 0);
+      for (const [v, w] of pairs) { r -= w; if (r <= 0) return v; }
+      return pairs[pairs.length - 1][0];
+    }
+    const idxsWhere = (f, test) => f.segments.map((s, i) => i).filter(i => test(f.segments[i]));
+    const STORY_MUTATIONS = {
+      // A near-miss rate on one snowing or melting piece (same hours).
+      readSlope(rng, f) {
+        const idxs = idxsWhere(f, s => s.weather !== 'cloudy');
+        if (!idxs.length) return null;
+        const i = pick(rng, idxs), seg = f.segments[i];
+        const pool = (seg.weather === 'snow' ? SNOW_RATES : MELT_RATES)
+          .filter(([r, u]) => !(r === seg.rise && u === seg.run) && seg.hours % u === 0)
+          .sort((a, b) => Math.abs(a[0] / a[1] - seg.rise / seg.run) - Math.abs(b[0] / b[1] - seg.rise / seg.run));
+        if (!pool.length) return null;
+        const [rise, run] = pick(rng, pool.slice(0, 3)); // one of the closest rates
+        const out = cloneForecast(f); out.segments[i] = Object.assign({}, seg, { rise, run });
+        return { forecast: out, intent: 'readSlope', segmentIndex: i };
+      },
+      // Rise and run swapped on one snowing piece ("1 inch every 3 hours"
+      // vs "3 inches every hour").
+      readRatePair(rng, f) {
+        const idxs = idxsWhere(f, s => s.weather === 'snow' && s.rise !== s.run && s.hours % s.rise === 0);
+        if (!idxs.length) return null;
+        const i = pick(rng, idxs), seg = f.segments[i];
+        const out = cloneForecast(f); out.segments[i] = Object.assign({}, seg, { rise: seg.run, run: seg.rise });
+        return { forecast: out, intent: 'readRatePair', segmentIndex: i };
+      },
+      // Snow vs cloudy vs melt on one piece.
+      readShape(rng, f) {
+        const i = randInt(rng, 0, f.segments.length - 1), seg = f.segments[i];
+        const out = cloneForecast(f);
+        if (seg.weather === 'cloudy') {
+          out.segments[i] = rng() < 0.5 ? { weather: 'sun', rise: -1, run: 1, hours: seg.hours } : { weather: 'snow', rise: 1, run: 1, hours: seg.hours };
+        } else if (seg.weather === 'sun') {
+          out.segments[i] = rng() < 0.5 ? Object.assign({}, seg, { weather: 'snow', rise: Math.abs(seg.rise) }) : { weather: 'cloudy', hours: seg.hours };
+        } else {
+          out.segments[i] = rng() < 0.6 ? { weather: 'cloudy', hours: seg.hours } : { weather: 'sun', rise: -seg.rise, run: 1, hours: seg.hours };
+          if (out.segments[i].weather === 'sun' && seg.run !== 1) return null; // melts are whole inches per hour
+        }
+        return { forecast: out, intent: 'readShape', segmentIndex: i };
+      },
+      readStart(rng, f) {
+        const options = [];
+        for (let v = Math.max(0, f.start - 3); v <= Math.min(START_DEPTH_MAX, f.start + 3); v++) if (v !== f.start) options.push(v);
+        if (!options.length) return null;
+        const out = cloneForecast(f); out.start = pick(rng, options);
+        return { forecast: out, intent: 'readStart', segmentIndex: null };
+      },
+      // One piece a run longer or shorter; another piece absorbs the hours,
+      // so the story still ends at the same hour.
+      readDuration(rng, f) {
+        if (f.segments.length < 2) return null;
+        const i = randInt(rng, 0, f.segments.length - 1), seg = f.segments[i];
+        const step = seg.weather === 'cloudy' ? 1 : seg.run;
+        const delta = rng() < 0.5 ? step : -step;
+        if (seg.hours + delta < 1) return null;
+        const out = cloneForecast(f);
+        out.segments[i] = Object.assign({}, seg, { hours: seg.hours + delta });
+        const absorbers = out.segments.map((s, j) => j).filter(j => {
+          if (j === i) return false;
+          const h = out.segments[j].hours - delta;
+          return h >= 1 && (out.segments[j].weather === 'cloudy' || h % out.segments[j].run === 0);
+        });
+        if (!absorbers.length) return null;
+        const j = pick(rng, absorbers);
+        out.segments[j] = Object.assign({}, out.segments[j], { hours: out.segments[j].hours - delta });
+        return { forecast: out, intent: 'readDuration', segmentIndex: i };
+      },
+    };
+    // Two neighbouring pieces with the same slope draw as ONE line: the
+    // story would have a piece the graph can't show. Not allowed.
+    function hasMergedPieces(f) {
+      for (let i = 1; i < f.segments.length; i++) if (Math.abs(slopeOf(f.segments[i]) - slopeOf(f.segments[i - 1])) < 1e-9) return true;
+      return false;
+    }
+    function buildStoryItem(rng, correct, count) {
+      count = count || 3;
+      const level = correct.segments.length;
+      const correctPoints = forecastPoints(correct);
+      const endHour = correctPoints[correctPoints.length - 1].t;
+      const seen = new Set([pointsKey(correctPoints)]);
+      const main = pickWeighted(rng, STORY_INTENT_WEIGHTS[Math.min(level, 2)]);
+      // Slots: a pure start item at Level 1 tests only the start; otherwise
+      // two distractors on the main intent and a third that may test
+      // something else (at most one start change, at most one length change).
+      let slots;
+      if (main === 'readStart') slots = ['readStart', 'readStart', 'readStart'];
+      else {
+        let side = main;
+        if (rng() < STORY_SIDE_INTENT_CHANCE) {
+          const sides = ['readSlope', 'readRatePair', 'readShape', 'readStart'];
+          if (level >= 2) sides.push('readDuration');
+          side = pick(rng, sides.filter(x => x !== main));
+        }
+        slots = [main, main, side];
+      }
+      const fallbacks = ['readSlope', 'readRatePair', 'readShape'];
+      const distractors = [];
+      for (const slot of slots) {
+        let got = null;
+        for (const intent of [slot].concat(fallbacks)) {
+          for (let tries = 0; tries < 20 && !got; tries++) {
+            const r = STORY_MUTATIONS[intent](rng, correct);
+            if (!r) break;
+            const pts = forecastPoints(r.forecast);
+            if (!isPlausibleGraph(pts) || pts[pts.length - 1].t !== endHour || hasMergedPieces(r.forecast)) continue;
+            const key = pointsKey(pts);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            got = Object.assign({ points: pts }, r);
+          }
+          if (got) break;
+        }
+        if (!got) return null; // caller regenerates `correct`
+        distractors.push(got);
+      }
+      const choices = [{ forecast: correct, points: correctPoints, isCorrect: true, intent: null, segmentIndex: null }]
+        .concat(distractors.map(d => ({ forecast: d.forecast, points: d.points, isCorrect: false, intent: d.intent, segmentIndex: d.segmentIndex })));
+      choices.forEach(c => { c.parts = forecastStoryParts(c.forecast); c.story = forecastStory(c.forecast); });
+      for (let i = choices.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [choices[i], choices[j]] = [choices[j], choices[i]];
+      }
+      return { correct, story: forecastStory(correct), choices, mainIntent: main };
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // DRAW THE FORECAST (1A.3, Section 7; spec 6d)
+    // Compare as FUNCTIONS at every whole hour: corners are on whole hours,
+    // so two graphs are the same exactly when they agree at every whole
+    // hour from 0 to the end. Extra points along a straight piece never
+    // make it wrong; a graph that stops early is wrong.
+    // rule: null | 'wrongStart' | 'wrongRate' | 'meltAsSnow' | 'wrongShape'
+    //       | 'pieceLength' | 'stopsEarly' | 'tooLong'
+    // ══════════════════════════════════════════════════════════════
+    function gradeDrawing(points, forecast) {
+      if (!points || points.length < 2) return { correct: false, firstHour: 0, rule: 'stopsEarly', diff: null };
+      const mine = drawingToForecast(points);
+      const total = forecastTotalHours(forecast), myTotal = points[points.length - 1].t;
+      let firstHour = null;
+      for (let h = 0; h <= total; h++) {
+        if (h > myTotal || Math.abs(depthOnLine(mine, h) - depthOnLine(forecast, h)) > 1e-9) { firstHour = h; break; }
+      }
+      if (firstHour === null && myTotal > total) firstHour = total;
+      if (firstHour === null) return { correct: true, firstHour: null, rule: null, diff: null };
+      const diff = describeDifference(mine, forecast);
+      let rule = 'wrongRate';
+      if (myTotal < total && (!diff || diff.kind === 'length') && firstHour > myTotal) rule = 'stopsEarly';
+      else if (myTotal > total && firstHour === total) rule = 'tooLong';
+      else if (diff && diff.kind === 'start') rule = 'wrongStart';
+      else if (diff && diff.kind === 'length') rule = diff.stopsEarly ? 'stopsEarly' : 'pieceLength';
+      else if (diff && diff.kind === 'shape') rule = diff.truth.rate < 0 && diff.mine.rate > 0 ? 'meltAsSnow' : 'wrongShape';
+      return { correct: false, firstHour, rule, diff };
+    }
+    // The Draw the Forecast drawing, piece by piece (1A.3, Section 7).
+    // state.points: corners in order; piece k runs points[k] -> points[k+1].
+    // Pieces are drawn in order: piece 0 needs a start (at hour 0) and an
+    // end; every later piece starts where the previous one ended, so only
+    // its end is clicked. Redrawing piece k clears it and every piece after
+    // it (their starts depend on it). Returns { state, error }.
+    //   action: { type: 'click', point } | { type: 'redraw', piece } | { type: 'undo' } | { type: 'clear' }
+    const DRAW_ERRORS = {
+      start0: 'Start at hour 0.',
+      forward: 'Time only moves forward. Click to the right of your start.',
+      done: 'Every piece is drawn. Click a piece of the story to redraw it.',
+      tooFar: `The graph stops at hour ${MAX_HOURS}.`,
+    };
+    function drawStep(state, action, pieceCount) {
+      const pts = state.points.slice();
+      const err = e => ({ state, error: e });
+      if (action.type === 'clear') return { state: { points: [] }, error: null };
+      if (action.type === 'undo') return { state: { points: pts.length === 2 ? [] : pts.slice(0, -1) }, error: null };
+      if (action.type === 'redraw') {
+        const k = action.piece;
+        return { state: { points: k === 0 ? [] : pts.slice(0, Math.min(pts.length, k + 1)) }, error: null };
+      }
+      const p = action.point;
+      if (p.t > MAX_HOURS) return err('tooFar');
+      if (!pts.length) return p.t === 0 ? { state: { points: [p] }, error: null } : err('start0');
+      if (pts.length - 1 >= pieceCount) return err('done');
+      if (p.t <= pts[pts.length - 1].t) return err('forward');
+      return { state: { points: pts.concat([p]) }, error: null };
+    }
+    // Which piece the next click draws (or pieceCount when all are drawn).
+    function activeDrawPiece(state) { return Math.max(0, state.points.length - 1); }
+
+    // Hover snaps to the nearest WHOLE hour, clamped to [0, total] (spec 4b).
+    function snapHour(t, total) { return Math.max(0, Math.min(Math.floor(total), Math.round(t))); }
+
+    // ══════════════════════════════════════════════════════════════
     // EXPLORER RULES — which choices the builder may offer.
     // Karl's decisions (11/26): depth stays in [0, MAX_DEPTH] at every
     // corner (melting may reach exactly 0, "All melted"); an hour option is
@@ -732,11 +1127,15 @@
       makeRng, rateLabel, segmentDelta, segmentRate, forecastPoints, forecastTotalHours, peakOf,
       forecastStory, weatherAt, depthAt, axisLabels, sceneLayout,
       generateForecast, buildMatchItem, isPlausibleGraph, RULE_FEEDBACK, pointsKey, cloneForecast,
+      forecastStoryParts, pieceSpans, pieceIndexAt, describeDifference, differenceLines, differenceSentence, stepWords,
+      formatMixed, formatRate, asFraction, reduceFrac, drawingToForecast, gradeDrawing, snapHour, drawStep, activeDrawPiece, DRAW_ERRORS,
+      buildStoryItem, STORY_INTENT_WEIGHTS, STORY_SIDE_INTENT_CHANCE, PIECE_COLORS, pieceColorVar, depthOnLine,
       // explorer rules
       checkForecast, hourOptions, rateOptions, weatherOptions, startOptions, bestPiece,
       removeCheck, addCheck, hoursLeftFor, evalPiece,
       // scoring
       getScoreState, recordAttempt, medalForStreak, rememberLastItem, wasLastItem, resetProgress,
+      SCORE_MODES, MEDAL_THRESHOLDS, MEDAL_STREAK, STORAGE_KEYS, LEGACY_KEYS,
       // scene (Phase 1A.2)
       SKY_EASE_H, blendAt, skyLevel, cloudLevel, sceneTypeFor, firstSplit,
       // other scales

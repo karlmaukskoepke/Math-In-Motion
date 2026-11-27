@@ -324,6 +324,275 @@ for (let seed = 1; seed <= 500; seed++) {
   if (lvl() !== 1 || S.getScoreState().score !== 0) fail('levels: resetProgress should clear everything');
 }
 
+// ══════════════════════════════════════════════════════════════
+// 1A.3 checks
+// ══════════════════════════════════════════════════════════════
+
+// Story split by piece: joining the parts gives the old story exactly.
+for (let seed = 1; seed <= SEEDS; seed++) {
+  const f = SnowModel.generateForecast(SnowModel.makeRng(seed));
+  const p = SnowModel.forecastStoryParts(f);
+  if (p.pieces.length !== f.segments.length) fail(`story parts: seed ${seed} has ${p.pieces.length} piece sentences for ${f.segments.length} pieces`);
+  if ([p.start].concat(p.pieces).join(' ') !== SnowModel.forecastStory(f)) fail(`story parts: seed ${seed} parts don't join to the story`);
+  if (/^Then/.test(p.pieces[0])) fail(`story parts: seed ${seed} first piece starts with "Then"`);
+}
+
+// describeDifference: for every Match the Forecast distractor, the kind,
+// the first differing piece and the numbers are right; the correct graph
+// gives null.
+{
+  const firstDiffPiece = (a, b) => {
+    for (let i = 0; i < Math.max(a.segments.length, b.segments.length); i++) {
+      const x = a.segments[i], y = b.segments[i];
+      if (!x || !y) return i;
+      if (Math.abs(SnowModel.segmentRate(x) - SnowModel.segmentRate(y)) > 1e-9 || x.hours !== y.hours) return i;
+    }
+    return -1;
+  };
+  const kinds = {};
+  for (const lvl of [1, 2, 3]) {
+    for (let seed = 1; seed <= SEEDS; seed++) {
+      const rng = SnowModel.makeRng(seed * 7 + lvl);
+      const f = SnowModel.generateForecast(rng, { numSegments: lvl });
+      const item = SnowModel.buildMatchItem(rng, f, 3);
+      if (!item) continue;
+      for (const c of item.choices) {
+        const diff = SnowModel.describeDifference(c.forecast, item.correct);
+        if (c.isCorrect) { if (diff !== null) fail('describeDifference: the correct graph should give null'); continue; }
+        if (!diff) { fail(`describeDifference: ${c.rule} gave null (seed ${seed})`); continue; }
+        kinds[`${c.rule}->${diff.kind}`] = (kinds[`${c.rule}->${diff.kind}`] || 0) + 1;
+        if (c.rule === 'wrongStart') {
+          if (diff.kind !== 'start' || diff.mine.start !== c.forecast.start || diff.truth.start !== f.start) fail(`describeDifference: wrongStart -> ${diff.kind}`);
+          continue;
+        }
+        const k = firstDiffPiece(c.forecast, item.correct);
+        if (diff.pieceIndex !== k) fail(`describeDifference: ${c.rule} first piece ${diff.pieceIndex}, expected ${k} (seed ${seed})`);
+        const a = SnowModel.pieceSpans(c.forecast)[k], b = SnowModel.pieceSpans(item.correct)[k];
+        if (diff.hour !== b.t0) fail(`describeDifference: ${c.rule} hour ${diff.hour}, expected ${b.t0}`);
+        const rateDiffers = Math.abs(a.rate - b.rate) > 1e-9;
+        const expectKind = !rateDiffers ? 'length' : Math.sign(a.rate) !== Math.sign(b.rate) ? 'shape' : 'slope';
+        if (diff.kind !== expectKind) fail(`describeDifference: ${c.rule} kind ${diff.kind}, expected ${expectKind}`);
+        if (c.rule === 'rateFlipped' && !(diff.kind === 'slope' || diff.kind === 'shape')) fail('describeDifference: rateFlipped should be a slope difference');
+        if (c.rule === 'rateFlipped' && diff.pieceIndex === c.segmentIndex && !diff.swapped) fail('describeDifference: rateFlipped should be marked swapped');
+        if (c.rule === 'cloudyAsMelt' && diff.kind !== 'shape') fail('describeDifference: cloudyAsMelt should be a shape difference');
+        if (expectKind !== 'length') {
+          if (diff.mine.rise !== a.rise || diff.mine.run !== a.run || diff.truth.rise !== b.rise || diff.truth.run !== b.run) fail('describeDifference: wrong rise/run numbers');
+          if (!close(diff.mine.rate, a.rate) || !close(diff.truth.rate, b.rate)) fail('describeDifference: wrong unit rates');
+        } else if (diff.mine.end !== a.t1 || diff.truth.end !== b.t1) fail('describeDifference: wrong end hours');
+        if (SnowModel.differenceLines(diff).length !== 2 || !SnowModel.differenceSentence(diff)) fail('describeDifference: missing panel text');
+      }
+    }
+  }
+  console.log('describeDifference over Match distractors (rule->kind):', JSON.stringify(kinds));
+}
+
+// Fractions: never decimals.
+{
+  const cases = [[0, '0'], [4, '4'], [0.5, '½'], [10 / 3, '3⅓'], [2 / 3, '⅔'], [7.5, '7½'], [8 / 7, '1 1/7'], [-1.5, '−1½']];
+  for (const [v, want] of cases) if (SnowModel.formatMixed(v) !== want) fail(`formatMixed(${v}) = ${SnowModel.formatMixed(v)}, want ${want}`);
+  const rates = [[1, 3, '1/3'], [3, 1, '3'], [-2, 1, '−2'], [3, 2, '3/2'], [2, 4, '1/2'], [0, 1, '0']];
+  for (const [r, u, want] of rates) if (SnowModel.formatRate(r, u) !== want) fail(`formatRate(${r},${u}) = ${SnowModel.formatRate(r, u)}, want ${want}`);
+  // every whole-hour depth of every generated forecast prints without a decimal point
+  for (let seed = 1; seed <= SEEDS; seed++) {
+    const f = SnowModel.generateForecast(SnowModel.makeRng(seed));
+    for (let h = 0; h <= SnowModel.forecastTotalHours(f); h++) if (/\./.test(SnowModel.formatMixed(SnowModel.depthAt(f, h)))) fail(`formatMixed printed a decimal for seed ${seed} hour ${h}`);
+  }
+}
+
+// Hover snap: any hour maps to the nearest whole hour, clamped.
+{
+  const S = SnowModel;
+  const cases = [[-0.7, 6, 0], [0.49, 6, 0], [0.5, 6, 1], [3.2, 6, 3], [5.6, 6, 6], [9, 6, 6]];
+  for (const [t, total, want] of cases) if (S.snapHour(t, total) !== want) fail(`snapHour(${t}, ${total}) = ${S.snapHour(t, total)}, want ${want}`);
+}
+
+// Piece colors: every piece index maps to a token; contrast >= 4.5:1 as
+// text on each page theme's surfaces; the three stay apart under
+// protanopia / deuteranopia simulation (Machado 2009, severity 1).
+{
+  const S = SnowModel;
+  for (let i = 0; i < S.MAX_SEGMENTS; i++) if (S.pieceColorVar(i) !== `--piece-${i + 1}`) fail(`piece ${i} should map to --piece-${i + 1}`);
+  const lin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  const gam = c => { c = Math.max(0, Math.min(1, c)); return 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055); };
+  const hx = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const CVD = {
+    deutan: [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]],
+    protan: [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]],
+  };
+  const sim = (rgb, k) => (k === 'normal' ? rgb : CVD[k].map(r => gam(r[0] * lin(rgb[0]) + r[1] * lin(rgb[1]) + r[2] * lin(rgb[2]))));
+  const lab = rgb => {
+    const [r, g, b] = rgb.map(lin);
+    const X = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047, Y = 0.2126 * r + 0.7152 * g + 0.0722 * b, Z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
+    const f = t => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
+  };
+  const dE = (a, b) => { const A = lab(a), B = lab(b); return Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]); };
+  const lum = h => { const [r, g, b] = hx(h).map(lin); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+  const THEMES = {
+    dark: { bgs: ['#22263a', '#1a1d27', '#0f1117'], steps: { run: '#1A56DB', rise: '#E07B00' } },
+    light: { bgs: ['#ffffff', '#eceef7', '#f4f5fa'], steps: { run: '#1A56DB', rise: '#E07B00' } },
+  };
+  const report = [];
+  for (const [theme, T] of Object.entries(THEMES)) {
+    const P = S.PIECE_COLORS[theme];
+    P.forEach((c, i) => {
+      const worst = Math.min(...T.bgs.map(b => contrast(c, b)));
+      if (worst < 4.5) fail(`piece color ${i + 1} (${theme}) ${c}: contrast ${worst.toFixed(2)} < 4.5`);
+    });
+    for (const k of ['normal', 'deutan', 'protan']) {
+      const s = P.map(c => sim(hx(c), k));
+      const trio = Math.min(dE(s[0], s[1]), dE(s[0], s[2]), dE(s[1], s[2]));
+      if (trio < 20) fail(`piece colors (${theme}, ${k}): two pieces too close (ΔE ${trio.toFixed(0)} < 20)`);
+      const rise = Math.min(...P.map(c => dE(sim(hx(c), k), sim(hx(T.steps.rise), k))));
+      const run = Math.min(...P.map(c => dE(sim(hx(c), k), sim(hx(T.steps.run), k))));
+      if (rise < 12) fail(`piece colors (${theme}, ${k}): too close to the rise orange (ΔE ${rise.toFixed(0)})`);
+      report.push(`${theme}/${k}: pieces ≥${trio.toFixed(0)}, vs rise ${rise.toFixed(0)}, vs run line ${run.toFixed(0)}`);
+    }
+  }
+  console.log('piece colors (CIELAB ΔE; ≥20 reads as different):\n  ' + report.join('\n  '));
+}
+
+// Per-mode storage (1A.3, Section 4).
+{
+  const store = new Map();
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: k => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k),
+  } });
+  const S = SnowModel;
+  // Migration: old single-mode keys -> mode 'match'.
+  store.set('sc_score', '7'); store.set('sc_streak', '2'); store.set('sc_best_medal', 'silver');
+  store.set('sc_level', '2'); store.set('sc_level_progress', '1'); store.set('sc_last_item', 'abc');
+  const m = S.getScoreState('match');
+  if (m.score !== 7 || m.streak !== 2 || m.level !== 2 || m.levelProgress !== 1) fail(`storage: migration lost data ${JSON.stringify(m)}`);
+  if (m.bestStreak !== 5 || m.bestMedal !== 'silver') fail(`storage: a migrated silver medal should mean best streak 5 (got ${m.bestStreak}, ${m.bestMedal})`);
+  if (store.has('sc_score') || !S.wasLastItem('abc', 'match')) fail('storage: migration should move and remove the old keys');
+  // Modes never change each other.
+  S.recordAttempt(true, 'story'); S.recordAttempt(true, 'story'); S.recordAttempt(true, 'story');
+  if (S.getScoreState('match').score !== 7 || S.getScoreState('draw').score !== 0) fail('storage: a story round changed another mode');
+  if (S.getScoreState('story').bestMedal !== 'bronze' || S.getScoreState('story').level !== 2) fail('storage: story should have bronze and level 2 after 3 in a row');
+  S.recordAttempt(false, 'draw');
+  if (S.getScoreState('story').streak !== 3) fail('storage: a draw miss reset the story streak');
+  // The medal comes from the BEST streak and is never lost.
+  S.recordAttempt(false, 'story');
+  if (S.getScoreState('story').bestMedal !== 'bronze' || S.getScoreState('story').streak !== 0) fail('storage: a medal should never be lost');
+  for (let i = 0; i < 10; i++) S.recordAttempt(true, 'draw');
+  const dr = S.getScoreState('draw');
+  if (dr.bestStreak !== 10 || dr.bestMedal !== 'gold') fail('storage: 10 in a row should be gold');
+  for (const [n, want] of [[0, 'none'], [2, 'none'], [3, 'bronze'], [4, 'bronze'], [5, 'silver'], [9, 'silver'], [10, 'gold'], [25, 'gold']]) {
+    if (S.medalForStreak(n) !== want) fail(`storage: streak ${n} should be ${want}`);
+  }
+  // Clear one mode; clear all.
+  S.resetProgress('draw');
+  if (S.getScoreState('draw').score !== 0 || S.getScoreState('story').score === 0) fail('storage: resetting one mode should leave the others');
+  S.resetProgress();
+  if (SnowModel.SCORE_MODES.some(md => S.getScoreState(md).score !== 0 || S.getScoreState(md).bestStreak !== 0)) fail('storage: resetProgress() should clear every mode');
+  if (store.size !== 0) fail(`storage: resetProgress() left keys behind: ${[...store.keys()]}`);
+  // Corrupt JSON never throws.
+  store.set('sc_mode_story', '{nope');
+  if (S.getScoreState('story').score !== 0) fail('storage: corrupt data should read as a fresh start');
+  S.resetProgress();
+}
+
+// Match the Story generator (1A.3, Section 6; spec 6b + Karl 11/27).
+for (const { name, model: M } of SCALES) {
+  const intents = {};
+  let built = 0, tried = 0;
+  for (const lvl of [1, 2, 3]) {
+    for (let seed = 1; seed <= SEEDS; seed++) {
+      const rng = M.makeRng(seed * 13 + lvl);
+      const f = M.generateForecast(rng, { numSegments: lvl });
+      tried++;
+      const item = M.buildStoryItem(rng, f, 3);
+      if (!item) continue;
+      built++;
+      const ch = item.choices;
+      if (ch.length !== 4) fail(`[${name}] story: ${ch.length} options`);
+      if (ch.filter(c => c.isCorrect).length !== 1) fail(`[${name}] story: not exactly one correct`);
+      const keys = new Set(ch.map(c => M.pointsKey(c.points)));
+      if (keys.size !== 4) fail(`[${name}] story: two options draw the same graph (seed ${seed})`);
+      const texts = new Set(ch.map(c => c.story));
+      if (texts.size !== 4) fail(`[${name}] story: two options have the same text`);
+      const end = M.forecastTotalHours(f);
+      let startDiffs = 0, lengthDiffs = 0;
+      for (const c of ch) {
+        if (!M.isPlausibleGraph(c.points)) fail(`[${name}] story: an option is not a real forecast`);
+        if (M.forecastTotalHours(c.forecast) !== end) fail(`[${name}] story: an option ends at a different hour`);
+        if (c.forecast.segments.length !== lvl) fail(`[${name}] story: an option has a different number of pieces`);
+        // whole-number rates in lowest terms: no "2 inches every 4 hours"
+        for (const s of c.forecast.segments) if (s.weather !== 'cloudy' && M.reduceFrac(s.rise, s.run)[1] !== s.run) fail(`[${name}] story: rate ${s.rise}/${s.run} not in lowest terms`);
+        if (c.isCorrect) continue;
+        if (!c.intent) fail(`[${name}] story: a distractor has no intent tag`);
+        intents[c.intent] = (intents[c.intent] || 0) + 1;
+        if (c.forecast.start !== f.start) startDiffs++;
+        if (c.forecast.segments.some((s, i) => s.hours !== f.segments[i].hours)) lengthDiffs++;
+      }
+      const pureStart = item.mainIntent === 'readStart';
+      if (pureStart && lvl > 1) fail(`[${name}] story: a start-only round at level ${lvl}`);
+      if (!pureStart && startDiffs > 1) fail(`[${name}] story: ${startDiffs} options with a different start (max 1)`);
+      if (lengthDiffs > 1) fail(`[${name}] story: ${lengthDiffs} options with different piece lengths (max 1)`);
+      if (lvl === 1 && lengthDiffs) fail(`[${name}] story: a length change at level 1`);
+    }
+  }
+  console.log(`[${name}] Match the Story built for ${(built / tried * 100).toFixed(0)}% of forecasts; distractor intents: ${JSON.stringify(intents)}`);
+}
+
+// gradeDrawing and the piece-by-piece drawing (1A.3, Section 7; spec 6d).
+{
+  const S = SnowModel;
+  const f = { start: 2, segments: [{ weather: 'snow', rise: 1, run: 3, hours: 6 }, { weather: 'cloudy', hours: 2 }, { weather: 'sun', rise: -1, run: 1, hours: 2 }] };
+  const truth = S.forecastPoints(f);
+  const g = pts => S.gradeDrawing(pts, f);
+  if (!g(truth).correct) fail('gradeDrawing: the true polyline should pass');
+  const extra = [truth[0], { t: 3, d: 3 }, truth[1], { t: 7, d: 4 }, truth[2], { t: 9, d: 3 }, truth[3]];
+  if (!g(extra).correct) fail('gradeDrawing: extra collinear points should still pass');
+  const shift = truth.map((p, i) => (i === 0 ? { t: 0, d: 3 } : p));
+  if (g(shift).rule !== 'wrongStart' && g(shift).rule !== 'wrongRate') fail(`gradeDrawing: a wrong start gave ${g(shift).rule}`);
+  const shiftAll = truth.map(p => ({ t: p.t, d: p.d + 1 }));
+  if (g(shiftAll).rule !== 'wrongStart' || g(shiftAll).firstHour !== 0) fail(`gradeDrawing: a whole graph 1 inch high should be wrongStart at hour 0 (got ${g(shiftAll).rule})`);
+  const steep = [truth[0], { t: 6, d: 8 }, { t: 8, d: 8 }, { t: 10, d: 6 }];
+  if (g(steep).rule !== 'wrongRate' || g(steep).firstHour !== 1) fail(`gradeDrawing: a flipped slope gave ${g(steep).rule}`);
+  const upMelt = [truth[0], truth[1], truth[2], { t: 10, d: 6 }];
+  if (g(upMelt).rule !== 'meltAsSnow') fail(`gradeDrawing: melting drawn as snow gave ${g(upMelt).rule}`);
+  if (g(truth.slice(0, 3)).rule !== 'stopsEarly') fail(`gradeDrawing: stopping early gave ${g(truth.slice(0, 3)).rule}`);
+  const longer = [truth[0], { t: 9, d: 5 }, { t: 10, d: 5 }, { t: 12, d: 3 }];
+  if (g(longer).correct || g(longer).rule !== 'pieceLength') fail(`gradeDrawing: a piece too long gave ${g(longer).rule}`);
+  const shorter = [truth[0], { t: 3, d: 3 }, { t: 8, d: 3 }, { t: 10, d: 1 }];
+  if (g(shorter).correct || g(shorter).rule !== 'pieceLength') fail(`gradeDrawing: a piece too short gave ${g(shorter).rule}`);
+  const flatMelt = [truth[0], truth[1], { t: 8, d: 2 }, { t: 10, d: 0 }];
+  if (g(flatMelt).correct || g(flatMelt).diff.kind !== 'shape') fail('gradeDrawing: cloudy drawn as melting should be a shape difference');
+  if (!g(truth.concat([{ t: 12, d: 2 }])).rule === 'tooLong') fail('gradeDrawing: running past the end should fail');
+
+  // The drawing state, in order: start at hour 0, then one end per piece.
+  let st = { points: [] };
+  const step = a => { const r = S.drawStep(st, a, 3); st = r.state; return r.error; };
+  if (step({ type: 'click', point: { t: 2, d: 2 } }) !== 'start0') fail('drawStep: the first click must be at hour 0');
+  step({ type: 'click', point: { t: 0, d: 2 } });
+  if (step({ type: 'click', point: { t: 0, d: 5 } }) !== 'forward') fail('drawStep: an end at the start hour should be refused');
+  step({ type: 'click', point: { t: 6, d: 4 } });
+  if (S.activeDrawPiece(st) !== 1) fail('drawStep: piece 2 should be next after piece 1');
+  step({ type: 'click', point: { t: 8, d: 4 } });
+  if (step({ type: 'click', point: { t: 7, d: 1 } }) !== 'forward') fail('drawStep: time only moves forward');
+  step({ type: 'click', point: { t: 10, d: 2 } });
+  if (!S.gradeDrawing(st.points, f).correct) fail('drawStep: drawing the story piece by piece should grade correct');
+  if (step({ type: 'click', point: { t: 11, d: 2 } }) !== 'done') fail('drawStep: no fourth piece in a 3-piece story');
+  // Redrawing piece 2 clears piece 3 (its start depends on piece 2).
+  step({ type: 'redraw', piece: 1 });
+  if (st.points.length !== 2 || S.activeDrawPiece(st) !== 1) fail('drawStep: redrawing piece 2 should keep only piece 1');
+  step({ type: 'click', point: { t: 8, d: 5 } }); step({ type: 'click', point: { t: 10, d: 3 } });
+  if (S.gradeDrawing(st.points, f).correct) fail('drawStep: the redrawn (wrong) piece should now grade wrong');
+  step({ type: 'redraw', piece: 0 });
+  if (st.points.length !== 0) fail('drawStep: redrawing piece 1 starts over at the start point');
+  step({ type: 'click', point: { t: 0, d: 2 } }); step({ type: 'click', point: { t: 6, d: 4 } });
+  step({ type: 'undo' });
+  if (st.points.length !== 0) fail('drawStep: undo of the only piece removes its start too');
+  step({ type: 'click', point: { t: 0, d: 2 } }); step({ type: 'click', point: { t: 6, d: 4 } }); step({ type: 'click', point: { t: 8, d: 4 } });
+  step({ type: 'undo' });
+  if (st.points.length !== 2) fail('drawStep: undo removes the last piece');
+  step({ type: 'clear' });
+  if (st.points.length) fail('drawStep: clear empties the drawing');
+}
+
 const repeated = Object.entries(failCounts).filter(([, n]) => n > 3);
 for (const [k, n] of repeated) console.error(`  (…${n} failures like: ${k})`);
 console.log(`${SEEDS} seeds x ${SCALES.length} scales checked, ${failures} failure(s).`);
