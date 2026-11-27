@@ -384,6 +384,10 @@
   //   ?birds=soon              first bird visit after ~1 second (for review)
   //   ?scene=night | day       force the scene type
   //   ?flavor=soon | plane | shooting | birds   a flavor event after ~1 second
+  //   ?pick=right | wrong | 0-3  with ?mode=match: make that pick on load
+  //   ?reveal=picked | mid | end  …then sit just after the pick, mid-trace
+  //                               (just past the split for a wrong pick), or at the verdict
+  //   ?quality=0..3            pin the performance level (0 = full; testing only)
   const URLP = (function () {
     const q = new URLSearchParams(location.search);
     const num = k => (q.has(k) && q.get(k) !== '' && !isNaN(+q.get(k)) ? +q.get(k) : null);
@@ -397,7 +401,8 @@
     return { mode: q.get('mode'), level: num('level'), seed: num('seed'), start: num('start'), segs,
       steps: q.get('steps') === '1', story: q.get('story') === '1', at: q.get('at'), theme: q.get('theme'), reset: q.get('reset') === '1',
       hours: num('hours'), depth: num('depth'), tile: q.get('tile'), birdsSoon: q.get('birds') === 'soon',
-      scene: ['night', 'day'].includes(q.get('scene')) ? q.get('scene') : null, flavor: q.get('flavor') };
+      scene: ['night', 'day'].includes(q.get('scene')) ? q.get('scene') : null, flavor: q.get('flavor'),
+      pick: q.get('pick'), reveal: q.get('reveal'), quality: q.get('quality') };
   })();
 
   // The model at this visit's scale (default 12 h x 15 in, from snowModel.js).
@@ -414,6 +419,7 @@
     return SM.getScoreState().level;
   }
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let geom = null; // cached page rects for the stake-to-graph link line; null = re-measure
   const DEPTH_LABELS = new Set(SM.axisLabels(SM.MAX_DEPTH));
 
   // ── THEME (same key/pattern as the rest of the site) ──
@@ -454,6 +460,7 @@
   let mode = 'explorer';
   function setMode(next) {
     stopPlayback();
+    geom = null;
     closePicker();
     mode = next;
     modeExplorerBtn.classList.toggle('active', mode === 'explorer');
@@ -632,7 +639,7 @@
       // of padding, so #chartWrap can be sized to leave a plot with unit
       // squares. Keep in step with the #chartWrap CSS.
       layout: { padding: { top: 10, right: 14, bottom: 0, left: 0 } },
-      onResize: () => requestAnimationFrame(refreshLinkLine),
+      onResize: () => { geom = null; requestAnimationFrame(refreshLinkLine); },
       plugins: { legend: { display: false }, tooltip: { enabled: false } },
       scales: {
         x: {
@@ -681,6 +688,7 @@
   const weatherBadge = document.getElementById('weatherBadge');
   const linkLine = document.getElementById('linkLine');
 
+  const FLAKE_DPR_CAP = 1.5;
   const LAND_MS = 250;                  // a landing flake squashes and fades this long
   const BIRD_MIN_S = 15, BIRD_MAX_S = 40; // seconds between bird visits
   // Flake density tiers, set by the snowing RATE (inches per hour):
@@ -711,11 +719,14 @@
   // with the sun. Every backdrop stays a mid/dark tone so the white top of
   // the snow keeps at least 3:1 contrast against it.
   const PALETTES = {
-    night:       { sky0: '#0b1230', sky1: '#1b2752', sky2: '#2d3b6a', hillFar: '#2a3762', hillNear: '#243152', tree: '#27493f', yard0: '#1c2540', yard1: '#111727', ground0: '#6e4d33', ground1: '#3b291b', cloudSnow: '#7d87ac', cloudCloudy: '#aab3d2' },
-    nightLit:    { sky0: '#3f78c0', sky1: '#86b6e6', sky2: '#f3d6aa', hillFar: '#6f86ad', hillNear: '#55709a', tree: '#3c6b56', yard0: '#4a5b7c', yard1: '#36435d', ground0: '#8f6646', ground1: '#5c402b', cloudSnow: '#c4ccdc', cloudCloudy: '#dde3ee' },
-    dayClear:    { sky0: '#5f9ad8', sky1: '#9cc6ee', sky2: '#d3e6f6', hillFar: '#7f9cc0', hillNear: '#6788aa', tree: '#4a7a60', yard0: '#5a6c8c', yard1: '#465673', ground0: '#8f6646', ground1: '#5c402b', cloudSnow: '#b9c2d1', cloudCloudy: '#dfe4ec' },
-    dayOvercast: { sky0: '#8794aa', sky1: '#a6b1c3', sky2: '#c2cad7', hillFar: '#8492a9', hillNear: '#6f7f98', tree: '#4d6c5e', yard0: '#59667e', yard1: '#465166', ground0: '#7f5c41', ground1: '#523a28', cloudSnow: '#9ba5b8', cloudCloudy: '#cdd3de' },
-    daySunny:    { sky0: '#2f86de', sky1: '#79b6ef', sky2: '#cfe6f8', hillFar: '#7c9ac2', hillNear: '#5f83ab', tree: '#477d5d', yard0: '#5b6f92', yard1: '#465876', ground0: '#97704d', ground1: '#614530', cloudSnow: '#ffffff', cloudCloudy: '#ffffff' },
+    // yard0/yard1 = the grass field, far (hazier) → near; grass = blade
+    // color; snowShade = what the far field turns as snow covers it (a
+    // shaded snow-blue, never white, so the snow's top edge still reads).
+    night:       { sky0: '#0b1230', sky1: '#1b2752', sky2: '#2d3b6a', hillFar: '#2a3762', hillNear: '#243152', tree: '#27493f', yard0: '#20322f', yard1: '#132219', grass: '#3f6b3c', snowShade: '#4a5878', ground0: '#6e4d33', ground1: '#3b291b', cloudSnow: '#7d87ac', cloudCloudy: '#aab3d2' },
+    nightLit:    { sky0: '#3f78c0', sky1: '#86b6e6', sky2: '#f3d6aa', hillFar: '#6f86ad', hillNear: '#55709a', tree: '#3c6b56', yard0: '#55705f', yard1: '#3d5a45', grass: '#6d9a58', snowShade: '#71839f', ground0: '#8f6646', ground1: '#5c402b', cloudSnow: '#c4ccdc', cloudCloudy: '#dde3ee' },
+    dayClear:    { sky0: '#5f9ad8', sky1: '#9cc6ee', sky2: '#d3e6f6', hillFar: '#7f9cc0', hillNear: '#6788aa', tree: '#4a7a60', yard0: '#6e8f68', yard1: '#4f7244', grass: '#8cc05e', snowShade: '#7486a6', ground0: '#8f6646', ground1: '#5c402b', cloudSnow: '#b9c2d1', cloudCloudy: '#dfe4ec' },
+    dayOvercast: { sky0: '#8794aa', sky1: '#a6b1c3', sky2: '#c2cad7', hillFar: '#8492a9', hillNear: '#6f7f98', tree: '#4d6c5e', yard0: '#667a68', yard1: '#4a5f4c', grass: '#86a86a', snowShade: '#6f7f98', ground0: '#7f5c41', ground1: '#523a28', cloudSnow: '#9ba5b8', cloudCloudy: '#cdd3de' },
+    daySunny:    { sky0: '#2f86de', sky1: '#79b6ef', sky2: '#cfe6f8', hillFar: '#7c9ac2', hillNear: '#5f83ab', tree: '#477d5d', yard0: '#6f925f', yard1: '#557e44', grass: '#95cc5c', snowShade: '#7486a6', ground0: '#97704d', ground1: '#614530', cloudSnow: '#ffffff', cloudCloudy: '#ffffff' },
   };
   const rgbOf = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
   function mixHex(a, b, t) {
@@ -734,7 +745,7 @@
     L = SM.sceneLayout(w, h);
     const { skyBottom, fgTop, groundY } = L;
     sceneSvg.setAttribute('viewBox', `0 0 ${w} ${h}`);
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(FLAKE_DPR_CAP, window.devicePixelRatio || 1); // cap: 2x screens cost 4x the pixels
     flakeCanvas.width = Math.round(w * dpr); flakeCanvas.height = Math.round(h * dpr);
     fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     flakes.length = 0; birds.length = 0;
@@ -800,8 +811,41 @@
     }
     hills += `<path id="hillNear" d="${near}" fill="#243152"/><path class="hillSnow" d="${near}" fill="#e8efff" opacity="0"/>`;
 
-    // Foreground: dark night-yard backdrop so the white snow top reads clearly
-    let fg = `<rect x="0" y="${fgTop}" width="${w}" height="${groundY - fgTop + 1}" fill="url(#yardG)"/>`;
+    // Foreground (Mockup A, cutaway): a grass field receding to the horizon
+    // behind the flat snow layer. Rows shrink toward the horizon. Each tuft
+    // has one real height of 2-8 inches and sits in a group for that
+    // height; a group is hidden once the depth passes it, so the grass
+    // thins as snow builds and is gone by 8 inches (and returns as it
+    // melts). The nearest rows are also covered by the snow layer itself.
+    // Drawn once, fixed seed; only 7 group visibilities change.
+    let fg = `<rect x="0" y="${fgTop}" width="${w}" height="${groundY - fgTop + 1}" fill="url(#yardG)"/>
+      <rect id="fieldSnow" x="0" y="${fgTop}" width="${w}" height="${groundY - fgTop + 1}" fill="#4a5878" opacity="0"/>`;
+    const GRASS_ROWS = 7, perRow = Math.round(w / 14);
+    const buckets = {};
+    for (let gh = 2; gh <= 8; gh++) buckets[gh] = '';
+    let tuftCount = 0;
+    for (let k = 0; k < GRASS_ROWS; k++) {
+      const f = Math.pow(1 - k / GRASS_ROWS, 1.7);      // 1 = nearest row, ~0 = horizon
+      const ry = fgTop + (groundY - fgTop) * f;
+      const sz = (ry - fgTop) / (groundY - fgTop);      // size factor: 1 near, small far
+      const n = Math.round(perRow * (0.7 + (1 - sz) * 0.8));
+      for (let i = 0; i < n; i++) {
+        const inches = 2 + Math.floor(rng() * 7);
+        const x = (i + rng() * 0.9) / n * w, yy = ry + rng() * 3 * sz;
+        const hPx = inches * L.pxPerInch * Math.max(0.12, sz);
+        let d = '';
+        for (let bl = 0; bl < 4; bl++) {
+          const bx = x + (bl - 1.5) * 1.6 * Math.max(0.4, sz);
+          const lean = (rng() - 0.5) * hPx * 0.5, hh = hPx * (0.7 + rng() * 0.3);
+          d += `M${bx.toFixed(1)} ${yy.toFixed(1)} q${(lean * 0.3).toFixed(1)} ${(-hh * 0.6).toFixed(1)} ${lean.toFixed(1)} ${(-hh).toFixed(1)} `;
+        }
+        buckets[inches] += `<path d="${d}" stroke-width="${(0.6 + sz * 1.2).toFixed(2)}" opacity="${(0.45 + sz * 0.55).toFixed(2)}"/>`;
+        tuftCount++;
+      }
+    }
+    fg += `<g id="grass" fill="none" stroke="#3f6b3c" stroke-linecap="round">`;
+    for (let gh = 2; gh <= 8; gh++) fg += `<g class="grassH" data-h="${gh}">${buckets[gh]}</g>`;
+    fg += `</g>`;
 
     // Bird feeder on a tall thin pole (drawn before the snow so the pole's
     // base gets buried; the tray sits above the MAX_DEPTH line).
@@ -840,6 +884,7 @@
     // over time instead).
     const snow = `<g id="snowLayerGroup"><rect id="snowRect" x="0" y="${groundY}" width="${w}" height="0" fill="url(#snowG)"/>
       <rect id="snowTexRect" x="0" y="${groundY}" width="${w}" height="0" fill="url(#snowTex)"/>
+      <line id="snowRim" x1="0" x2="${w}" y1="${groundY}" y2="${groundY}" stroke="#3b4a66" stroke-width="1.2" opacity="0"/>
       <line id="snowTopLine" x1="0" x2="${w}" y1="${groundY}" y2="${groundY}" stroke="#ffffff" stroke-width="1.6" opacity="0"/></g>`;
 
     // Match overlay (Section 2): the chosen graph laid over the foreground
@@ -847,6 +892,7 @@
     // one inch is tall, 0 on the ground line, MAX_DEPTH at the stake top.
     const X = hr => ox + hr * L.pxPerInch;
     let ov = `<g id="overlay" style="display:none">
+      <rect x="${ox}" y="${L.yForDepth(SM.MAX_DEPTH)}" width="${ovW}" height="${groundY - L.yForDepth(SM.MAX_DEPTH)}" fill="#0b1020" opacity="0.45"/>
       <path id="ovFill" fill="url(#snowG)"/><path id="ovFillTex" fill="url(#snowTex)"/>
       <path id="ovEdge" fill="none" stroke="#ffffff" stroke-width="1.6"/>
       <rect id="ovSplit" x="0" y="${fgTop}" width="0" height="${groundY - fgTop}" fill="#ff4f8b" opacity="0.16" style="display:none"/><g id="ovGrid">`;
@@ -887,7 +933,7 @@
     const q = s => sceneSvg.querySelector(s);
     el = {
       snowGroup: q('#snowLayerGroup'), snowRect: q('#snowRect'), snowTex: q('#snowTexRect'),
-      snowTop: q('#snowTopLine'), anchor: q('#stakeAnchor'),
+      snowTop: q('#snowTopLine'), snowRim: q('#snowRim'), anchor: q('#stakeAnchor'),
       clouds: q('#cloudGroup'), sun: q('#sunGroup'), moon: q('#moonGroup'), stars: q('#stars'),
       skyStops: sceneSvg.querySelectorAll('.skyStop'), yardStops: sceneSvg.querySelectorAll('.yardStop'),
       groundStops: sceneSvg.querySelectorAll('.groundStop'), hillFar: q('#hillFar'), hillNear: q('#hillNear'),
@@ -899,7 +945,10 @@
       ov: q('#overlay'), ovFill: q('#ovFill'), ovFillTex: q('#ovFillTex'), ovEdge: q('#ovEdge'), ovSplit: q('#ovSplit'),
       ovChosen: q('#ovChosen'), ovChosenHalo: q('#ovChosenHalo'), ovTrue: q('#ovTrue'), ovTrueHalo: q('#ovTrueHalo'),
       ovLink: q('#ovLink'), ovDot: q('#ovDot'), ovX0: ox, ovW,
+      grass: q('#grass'), grassGroups: Array.from(sceneSvg.querySelectorAll('.grassH')).map(g => ({ g, h: +g.dataset.h, shown: true })),
+      fieldSnow: q('#fieldSnow'), tuftCount,
     };
+    geom = null;
     applyScene();
     refreshLinkLine();
   }
@@ -918,6 +967,8 @@
     [P.ground0, P.ground1].forEach((c, i) => el.groundStops[i].setAttribute('stop-color', c));
     el.hillFar.setAttribute('fill', P.hillFar); el.hillNear.setAttribute('fill', P.hillNear);
     el.trees.forEach(tr => tr.setAttribute('fill', P.tree));
+    el.grass.setAttribute('stroke', P.grass);
+    el.fieldSnow.setAttribute('fill', P.snowShade);
     const night = scene.type === 'night';
     el.stars.style.opacity = night ? (1 - sun).toFixed(3) : 0;
     el.moon.style.opacity = night ? (1 - sun).toFixed(3) : 0;
@@ -961,9 +1012,22 @@
     el.snowRect.style.display = el.snowTex.style.display = show ? '' : 'none';
     el.snowTop.setAttribute('y1', top); el.snowTop.setAttribute('y2', top);
     el.snowTop.setAttribute('opacity', show ? 0.95 : 0);
+    // A thin dark rim just above the white edge keeps the reading line
+    // visible against anything behind it (pale hills at 15 inches by day).
+    el.snowRim.setAttribute('y1', top - 1.3); el.snowRim.setAttribute('y2', top - 1.3);
+    el.snowRim.setAttribute('opacity', show ? 0.55 : 0);
     el.anchor.setAttribute('cy', top);
     const whiten = d / SM.MAX_DEPTH;
-    el.hillSnow.forEach(hs => hs.setAttribute('opacity', (0.8 * whiten).toFixed(3)));
+    // Distant hills whiten with the snow, but only halfway, so they never
+    // turn as white as the snow in front of them.
+    el.hillSnow.forEach(hs => hs.setAttribute('opacity', (0.5 * whiten).toFixed(3)));
+    // Grass: hide every tuft shorter than the snow; the far field turns
+    // the shaded snow color as it is covered (fully by 8 inches).
+    for (const gg of el.grassGroups) {
+      const shown = d < gg.h;
+      if (shown !== gg.shown) { gg.shown = shown; gg.g.style.display = shown ? '' : 'none'; }
+    }
+    el.fieldSnow.setAttribute('opacity', (0.9 * Math.min(1, d / 8)).toFixed(3));
     drawOverlay();
     return d;
   }
@@ -1115,12 +1179,35 @@
     ctx.restore();
   }
 
+  // Performance fallback: every PERF_WINDOW_MS, if frames averaged slower
+  // than PERF_SLOW_MS (~35 fps), shed one level: 1 = no flavor events,
+  // 2 = 60% of the flakes and playback redraws at 30 Hz, 3 = 35% of the
+  // flakes. Levels never come back up during a visit. ?quality=0..3 pins
+  // a level (testing).
+  const PERF_SLOW_MS = 28, PERF_WINDOW_MS = 2000;
+  const FLAKE_SCALE = [1, 1, 0.6, 0.35];
+  const pinnedQuality = /^[0-3]$/.test(URLP.quality || '') ? +URLP.quality : null;
+  let perfLevel = pinnedQuality || 0, perfAcc = 0, perfFrames = 0;
+  document.documentElement.dataset.perfLevel = perfLevel;
   let lastFrame = performance.now(), lastTier = 0;
   function frame(now) {
-    const dt = Math.min(0.05, (now - lastFrame) / 1000);
+    const raw = now - lastFrame;
+    const dt = Math.min(0.05, raw / 1000);
     lastFrame = now;
+    if (pinnedQuality === null && raw < 250 && !document.hidden) { // ignore gaps (hidden tab, long pauses)
+      perfAcc += raw; perfFrames++;
+      if (perfAcc >= PERF_WINDOW_MS) {
+        if (perfAcc / perfFrames > PERF_SLOW_MS && perfLevel < 3) {
+          perfLevel++;
+          if (perfLevel >= 1) flavor = null;
+          document.documentElement.dataset.perfLevel = perfLevel;
+          console.info(`Snow Challenge: running slowly (${(perfAcc / perfFrames).toFixed(0)} ms/frame); lightened the scene to level ${perfLevel}.`);
+        }
+        perfAcc = 0; perfFrames = 0;
+      }
+    }
     if (L) {
-      const want = FLAKE_TIERS[scene.tier];
+      const want = FLAKE_TIERS[scene.tier].map(n => Math.round(n * FLAKE_SCALE[perfLevel]));
       let bg = 0, fgc = 0;
       for (const f of flakes) { if (f.layer === 'bg') bg++; else fgc++; }
       const fresh = scene.tier > 0 && lastTier === 0; // snow just started: fill from the top edge
@@ -1133,7 +1220,7 @@
       const surface = L.yForDepth(scene.depth);
       const fadeTop = L.skyBottom, fadeBottom = L.fgTop;
       fctx.clearRect(0, 0, L.width, L.height);
-      if (!flavor && now >= nextFlavorAt) startFlavor(now);
+      if (!flavor && perfLevel === 0 && now >= nextFlavorAt) startFlavor(now);
       if (flavor) drawFlavor(now);
       // On bright skies white flakes vanish: give them a cool-gray edge.
       fctx.fillStyle = scene.bright ? '#f6f8fc' : '#ffffff';
@@ -1232,17 +1319,20 @@
   // different scales, so the line ends exactly on the plotted point.
   const linkDot = document.getElementById('linkDot');
   const contentEl = document.getElementById('content');
+  const invalidateGeom = () => { geom = null; };
+  window.addEventListener('resize', invalidateGeom);
   function updateLinkLine(depthInches) {
     if (depthInches == null || mode !== 'explorer' || chartWrap.classList.contains('hidden') || !el.anchor) {
       linkLine.setAttribute('opacity', 0); linkDot.setAttribute('opacity', 0); return;
     }
-    const anchorRect = el.anchor.getBoundingClientRect();
-    const chartRect = document.getElementById('chart').getBoundingClientRect();
-    const box = contentEl.getBoundingClientRect();
-    const x1 = anchorRect.left + anchorRect.width / 2 - box.left;
-    const y1 = anchorRect.top + anchorRect.height / 2 - box.top;
-    const x2 = chartRect.left - box.left + chart.scales.x.getPixelForValue(playbackHour);
-    const y2 = chartRect.top - box.top + chart.scales.y.getPixelForValue(depthInches);
+    // Page positions are measured once and reused until the layout changes
+    // (resize, mode switch, story toggle, scene rebuild). Re-measuring every
+    // frame forced the browser to lay out the page 60 times a second.
+    if (!geom) geom = { svg: sceneSvg.getBoundingClientRect(), chart: document.getElementById('chart').getBoundingClientRect(), box: contentEl.getBoundingClientRect() };
+    const x1 = geom.svg.left + +el.anchor.getAttribute('cx') - geom.box.left;
+    const y1 = geom.svg.top + +el.anchor.getAttribute('cy') - geom.box.top;
+    const x2 = geom.chart.left - geom.box.left + chart.scales.x.getPixelForValue(playbackHour);
+    const y2 = geom.chart.top - geom.box.top + chart.scales.y.getPixelForValue(depthInches);
     linkLine.setAttribute('x1', x1); linkLine.setAttribute('y1', y1);
     linkLine.setAttribute('x2', x2); linkLine.setAttribute('y2', y2);
     linkDot.setAttribute('cx', x2); linkDot.setAttribute('cy', y2);
@@ -1428,6 +1518,7 @@
   const toggleStory = document.getElementById('toggleStory');
   const storyText = document.getElementById('storyText');
   toggleStory.onchange = () => {
+    geom = null;
     storyText.classList.toggle('hidden', !toggleStory.checked);
     storyText.textContent = SM.forecastStory(currentExplorerForecast());
   };
@@ -1521,12 +1612,16 @@
     onPlaybackDone = onDone || null;
     const total = SM.forecastTotalHours(f);
     if (playbackHour >= total - 1e-9) playbackHour = 0;
-    let last = performance.now();
+    let last = performance.now(), skipFrame = false;
     playBtn.textContent = '⏸ Pause';
     const tick = now => {
       const secPerHour = SPEED_SEC_PER_HOUR[speedSelect.value] || 1;
       playbackHour = Math.min(total, playbackHour + Math.max(0, now - last) / 1000 / secPerHour);
       last = now;
+      // Performance level 2+: redraw the graph and scene every other frame
+      // (30 Hz). Time still advances every frame, so speed is unchanged.
+      skipFrame = perfLevel >= 2 && !skipFrame && playbackHour < total;
+      if (skipFrame) { playRaf = requestAnimationFrame(tick); return; }
       seek(playbackHour);
       if (playbackHour >= total) { stopPlayback(); if (onPlaybackDone) onPlaybackDone(); return; }
       playRaf = requestAnimationFrame(tick);
@@ -1756,6 +1851,25 @@
   if (mode === 'explorer' && URLP.at) {
     const total = SM.forecastTotalHours(currentExplorerForecast());
     seek(URLP.at === 'end' ? total : Math.max(0, Math.min(total, +URLP.at || 0)));
+  }
+  // Deep link into a Match reveal (for review): ?pick=…&reveal=…
+  if (mode === 'match' && URLP.pick && currentMatchItem) {
+    const ch = currentMatchItem.choices;
+    let idx = /^[0-3]$/.test(URLP.pick) ? +URLP.pick : -1;
+    if (URLP.pick === 'right') idx = ch.findIndex(c => c.isCorrect);
+    if (URLP.pick === 'wrong') {
+      // the wrong graph that stays on the snow's path longest, so the split shows mid-trace
+      idx = ch.map((c, i) => i).filter(i => !ch[i].isCorrect)
+        .map(i => ({ i, at: (SM.firstSplit(currentMatchItem.correct, ch[i].forecast) || { hour: 0 }).hour }))
+        .sort((a, b) => b.at - a.at)[0].i;
+    }
+    if (idx >= 0) {
+      pickMatchChoice(idx, matchChoicesEl.children[idx]);
+      const total = SM.forecastTotalHours(currentMatchItem.correct);
+      const sp = scene.overlay && scene.overlay.split;
+      if (URLP.reveal === 'mid') seek(sp ? Math.min(total - 0.25, sp.hour + 1) : total / 2);
+      else if (URLP.reveal === 'end') seek(total);
+    }
   }
   requestAnimationFrame(refreshLinkLine);
 })();
