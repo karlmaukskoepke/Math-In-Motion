@@ -30,11 +30,24 @@
   // Scene bands as shares of the picture's height (Section 3a/3b). Depth 0
   // sits on the ground line, GROUND_STRIP above the bottom edge; MAX_DEPTH
   // sits at the top of the foreground band.
-  // Phase 1A.2: the foreground is taller than the v2 spec's 50% so that the
-  // Match overlay (one inch = PX_PER_INCH) reaches ~16 px cells at 1366x768
-  // while the story banner sits above the scene. (Was 0.30 / 0.20 / 0.50, 0.06.)
-  const SCENE_BANDS = { sky: 0.20, background: 0.15, foreground: 0.65 };
-  const GROUND_STRIP = 0.05;
+  // Phase 1A.2 (revised 11/27): the main picture is a landscape in
+  // perspective — sky, distant hills, and a grass plane running to the
+  // horizon. The precise reading happens in a zoomed MEASURING INSET in
+  // the bottom-left corner. (The 20/15/65 "cutaway" bands are retired.)
+  const SCENE_BANDS = { sky: 0.30, background: 0.25, foreground: 0.45 };
+  // The small stake standing in the grass (main scene).
+  const MINI_PX_PER_INCH = 6;     // ~90 px for 15 inches
+  const MINI_STAKE_X = 0.66;      // share of scene width (kept right of the inset)
+  const MINI_STAKE_ROW = 0.5;     // its base, as a share of the way from horizon to bottom edge
+  // The measuring inset (bottom-left). PX_PER_INCH stays 16 so the Match
+  // overlay's grid cells are 16 px; it shrinks only if the scene is too
+  // short to hold it (INSET_MAX_H_SHARE of the scene height).
+  const INSET_PX_PER_INCH = 16;
+  const INSET_MARGIN = 8;         // gap from the scene's edges
+  const INSET_PAD = { top: 12, left: 30, right: 8, bottom: 22 }; // left = stake numbers; bottom = soil strip + hour labels
+  const INSET_STAKE_W = 8;
+  const INSET_MAX_H_SHARE = 0.85;
+  const GROUND_STRIP = 0.05;      // (unused by the landscape; kept for older callers)
   // Sky changes (sunrise, clouds rolling in) ease over this many hours,
   // centred on the boundary between two pieces.
   const SKY_EASE_H = 1;
@@ -321,17 +334,65 @@
       return d;
     }
 
-    // ── Scene geometry (Section 3b) ──
-    // One linear scale shared by the stake, the snow top and the link line.
+    // ── Scene geometry (Phase 1A.2 revised, Section 1) ──
+    // Main bands, the small stake in the grass (MINI_PX_PER_INCH), and the
+    // measuring inset (PX_PER_INCH). Each stake has ONE linear scale; the
+    // inset's is also the Match overlay's and the link line's.
+    // The top-level groundY / pxPerInch / yForDepth are the inset's (the
+    // reading stake), so older callers keep working.
     function sceneLayout(width, height) {
       const skyBottom = height * SCENE_BANDS.sky;
-      const fgTop = height * (SCENE_BANDS.sky + SCENE_BANDS.background);
-      const groundY = height * (1 - GROUND_STRIP);
-      const pxPerInch = (groundY - fgTop) / MAX_DEPTH;
-      return {
-        width, height, skyBottom, fgTop, groundY, pxPerInch,
-        yForDepth: d => groundY - d * pxPerInch,
+      const fgTop = height * (SCENE_BANDS.sky + SCENE_BANDS.background); // the horizon
+      // Inset: stake numbers | stake | MAX_HOURS columns of one inch each.
+      const natural = INSET_PAD.top + MAX_DEPTH * INSET_PX_PER_INCH + INSET_PAD.bottom;
+      const k = Math.min(1, (height * INSET_MAX_H_SHARE) / natural);
+      const px = INSET_PX_PER_INCH * k;
+      const iw = INSET_PAD.left + INSET_STAKE_W + MAX_HOURS * px + INSET_PAD.right;
+      const ih = INSET_PAD.top + MAX_DEPTH * px + INSET_PAD.bottom;
+      const ix = INSET_MARGIN, iy = height - ih - INSET_MARGIN;
+      const groundY = iy + ih - INSET_PAD.bottom;
+      const stakeX = ix + INSET_PAD.left + INSET_STAKE_W / 2;
+      const inset = {
+        x: ix, y: iy, w: iw, h: ih, pxPerInch: px, groundY, stakeX,
+        ovX0: stakeX + INSET_STAKE_W / 2, ovW: MAX_HOURS * px,
+        yForDepth: d => groundY - d * px,
       };
+      // Small stake in the grass, right of the inset.
+      // Plant it lower on short scenes so its top stays below the horizon.
+      const miniBaseY = Math.min(height - 6, Math.max(fgTop + (height - fgTop) * MINI_STAKE_ROW, fgTop + MAX_DEPTH * MINI_PX_PER_INCH + 8));
+      const miniX = Math.max(width * MINI_STAKE_X, ix + iw + 30);
+      const mini = { x: miniX, baseY: miniBaseY, pxPerInch: MINI_PX_PER_INCH, yForDepth: d => miniBaseY - d * MINI_PX_PER_INCH };
+      return {
+        width, height, skyBottom, fgTop, horizonY: fgTop, inset, mini,
+        groundY, pxPerInch: px, yForDepth: inset.yForDepth,
+      };
+    }
+
+    // ── Hills and trees (Section 4b) ──
+    // Each hill is one ridge function; the page draws the hill by sampling
+    // it, and every tree's base is placed a little BELOW the ridge at its x
+    // (the hill drawn after it covers the bottom of the trunk), so trees
+    // always look rooted. Fixed seed: the same trees every time.
+    function sceneHills(width, height) {
+      const skyBottom = height * SCENE_BANDS.sky;
+      const fgTop = height * (SCENE_BANDS.sky + SCENE_BANDS.background);
+      const band = fgTop - skyBottom;
+      const far = { base: skyBottom + band * 0.42, amp: band * 0.26, phase: 0.6 };
+      const near = { base: skyBottom + band * 0.78, amp: band * 0.16, phase: 2.1 };
+      const ridgeOf = hl => x => hl.base - hl.amp * (0.6 * Math.sin(hl.phase + (x / width) * 5) + 0.4 * Math.cos(hl.phase * 1.7 + (x / width) * 3));
+      const ridgeFar = ridgeOf(far), ridgeNear = ridgeOf(near);
+      const rng = makeRng(4242);
+      const trees = [];
+      const plant = (hill, ridge, count, size) => {
+        for (let i = 0; i < count; i++) {
+          const x = width * (0.06 + 0.88 * (i + 0.2 + rng() * 0.6) / count);
+          const sz = size * (0.8 + rng() * 0.4);
+          trees.push({ hill, x, size: sz, baseY: ridge(x) + sz * 0.14, ridgeY: ridge(x) });
+        }
+      };
+      plant('far', ridgeFar, 5, band * 0.26);
+      plant('near', ridgeNear, 3, band * 0.4);
+      return { skyBottom, fgTop, band, ridgeFar, ridgeNear, trees };
     }
 
     // ── Generator ──
@@ -665,6 +726,7 @@
       // scale
       MAX_DEPTH, MAX_HOURS, MAX_TOTAL_HOURS: MAX_HOURS /* old name */, START_DEPTH_MAX,
       LABEL_EVERY, PEAK_TARGET, PEAK_TARGET_SHARE, SCENE_BANDS, GROUND_STRIP,
+      MINI_PX_PER_INCH, INSET_PX_PER_INCH, sceneHills,
       SNOW_RATES, MELT_RATES, MAX_SEGMENTS, MAX_LEVEL, LEVEL_UP_STREAK,
       // forecasts
       makeRng, rateLabel, segmentDelta, segmentRate, forecastPoints, forecastTotalHours, peakOf,

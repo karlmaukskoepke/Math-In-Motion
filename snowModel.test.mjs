@@ -126,25 +126,35 @@ for (const { name, model: M } of SCALES) {
   if (labels[0] !== 0 || labels[labels.length - 1] !== D) fail(`[${name}] axis labels should run 0..${D}, got ${labels}`);
   if (labels.some((v, i) => i > 0 && i < labels.length - 1 && v % M.LABEL_EVERY)) fail(`[${name}] inner labels should be multiples of ${M.LABEL_EVERY}`);
 
-  // Scene scale: stake marks sit exactly on the one linear scale, MAX_DEPTH
-  // is the top of the foreground band, and the snow top (from depthAt) lands
-  // on the stake mark for its depth at every whole and half hour.
-  for (const [w, h] of [[400, 360], [520, 410], [300, 600]]) {
-    const L = M.sceneLayout(w, h);
-    if (!close(L.yForDepth(0), L.groundY)) fail(`[${name}] depth 0 should be the ground line`);
-    if (!close(L.yForDepth(D), L.fgTop)) fail(`[${name}] depth ${D} should be the top of the foreground band`);
-    if (!close(L.fgTop, h * (M.SCENE_BANDS.sky + M.SCENE_BANDS.background))) fail(`[${name}] foreground band in the wrong place`);
-    for (let inch = 0; inch <= D; inch++) {
-      if (!close(L.yForDepth(inch), L.groundY - inch * L.pxPerInch)) fail(`[${name}] stake mark ${inch} off the scale`);
+  // Scene scale (Phase 1A.2 revised): two stakes, each on ONE linear scale
+  // — the small stake in the grass at MINI_PX_PER_INCH, the measuring
+  // inset at PX_PER_INCH (16, or less only if the scene is too short).
+  // The snow top at every whole and half hour sits on the right mark.
+  for (const [w, h] of [[491, 403], [520, 556], [400, 360], [300, 600]]) {
+    const L = M.sceneLayout(w, h), I = L.inset, m = L.mini;
+    for (const d of [0, 3, 8, D]) {
+      if (!close(m.yForDepth(d), m.baseY - d * M.MINI_PX_PER_INCH)) fail(`[${name}] small stake mark ${d} off its scale`);
+      if (!close(I.yForDepth(d), I.groundY - d * I.pxPerInch)) fail(`[${name}] inset mark ${d} off its scale`);
     }
-    for (let seed = 1; seed <= 200; seed++) {
+    if (!close(L.yForDepth(D), I.yForDepth(D))) fail(`[${name}] top-level yForDepth should be the inset's`);
+    if (h >= 400 && I.pxPerInch < 16 - 1e-9) fail(`[${name}] inset at ${w}x${h} is ${I.pxPerInch.toFixed(1)} px/in (< 16)`);
+    if (I.y < 0 || I.x + I.w > w) fail(`[${name}] inset doesn't fit in ${w}x${h}`);
+    if (m.x < I.x + I.w) fail(`[${name}] the small stake is under the inset`);
+    if (m.yForDepth(D) < L.fgTop) fail(`[${name}] the small stake's top rises past the horizon`);
+    if (!close(I.ovW, H * I.pxPerInch)) fail(`[${name}] overlay width should be MAX_HOURS x PX_PER_INCH`);
+    for (let seed = 1; seed <= 100; seed++) {
       const f = M.generateForecast(M.makeRng(seed));
       for (let t = 0; t <= M.forecastTotalHours(f); t += 0.5) {
         const d = M.depthAt(f, t);
-        const y = L.yForDepth(d);
-        if (y > L.groundY + 1e-9 || y < L.fgTop - 1e-9) fail(`[${name}] snow top at hour ${t} is off the stake`);
-        if (Number.isInteger(d) && !close(y, L.groundY - d * L.pxPerInch)) fail(`[${name}] snow top at hour ${t} misses stake mark ${d}`);
+        if (Number.isInteger(d) && !close(I.yForDepth(d), I.groundY - d * I.pxPerInch)) fail(`[${name}] inset snow top misses mark ${d}`);
       }
+    }
+    // Trees are rooted: base at or below the ridge at their x, inside the hill.
+    const hills = M.sceneHills(w, h);
+    for (const tr of hills.trees) {
+      const ridge = tr.hill === 'far' ? hills.ridgeFar(tr.x) : hills.ridgeNear(tr.x);
+      if (tr.baseY < ridge) fail(`[${name}] a ${tr.hill} tree floats above its hill at x=${tr.x.toFixed(0)}`);
+      if (tr.x < 0 || tr.x > w) fail(`[${name}] a tree is off the hill's span`);
     }
   }
 

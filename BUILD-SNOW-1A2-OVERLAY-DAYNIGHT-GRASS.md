@@ -4,8 +4,8 @@ For Claude Code. Written 11/26/2026 after Karl reviewed Phase 1A (fb5f658). Amen
 
 ## Karl's answers (11/26–11/27), recorded for later sessions
 
-- Foreground: **Mockup A (cutaway)**.
-- Taller foreground band: sky 20%, hills 15%, foreground 65%, ground strip 5%, so the Match overlay reaches ~16 px per inch.
+- Foreground: ~~Mockup A (cutaway)~~ — **revised 11/27 after Karl tried the branch: a perspective landscape plus a zoomed measuring inset in the bottom-left (bands back to 30/25/45; small stake 6 px/in; inset 16 px/in). The cutaway now lives only inside the inset.** The Play button pulses after a Match pick and the reveal defaults to Fast; trees are placed from the hill silhouette.
+- ~~Taller foreground band (20/15/65)~~ — retired 11/27; the inset carries the 16 px/in scale instead.
 - All four Match the Forecast graphs in a round end at the same hour.
 - Explorer keeps one sky (day or night) per visit; `?scene=` forces it.
 - Inside the Match overlay, the snow is the fill under the TRUE line (depth over time); the flat layer stays left and right of the overlay.
