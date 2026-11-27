@@ -312,6 +312,35 @@
     #matchVerdictHost { flex: 1; min-height: 0; display: flex; }
     #matchBox:not(.compact) #matchVerdictHost { display: none; }
 
+    /* ── MATCH THE STORY / DRAW: graph + side column (1A.3, Sections 6-7) ── */
+    #sideCol { flex: 1; min-width: 0; min-height: 0; flex-direction: column; gap: 10px; }
+    #app[data-mode="story"] #chartBox, #app[data-mode="draw"] #chartBox { flex: 0 0 auto; width: 44%; }
+    .story-cards { display: flex; flex-direction: column; gap: 10px; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+    .story-card {
+      text-align: left; background: var(--surface); border: 2px solid var(--border); border-radius: 10px;
+      padding: 9px 14px; font-family: 'DM Sans', sans-serif; font-size: var(--card-fs, 20px); line-height: 1.3; color: var(--text);
+      cursor: pointer; display: flex; gap: 10px; align-items: baseline; transition: opacity 0.25s, border-color 0.15s;
+    }
+    .story-card .card-letter { font-family: 'Space Mono', monospace; font-weight: 700; color: var(--muted); flex-shrink: 0; }
+    .story-card .card-tag { display: block; font-family: 'Space Mono', monospace; font-size: 15px; font-weight: 700; margin-top: 4px; }
+    .story-card:hover:not(.resolved) { border-color: var(--accent4); }
+    .story-card:focus-visible { outline: 2px solid var(--accent4); outline-offset: 2px; }
+    .story-card.resolved { cursor: default; }
+    .story-card.dimmed { opacity: 0.35; }
+    .story-card.your-pick { border-color: var(--text); border-style: dashed; }
+    .story-card.correct-pick { border-color: var(--accent3); border-width: 3px; }
+    .story-card.correct-pick .card-tag { color: var(--accent3); }
+    .story-card.wrong-pick { border-color: var(--accent2); }
+    .story-card.wrong-pick .card-tag { color: var(--accent2); }
+    .story-card.gone { display: none; }
+    #sideCol #verdictPanel { flex: 0 0 auto; }
+    .story-cards.at-verdict { flex: 0 1 auto; }
+    /* In the narrow side column the two sides of the panel stack. */
+    #sideCol .vp-sides { flex-direction: column; gap: 8px; }
+    #sideCol .vp-side { padding: 5px 10px; }
+    #sideCol #verdictPanel { padding: 10px 14px; gap: 6px; }
+    .story-cards.at-verdict .story-card { padding: 7px 12px; }
+
     /* ── STREAK BAR (1A.3, Section 4) ── */
     #streakBar {
       flex-shrink: 0; align-items: center; gap: 18px; padding: 8px 16px; min-height: 76px;
@@ -355,7 +384,8 @@
     #verdictPanel.hidden { display: none; }
     #verdictPanel.is-right { box-shadow: inset 5px 0 0 var(--accent3); }
     #verdictPanel.is-wrong { box-shadow: inset 5px 0 0 var(--accent2); }
-    .vp-head { font-size: 19px; font-weight: 700; display: flex; gap: 8px; align-items: baseline; }
+    .vp-head { font-size: 19px; font-weight: 700; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+    .vp-where { font-size: 17px; font-weight: 500; color: var(--muted); }
     .vp-icon { font-family: 'Space Mono', monospace; font-weight: 700; }
     .is-right .vp-icon { color: var(--accent3); }
     .is-wrong .vp-icon { color: var(--accent2); }
@@ -391,6 +421,7 @@
       <nav id="modeNav" aria-label="Modes">
         <button class="hdr-btn mode-btn" data-mode="explorer" type="button">Explorer</button>
         <button class="hdr-btn mode-btn" data-mode="match" type="button">Match the Forecast</button>
+        <button class="hdr-btn mode-btn" data-mode="story" type="button">Match the Story</button>
       </nav>
       <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
     </div>
@@ -532,7 +563,7 @@
 
   if (URLP.reset) SM.resetProgress();
   if (URLP.resetMode && SM.SCORE_MODES.includes(URLP.resetMode)) SM.resetProgress(URLP.resetMode);
-  const CHALLENGES = ['match']; // challenge modes built so far (mode ids from the spec)
+  const CHALLENGES = ['match', 'story']; // challenge modes built so far (mode ids from the spec)
   if (URLP.theme === 'light' || URLP.theme === 'dark') { try { sessionStorage.setItem('mm_theme', URLP.theme); } catch (e) {} }
   function currentLevel() {
     if (URLP.level >= 1 && URLP.level <= SM.MAX_LEVEL) return URLP.level;
@@ -634,6 +665,7 @@
     document.getElementById('storyText').classList.toggle('hidden', mode === 'explorer' && !toggleStory.checked);
     refreshScoreDisplay();
     if (mode === 'match') { document.getElementById('matchVerdictHost').appendChild(verdictPanel); updateLinkLine(null); newMatchItem(); }
+    else if (mode === 'story') { setupStorySide(); newStoryItem(); }
     else {
       scene.overlay = null; scene.type = explorerSceneType;
       speedSelect.value = 'normal'; // Explorer's default speed
@@ -1766,15 +1798,17 @@
   function activeForecast() {
     if (mode === 'explorer') return currentExplorerForecast();
     if (mode === 'match') return currentMatchItem && matchPhase !== 'pick' ? currentMatchItem.correct : null;
+    if (mode === 'story') return storyItem && storyPhase !== 'pick' ? storyItem.choices[storyPicked].forecast : null;
     return null;
   }
   // The story element whose current piece is emphasized during a trace.
   function tracedStoryEl() {
     if (mode === 'explorer') return storyText;
     if (mode === 'match') return challengeStory;
+    if (mode === 'story' && storyPhase !== 'pick') return storyCardsEl.children[storyPicked].querySelector('.card-text');
     return null;
   }
-  const linkLineOn = () => mode === 'explorer';
+  const linkLineOn = () => mode === 'explorer' || (mode === 'story' && storyPhase !== 'pick');
   function seek(t) {
     const f = activeForecast();
     if (!f) return;
@@ -1786,6 +1820,7 @@
     markStoryPiece(tracedStoryEl(), f, playbackHour);
     // The verdict arrives when the trace reaches the end.
     if (mode === 'match' && matchPhase === 'reveal' && playbackHour >= SM.forecastTotalHours(f) - 1e-9) showVerdict();
+    if (mode === 'story' && storyPhase === 'reveal' && playbackHour >= SM.forecastTotalHours(f) - 1e-9) showStoryVerdict();
   }
   timeSlider.addEventListener('input', () => { clearAutoplay(); stopPlayback(); seek(+timeSlider.value); });
   timeSlider.addEventListener('keydown', e => {
@@ -2057,6 +2092,7 @@
   function hoverTarget() {
     if (mode === 'explorer') return { kind: 'chart', f: currentExplorerForecast() };
     if (mode === 'match') return currentMatchItem && matchPhase !== 'pick' ? { kind: 'overlay', f: currentMatchItem.correct } : null;
+    if (mode === 'story') return storyItem ? { kind: 'chart', f: storyItem.correct } : null; // the given graph, before and after the pick
     return null;
   }
   function redrawPins() { chart.update('none'); drawOverlayPins(); }
@@ -2099,7 +2135,7 @@
     redrawPins();
   }
   // The forecast a hover may preview as depth-only before an answer.
-  function hoverPreviewForecast() { return null; }
+  function hoverPreviewForecast() { return mode === 'story' && storyItem && storyPhase === 'pick' ? storyItem.correct : null; }
 
   // Chart: pixel -> hour.
   const chartCanvas = document.getElementById('chart');
@@ -2369,8 +2405,149 @@
     showResultBtn.classList.add('hidden');
     nextItemBtn.classList.remove('hidden');
   }
-  showResultBtn.onclick = () => { clearAutoplay(); stopPlayback(); if (mode === 'match') showVerdict(); };
-  nextItemBtn.onclick = () => { if (mode === 'match') newMatchItem(); };
+  showResultBtn.onclick = () => { clearAutoplay(); stopPlayback(); if (mode === 'match') showVerdict(); else if (mode === 'story') showStoryVerdict(); };
+  nextItemBtn.onclick = () => { if (mode === 'match') newMatchItem(); else if (mode === 'story') newStoryItem(); };
+
+  // ══════════════════════════════════════════════════════════════
+  // MATCH THE STORY (1A.3, Section 6)
+  // A graph is given (plain ink, hover and pin work); four stories; the
+  // student picks one. The pick locks in (scored now, shown at the
+  // verdict); after the beat the chosen story plays at Fast: the scene
+  // plays it and its graph traces in piece colors over the given graph.
+  // If it's wrong, the colored line leaves the given graph and the panel
+  // shows where and how.
+  // ══════════════════════════════════════════════════════════════
+  const sideCol = document.getElementById('sideCol');
+  const storyCardsEl = document.createElement('div');
+  storyCardsEl.className = 'story-cards';
+  let storyItem = null, storyPhase = 'pick', storyPicked = null, storyResult = null, storyDiff = null;
+  let storySeedPending = URLP.seed != null;
+  const CARD_LETTERS = ['A', 'B', 'C', 'D'];
+  const CARD_FS_MAX = 22, CARD_FS_MIN = 16;
+  function setupStorySide() {
+    sideCol.replaceChildren(storyCardsEl, verdictPanel);
+    updateLinkLine(null);
+  }
+  // Biggest card text (22 down to 16 px) that fits with no scroll.
+  function fitStoryCards() {
+    for (let fs = CARD_FS_MAX; fs >= CARD_FS_MIN; fs--) {
+      storyCardsEl.style.setProperty('--card-fs', fs + 'px');
+      if (storyCardsEl.scrollHeight <= storyCardsEl.clientHeight + 1) break;
+    }
+  }
+  new ResizeObserver(() => { if (mode === 'story') fitStoryCards(); }).observe(sideCol);
+
+  function newStoryItem() {
+    resetChallengeChrome();
+    storyPhase = 'pick'; storyPicked = null; storyResult = null; storyDiff = null;
+    storyCardsEl.classList.remove('at-verdict');
+    scene.overlay = null;
+    let item = null, roundSeed = 0;
+    const seed = storySeedPending ? URLP.seed : null;
+    storySeedPending = false;
+    for (let tries = 0; tries < 40 && !item; tries++) {
+      roundSeed = (seed != null ? seed * 101 + tries : (Date.now() ^ (Math.random() * 1e9) ^ tries)) >>> 0;
+      const rng = SM.makeRng(roundSeed);
+      const forecast = SM.generateForecast(rng, { numSegments: currentLevel() });
+      const key = SM.pointsKey(SM.forecastPoints(forecast));
+      if (seed == null && SM.wasLastItem(key, 'story')) continue;
+      item = SM.buildStoryItem(rng, forecast, 3);
+      if (item) SM.rememberLastItem(key, 'story');
+    }
+    if (!item) { storyCardsEl.textContent = 'Could not build a round — try again.'; return; }
+    storyItem = item;
+    scene.type = URLP.scene || SM.sceneTypeFor(roundSeed);
+    // The given graph: plain ink, no colors or steps. Hover works.
+    Object.assign(chartView, { main: SM.forecastPoints(item.correct), trace: null, fill: null, traceAll: false, steps: null, hover: item.correct, markers: [], diffSteps: null });
+    playbackHour = 0;
+    renderChart(0);
+    // Leak rule: the scene shows the starting depth only, no weather, and
+    // the slider is locked until a pick.
+    setScene(item.correct, 0, { neutral: true });
+    setTimeline(SM.forecastTotalHours(item.correct), true);
+    updateLinkLine(null);
+    storyCardsEl.replaceChildren();
+    item.choices.forEach((c, i) => {
+      const card = document.createElement('div');
+      card.className = 'story-card'; card.tabIndex = 0; card.setAttribute('role', 'button');
+      card.setAttribute('aria-label', `Story ${CARD_LETTERS[i]}: ${c.story}`);
+      card.innerHTML = `<span class="card-letter">${CARD_LETTERS[i]}</span><span class="card-body"><span class="card-text"></span><span class="card-tag" hidden></span></span>`;
+      renderStory(card.querySelector('.card-text'), c.forecast, false);
+      card.onclick = () => pickStory(i);
+      card.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickStory(i); } };
+      storyCardsEl.appendChild(card);
+    });
+    fitStoryCards();
+  }
+
+  function pickStory(i) {
+    if (storyPhase !== 'pick') return;
+    const choice = storyItem.choices[i];
+    storyResult = SM.recordAttempt(choice.isCorrect, 'story');
+    storyPicked = i; storyPhase = 'reveal';
+    storyDiff = SM.describeDifference(choice.forecast, storyItem.correct);
+    Array.from(storyCardsEl.children).forEach((c, j) => {
+      c.classList.add('resolved', j === i ? 'your-pick' : 'dimmed'); c.tabIndex = -1;
+    });
+    // The chosen story takes its piece colors; its graph will trace in
+    // those colors over the given graph.
+    storyCardsEl.children[i].querySelector('.card-text').classList.add('colored');
+    Object.assign(chartView, { trace: choice.forecast, fill: choice.forecast, traceAll: false });
+    clearPins();
+    setPlaybackEnabled(true);
+    setTimeline(SM.forecastTotalHours(choice.forecast), false);
+    playbackHour = 0;
+    seek(0);
+    showResultBtn.classList.remove('hidden');
+    scheduleAutoplay(AUTOPLAY_BEAT_MS);
+  }
+
+  // The first step of each piece where they differ, on the graph (legs only;
+  // the panel carries the labels).
+  function diffStepsFor(diff) {
+    if (!diff || (diff.kind !== 'slope' && diff.kind !== 'shape')) return null;
+    const x0 = diff.truth.t0, d0 = diff.truth.d0, runPts = [], risePts = [];
+    for (const p of [diff.mine, diff.truth]) {
+      runPts.push({ x: x0, y: d0 }, { x: x0 + p.run, y: d0 }, { x: NaN, y: NaN });
+      if (p.rise) risePts.push({ x: x0 + p.run, y: d0 }, { x: x0 + p.run, y: d0 + p.rise }, { x: NaN, y: NaN });
+    }
+    return { runPts, risePts, labels: [] };
+  }
+
+  function showStoryVerdict() {
+    if (storyPhase !== 'reveal') return;
+    storyPhase = 'verdict';
+    const choice = storyItem.choices[storyPicked];
+    const rightIdx = storyItem.choices.findIndex(c => c.isCorrect);
+    storyCardsEl.classList.add('at-verdict');
+    Array.from(storyCardsEl.children).forEach((c, j) => {
+      c.classList.remove('your-pick', 'dimmed');
+      const tag = c.querySelector('.card-tag');
+      if (j === rightIdx) {
+        c.classList.add('correct-pick');
+        c.querySelector('.card-text').classList.add('colored');
+        tag.hidden = false; tag.textContent = j === storyPicked ? '✓ Your pick matches the graph' : '✓ This story matches the graph';
+      } else if (j === storyPicked) {
+        c.classList.add('wrong-pick');
+        tag.hidden = false; tag.textContent = '✗ Your pick';
+      } else c.classList.add('gone');
+    });
+    Object.assign(chartView, { traceAll: true, diffSteps: diffStepsFor(storyDiff) });
+    renderChart(playbackHour);
+    markStoryPiece(tracedStoryEl(), choice.forecast, SM.forecastTotalHours(choice.forecast));
+    refreshScoreDisplay();
+    showVerdictPanel({
+      right: choice.isCorrect,
+      title: choice.isCorrect ? 'Right!' : 'Not quite.',
+      sentence: choice.isCorrect ? 'Your story lands exactly on the graph. Each color is one part of the story.' : SM.differenceSentence(storyDiff),
+      diff: choice.isCorrect ? null : storyDiff,
+      who: { mine: 'Your story', truth: 'The graph' },
+      result: storyResult,
+    });
+    fitStoryCards();
+    showResultBtn.classList.add('hidden');
+    nextItemBtn.classList.remove('hidden');
+  }
 
   // ══════════════════════════════════════════════════════════════
   // THE DIFFERENCE PANEL (1A.3, Section 3) — shared by the challenges.
@@ -2390,7 +2567,7 @@
     const run = p.run, rise = p.rise, up = Math.abs(rise);
     const runLbl = `${run} ${run === 1 ? 'hour' : 'hours'}`;
     const riseLbl = `${rise > 0 ? '+' : rise < 0 ? '−' : ''}${up} ${up === 1 ? 'inch' : 'inches'}`;
-    const pad = { l: 8, r: up ? 14 + riseLbl.length * 9.9 : 8, t: 10, b: 30 };
+    const pad = { l: 8, r: up ? 14 + riseLbl.length * 9.9 : 8, t: rise < 0 ? 30 : 10, b: rise < 0 ? 10 : 30 };
     const w = Math.max(pad.l + run * unit + pad.r, runLbl.length * 9.9 + 16), h = pad.t + up * unit + pad.b;
     const x0 = pad.l, yBase = rise >= 0 ? pad.t + up * unit : pad.t;
     const y1 = rise >= 0 ? pad.t : pad.t + up * unit;
@@ -2403,15 +2580,16 @@
       <line x1="${x0}" y1="${yBase}" x2="${x1}" y2="${yBase}" stroke="${runBlue}" stroke-width="3" stroke-dasharray="6 3"/>
       ${up ? `<line x1="${x1}" y1="${yBase}" x2="${x1}" y2="${y1}" stroke="${riseOrange}" stroke-width="3" stroke-dasharray="6 3"/>` : ''}
       <line x1="${x0}" y1="${yBase}" x2="${x1}" y2="${y1}" stroke="${lineColor}" stroke-width="3.5" stroke-linecap="round"/>
-      <text x="${(x0 + x1) / 2}" y="${(rise >= 0 ? yBase : yBase) + 22}" text-anchor="middle" font-family="Space Mono" font-weight="700" font-size="16" fill="${blue}">${runLbl}</text>
+      <text x="${Math.max(runLbl.length * 4.95 + 2, (x0 + x1) / 2)}" y="${rise >= 0 ? yBase + 22 : yBase - 9}" text-anchor="middle" font-family="Space Mono" font-weight="700" font-size="16" fill="${blue}">${runLbl}</text>
       ${up ? `<text x="${x1 + 6}" y="${(yBase + y1) / 2 + 5}" font-family="Space Mono" font-weight="700" font-size="16" fill="${riseOrange}">${riseLbl}</text>` : ''}
     </svg>`;
   }
   // Starting depth: a little 0..MAX_DEPTH axis with one dot.
-  function startSvg(v, color) {
-    const H = 120, k = H / SM.MAX_DEPTH, y = 8 + (SM.MAX_DEPTH - v) * k;
+  function startSvg(v, color, H) {
+    H = H || 120;
+    const k = H / SM.MAX_DEPTH, y = 8 + (SM.MAX_DEPTH - v) * k;
     let ticks = '';
-    for (const lab of SM.axisLabels(SM.MAX_DEPTH)) ticks += `<text x="26" y="${8 + (SM.MAX_DEPTH - lab) * k + 5}" text-anchor="end" font-family="Space Mono" font-size="13" fill="var(--muted)">${lab}</text>`;
+    for (const lab of (H < 100 ? [0, SM.MAX_DEPTH] : SM.axisLabels(SM.MAX_DEPTH))) ticks += `<text x="26" y="${8 + (SM.MAX_DEPTH - lab) * k + 5}" text-anchor="end" font-family="Space Mono" font-size="13" fill="var(--muted)">${lab}</text>`;
     return `<svg viewBox="0 0 64 ${H + 16}" width="64" height="${H + 16}" aria-hidden="true">${ticks}
       <line x1="34" x2="34" y1="8" y2="${8 + H}" stroke="var(--muted)" stroke-width="2"/>
       <circle cx="34" cy="${y}" r="7" fill="${color}" stroke="var(--surface)" stroke-width="2"/></svg>`;
@@ -2430,24 +2608,25 @@
   function showVerdictPanel({ right, title, sentence, diff, who, result }) {
     verdictPanel.classList.remove('hidden', 'is-right', 'is-wrong');
     verdictPanel.classList.add(right ? 'is-right' : 'is-wrong');
-    let html = `<div class="vp-head"><span class="vp-icon" aria-hidden="true">${right ? '✓' : '✗'}</span><span>${esc(title)}</span></div>`;
+    const where = diff ? (diff.kind === 'start' ? 'They differ at hour 0.' : `They first differ in piece ${diff.pieceIndex + 1} (from hour ${SM.formatMixed(diff.hour)}).`) : '';
+    let html = `<div class="vp-head"><span class="vp-icon" aria-hidden="true">${right ? '✓' : '✗'}</span><span>${esc(title)}</span>${where ? `<span class="vp-where">${esc(where)}</span>` : ''}</div>`;
+    const narrow = verdictPanel.parentElement === sideCol;
     if (sentence) html += `<p>${esc(sentence)}</p>`;
     if (diff) {
       const lines = SM.differenceLines(diff, who);
       const truthColor = cssVar(`--piece-${((diff.pieceIndex || 0) % 3) + 1}`);
       const ink = 'var(--text)';
       let figs;
-      if (diff.kind === 'start') figs = [startSvg(diff.mine.start, ink), startSvg(diff.truth.start, truthColor)];
+      if (diff.kind === 'start') figs = [startSvg(diff.mine.start, ink, narrow ? 60 : 120), startSvg(diff.truth.start, truthColor, narrow ? 60 : 120)];
       else if (diff.kind === 'length') figs = [lengthSvg(diff.mine, ink), lengthSvg(diff.truth, truthColor)];
       else {
-        const unit = Math.max(10, Math.min(28, 104 / Math.max(diff.mine.run, diff.truth.run, Math.abs(diff.mine.rise), Math.abs(diff.truth.rise), 1)));
+        const unit = Math.max(9, Math.min(narrow ? 20 : 28, (narrow ? 66 : 104) / Math.max(diff.mine.run, diff.truth.run, Math.abs(diff.mine.rise), Math.abs(diff.truth.rise), 1)));
         figs = [staircaseSvg(diff.mine, ink, unit), staircaseSvg(diff.truth, truthColor, unit)];
       }
-      const where = diff.kind === 'start' ? 'At hour 0' : `Piece ${diff.pieceIndex + 1} (from hour ${SM.formatMixed(diff.hour)})`;
       html += `<div class="vp-sides">
         <div class="vp-side">${figs[0]}<p><b>${esc(who.mine)}</b>${esc(lines[0].replace(who.mine + ': ', '').replace(who.mine + ' ', ''))}</p></div>
         <div class="vp-side">${figs[1]}<p><b>${esc(who.truth)}</b>${esc(lines[1].replace(who.truth + ': ', '').replace(who.truth + ' ', ''))}</p></div>
-      </div><p class="vp-note">${esc(where)} is where they first differ.</p>`;
+      </div>`;
     }
     const r = result;
     let extra = '';
@@ -2505,6 +2684,28 @@
       const dff = scene.overlay && scene.overlay.diff;
       if (URLP.reveal) clearAutoplay();
       if (URLP.reveal === 'mid') seek(dff ? Math.min(total - 0.25, dff.hour + 1.5) : total / 2);
+      else if (URLP.reveal === 'end') seek(total);
+    }
+  }
+  // Same review links for Match the Story (?mode=story&pick=…&reveal=…).
+  if (mode === 'story' && URLP.pick && storyItem) {
+    const KINDS = ['slope', 'start', 'length', 'shape'];
+    const kindIdx = () => storyItem.choices.findIndex(c => !c.isCorrect && (SM.describeDifference(c.forecast, storyItem.correct) || {}).kind === URLP.pick);
+    if (KINDS.includes(URLP.pick)) {
+      for (let k = 0; k < 80 && kindIdx() < 0; k++) { storySeedPending = true; URLP.seed = (URLP.seed || 1) + 1; newStoryItem(); }
+    }
+    const ch = storyItem.choices;
+    let idx = /^[0-3]$/.test(URLP.pick) ? +URLP.pick : -1;
+    if (URLP.pick === 'right') idx = ch.findIndex(c => c.isCorrect);
+    if (KINDS.includes(URLP.pick)) idx = kindIdx();
+    if (URLP.pick === 'wrong') idx = ch.map((c, i) => i).filter(i => !ch[i].isCorrect)
+      .map(i => ({ i, at: (SM.firstSplit(storyItem.correct, ch[i].forecast) || { hour: 0 }).hour }))
+      .sort((a, b) => b.at - a.at)[0].i;
+    if (idx >= 0) {
+      pickStory(idx);
+      const total = SM.forecastTotalHours(ch[idx].forecast);
+      if (URLP.reveal) clearAutoplay();
+      if (URLP.reveal === 'mid') seek(storyDiff ? Math.min(total - 0.25, storyDiff.hour + 1.5) : total / 2);
       else if (URLP.reveal === 'end') seek(total);
     }
   }
