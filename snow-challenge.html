@@ -341,6 +341,21 @@
     #sideCol #verdictPanel { padding: 10px 14px; gap: 6px; }
     .story-cards.at-verdict .story-card { padding: 7px 12px; }
 
+    /* Draw the Forecast: story pieces are buttons; the active piece is
+       boxed, drawn pieces get a check mark (1A.3, Section 7). */
+    #app[data-mode="draw"] #chartBox { width: 54%; }
+    #app[data-mode="draw"] .story-piece { cursor: pointer; border-radius: 6px; padding: 0 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+    #app[data-mode="draw"] .story-piece:hover { background: var(--surface); }
+    #app[data-mode="draw"] .story-piece.active { outline: 3px solid currentColor; outline-offset: 1px; background: var(--surface); }
+    #app[data-mode="draw"] .story-piece.done::after { content: '\00a0✓'; }
+    #app[data-mode="draw"] .story-piece.locked { cursor: not-allowed; }
+    .draw-tools { display: flex; flex-direction: column; gap: 10px; flex: 0 0 auto; }
+    .draw-msg { font-size: 18px; line-height: 1.35; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; min-height: 76px; }
+    .draw-msg .draw-err { display: block; color: var(--accent2); font-weight: 700; margin-top: 4px; }
+    .draw-btns { display: flex; gap: 8px; }
+    .draw-btns .hdr-btn { font-size: 16px; padding: 8px 14px; color: var(--text); }
+    .draw-btns .hdr-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
     /* ── STREAK BAR (1A.3, Section 4) ── */
     #streakBar {
       flex-shrink: 0; align-items: center; gap: 18px; padding: 8px 16px; min-height: 76px;
@@ -422,6 +437,7 @@
         <button class="hdr-btn mode-btn" data-mode="explorer" type="button">Explorer</button>
         <button class="hdr-btn mode-btn" data-mode="match" type="button">Match the Forecast</button>
         <button class="hdr-btn mode-btn" data-mode="story" type="button">Match the Story</button>
+        <button class="hdr-btn mode-btn" data-mode="draw" type="button">Draw the Forecast</button>
       </nav>
       <button class="hdr-btn" id="themeBtn" type="button">🌙 Dark</button>
     </div>
@@ -536,6 +552,7 @@
   //   ?resetmode=match|story|draw  clear one challenge's score/streak/level/medal
   //   ?streak=N&best=N         (review) show the streak bar / medals at these numbers
   //   ?pin=4,7                 (review) pin these hours on the hoverable graph
+  //   ?mode=draw&drawn=2|all|wrong&check=1&reveal=mid|end   (review) Draw the Forecast states
   const URLP = (function () {
     const q = new URLSearchParams(location.search);
     const num = k => (q.has(k) && q.get(k) !== '' && !isNaN(+q.get(k)) ? +q.get(k) : null);
@@ -551,7 +568,7 @@
       hours: num('hours'), depth: num('depth'), tile: q.get('tile'), birdsSoon: q.get('birds') === 'soon',
       scene: ['night', 'day'].includes(q.get('scene')) ? q.get('scene') : null, flavor: q.get('flavor'),
       pick: q.get('pick'), reveal: q.get('reveal'), quality: q.get('quality'), resetMode: q.get('resetmode'),
-      streak: num('streak'), best: num('best'), pins: q.get('pin') ? q.get('pin').split(',').map(Number).filter(n => !isNaN(n)) : null };
+      streak: num('streak'), best: num('best'), drawn: q.get('drawn'), check: q.get('check') === '1', pins: q.get('pin') ? q.get('pin').split(',').map(Number).filter(n => !isNaN(n)) : null };
   })();
 
   // The model at this visit's scale (default 12 h x 15 in, from snowModel.js).
@@ -563,7 +580,7 @@
 
   if (URLP.reset) SM.resetProgress();
   if (URLP.resetMode && SM.SCORE_MODES.includes(URLP.resetMode)) SM.resetProgress(URLP.resetMode);
-  const CHALLENGES = ['match', 'story']; // challenge modes built so far (mode ids from the spec)
+  const CHALLENGES = ['match', 'story', 'draw']; // challenge modes built so far (mode ids from the spec)
   if (URLP.theme === 'light' || URLP.theme === 'dark') { try { sessionStorage.setItem('mm_theme', URLP.theme); } catch (e) {} }
   function currentLevel() {
     if (URLP.level >= 1 && URLP.level <= SM.MAX_LEVEL) return URLP.level;
@@ -666,6 +683,7 @@
     refreshScoreDisplay();
     if (mode === 'match') { document.getElementById('matchVerdictHost').appendChild(verdictPanel); updateLinkLine(null); newMatchItem(); }
     else if (mode === 'story') { setupStorySide(); newStoryItem(); }
+    else if (mode === 'draw') { setupDrawSide(); newDrawItem(); }
     else {
       scene.overlay = null; scene.type = explorerSceneType;
       speedSelect.value = 'normal'; // Explorer's default speed
@@ -834,7 +852,7 @@
   //   traceAll  draw the whole trace regardless of the slider (after a verdict)
   //   steps     forecast for the rise/run toggle, or null
   //   hover     forecast hover/pin snaps to, or null (no hover)
-  const chartView = { main: null, trace: null, fill: null, traceAll: false, steps: null, hover: null, markers: [] };
+  const chartView = { main: null, trace: null, fill: null, traceAll: false, steps: null, hover: null, markers: [], preview: null };
 
   // ── Hover and pin (1A.3, Section 5; spec 4b; Full Lab's look) ──
   // Hover snaps to the nearest WHOLE hour on the line; a soft dot, dashed
@@ -898,6 +916,8 @@
       // Snow fill under the traced line.
       { label: 'snow', order: 5, data: [], borderColor: cssVar('--snow-edge'), backgroundColor: cssVar('--snow-fill'), borderWidth: 1.5, pointRadius: 0, tension: 0, fill: 'origin' },
       { label: 'trace', order: 0, data: [], borderColor: chartTextColor, backgroundColor: 'transparent', borderWidth: 3.5, pointRadius: 0, tension: 0, segment: {} },
+      // Draw the Forecast: the piece being placed, from its start to the pointer.
+      { label: 'preview', order: 1, data: [], borderColor: chartTextColor, backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 4], pointRadius: 0, tension: 0 },
     ]},
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
@@ -951,6 +971,9 @@
     const v = chartView;
     const ds = chart.data.datasets;
     ds[0].data = v.main ? v.main.map(p => ({ x: p.t, y: p.d })) : [];
+    ds[0].borderColor = chartTextColor;
+    ds[5].data = v.preview ? v.preview.map(p => ({ x: p.t, y: p.d })) : [];
+    ds[5].borderColor = chartTextColor;
     if (v.trace) {
       const tot = SM.forecastTotalHours(v.trace);
       ds[4].data = linePoints(v.trace, v.traceAll ? tot : Math.min(t, tot));
@@ -1799,6 +1822,7 @@
     if (mode === 'explorer') return currentExplorerForecast();
     if (mode === 'match') return currentMatchItem && matchPhase !== 'pick' ? currentMatchItem.correct : null;
     if (mode === 'story') return storyItem && storyPhase !== 'pick' ? storyItem.choices[storyPicked].forecast : null;
+    if (mode === 'draw') return drawItem && drawPhase !== 'draw' ? drawItem : null;
     return null;
   }
   // The story element whose current piece is emphasized during a trace.
@@ -1806,9 +1830,10 @@
     if (mode === 'explorer') return storyText;
     if (mode === 'match') return challengeStory;
     if (mode === 'story' && storyPhase !== 'pick') return storyCardsEl.children[storyPicked].querySelector('.card-text');
+    if (mode === 'draw' && drawPhase !== 'draw') return challengeStory;
     return null;
   }
-  const linkLineOn = () => mode === 'explorer' || (mode === 'story' && storyPhase !== 'pick');
+  const linkLineOn = () => mode === 'explorer' || (mode === 'story' && storyPhase !== 'pick') || (mode === 'draw' && drawPhase !== 'draw');
   function seek(t) {
     const f = activeForecast();
     if (!f) return;
@@ -1821,6 +1846,7 @@
     // The verdict arrives when the trace reaches the end.
     if (mode === 'match' && matchPhase === 'reveal' && playbackHour >= SM.forecastTotalHours(f) - 1e-9) showVerdict();
     if (mode === 'story' && storyPhase === 'reveal' && playbackHour >= SM.forecastTotalHours(f) - 1e-9) showStoryVerdict();
+    if (mode === 'draw' && drawPhase === 'reveal' && playbackHour >= SM.forecastTotalHours(f) - 1e-9) showDrawVerdict();
   }
   timeSlider.addEventListener('input', () => { clearAutoplay(); stopPlayback(); seek(+timeSlider.value); });
   timeSlider.addEventListener('keydown', e => {
@@ -2007,7 +2033,7 @@
   // the snow fill under it (the rise/run toggle adds the steps).
   function setExplorerView() {
     const f = currentExplorerForecast();
-    Object.assign(chartView, { main: null, trace: f, fill: f, traceAll: false, steps: f, hover: f, markers: [], diffSteps: null });
+    Object.assign(chartView, { main: null, trace: f, fill: f, traceAll: false, steps: f, hover: f, markers: [], diffSteps: null, preview: null });
   }
   function renderExplorerAtRest() {
     stopPlayback();
@@ -2093,6 +2119,7 @@
     if (mode === 'explorer') return { kind: 'chart', f: currentExplorerForecast() };
     if (mode === 'match') return currentMatchItem && matchPhase !== 'pick' ? { kind: 'overlay', f: currentMatchItem.correct } : null;
     if (mode === 'story') return storyItem ? { kind: 'chart', f: storyItem.correct } : null; // the given graph, before and after the pick
+    if (mode === 'draw') return drawItem && drawPhase !== 'draw' ? { kind: 'chart', f: drawItem } : null; // the reveal only
     return null;
   }
   function redrawPins() { chart.update('none'); drawOverlayPins(); }
@@ -2405,8 +2432,8 @@
     showResultBtn.classList.add('hidden');
     nextItemBtn.classList.remove('hidden');
   }
-  showResultBtn.onclick = () => { clearAutoplay(); stopPlayback(); if (mode === 'match') showVerdict(); else if (mode === 'story') showStoryVerdict(); };
-  nextItemBtn.onclick = () => { if (mode === 'match') newMatchItem(); else if (mode === 'story') newStoryItem(); };
+  showResultBtn.onclick = () => { clearAutoplay(); stopPlayback(); if (mode === 'match') showVerdict(); else if (mode === 'story') showStoryVerdict(); else if (mode === 'draw') showDrawVerdict(); };
+  nextItemBtn.onclick = () => { if (mode === 'match') newMatchItem(); else if (mode === 'story') newStoryItem(); else if (mode === 'draw') newDrawItem(); };
 
   // ══════════════════════════════════════════════════════════════
   // MATCH THE STORY (1A.3, Section 6)
@@ -2458,7 +2485,7 @@
     storyItem = item;
     scene.type = URLP.scene || SM.sceneTypeFor(roundSeed);
     // The given graph: plain ink, no colors or steps. Hover works.
-    Object.assign(chartView, { main: SM.forecastPoints(item.correct), trace: null, fill: null, traceAll: false, steps: null, hover: item.correct, markers: [], diffSteps: null });
+    Object.assign(chartView, { main: SM.forecastPoints(item.correct), trace: null, fill: null, traceAll: false, steps: null, hover: item.correct, markers: [], diffSteps: null, preview: null });
     playbackHour = 0;
     renderChart(0);
     // Leak rule: the scene shows the starting depth only, no weather, and
@@ -2545,6 +2572,170 @@
       result: storyResult,
     });
     fitStoryCards();
+    showResultBtn.classList.add('hidden');
+    nextItemBtn.classList.remove('hidden');
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // DRAW THE FORECAST (1A.3, Section 7; Karl 11/27: drawn in plain ink)
+  // The story sits above an empty grid (the starting depth is NOT
+  // marked). The student builds the graph piece by piece: click a piece of
+  // the story (or let it advance by itself), then click the start (piece 1,
+  // at hour 0) and the end; every later piece starts where the last one
+  // ended. Clicks snap to whole-number corners. The slider stays locked
+  // until Check (scrubbing would show the answer). After Check, the TRUE
+  // graph traces in piece colors over the student's ink drawing.
+  // ══════════════════════════════════════════════════════════════
+  let drawItem = null, drawPhase = 'draw', drawState = { points: [] }, drawGrade = null, drawResult = null, drawErr = '';
+  let drawSeedPending = URLP.seed != null;
+  let drawHover = null; // snapped corner under the pointer while drawing
+  const drawTools = document.createElement('div');
+  drawTools.className = 'draw-tools';
+  drawTools.innerHTML = `<div class="draw-msg" id="drawMsg" role="status" aria-live="polite"></div>
+    <div class="draw-btns"><button class="hdr-btn" id="drawUndo" type="button">↶ Undo</button><button class="hdr-btn" id="drawClear" type="button">Clear</button></div>`;
+  const drawMsg = drawTools.querySelector('#drawMsg');
+  const checkBtn = document.getElementById('checkBtn');
+  function setupDrawSide() {
+    sideCol.replaceChildren(drawTools, verdictPanel);
+    updateLinkLine(null);
+  }
+  const drawPieceCount = () => (drawItem ? drawItem.segments.length : 0);
+  const drawnPieces = () => Math.max(0, drawState.points.length - 1);
+
+  function newDrawItem() {
+    resetChallengeChrome();
+    drawPhase = 'draw'; drawState = { points: [] }; drawGrade = null; drawResult = null; drawErr = ''; drawHover = null;
+    let f = null, roundSeed = 0;
+    const seed = drawSeedPending ? URLP.seed : null;
+    drawSeedPending = false;
+    for (let tries = 0; tries < 40 && !f; tries++) {
+      roundSeed = (seed != null ? seed * 101 + tries : (Date.now() ^ (Math.random() * 1e9) ^ tries)) >>> 0;
+      const cand = SM.generateForecast(SM.makeRng(roundSeed), { numSegments: currentLevel() });
+      const key = SM.pointsKey(SM.forecastPoints(cand));
+      if (seed == null && SM.wasLastItem(key, 'draw')) continue;
+      f = cand; SM.rememberLastItem(key, 'draw');
+    }
+    drawItem = f;
+    scene.overlay = null;
+    scene.type = URLP.scene || SM.sceneTypeFor(roundSeed);
+    // The story, colored by piece from the start; each piece is a button.
+    renderStory(challengeStory, f, true);
+    challengeStory.querySelectorAll('.story-piece').forEach(sp => {
+      sp.setAttribute('role', 'button'); sp.tabIndex = 0;
+      sp.onclick = () => drawPieceClicked(+sp.dataset.piece);
+      sp.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); drawPieceClicked(+sp.dataset.piece); } };
+    });
+    playbackHour = 0;
+    setScene(f, 0, { neutral: true });
+    setTimeline(SM.forecastTotalHours(f), true);
+    checkBtn.classList.remove('hidden');
+    updateDrawUI();
+  }
+  function updateDrawUI() {
+    const n = drawPieceCount(), done = drawnPieces(), active = drawState.points.length ? Math.min(done, n) : 0;
+    challengeStory.querySelectorAll('.story-piece').forEach(sp => {
+      const k = +sp.dataset.piece;
+      sp.classList.toggle('done', k < done);
+      sp.classList.toggle('active', drawPhase === 'draw' && k === active && done < n);
+      sp.classList.toggle('locked', drawPhase === 'draw' && k > done);
+      sp.setAttribute('aria-label', `Piece ${k + 1}${k < done ? ' (drawn — click to redraw)' : ''}`);
+    });
+    const pts = drawState.points;
+    // The drawing: plain ink, with a dot at each clicked corner.
+    const markers = pts.map(p => ({ t: p.t, d: p.d, r: 5 }));
+    let preview = null;
+    if (drawPhase === 'draw' && drawHover && done < n) {
+      markers.push({ t: drawHover.t, d: drawHover.d, r: 6, fill: 'rgba(255,215,64,0.85)' });
+      if (pts.length && drawHover.t > pts[pts.length - 1].t) preview = [pts[pts.length - 1], drawHover];
+    }
+    if (drawPhase === 'draw') {
+      Object.assign(chartView, { main: pts.length > 1 ? pts : null, trace: null, fill: null, traceAll: false, steps: null, hover: null, markers, diffSteps: null, preview });
+      renderChart(0);
+    }
+    let msg;
+    if (drawPhase !== 'draw') msg = 'The colored line is the story. Your drawing is the ink line.';
+    else if (!pts.length) msg = `<b>Piece 1:</b> click its start point at hour 0, then the point where it ends.`;
+    else if (pts.length === 1) msg = `<b>Piece 1:</b> now click where it ends.`;
+    else if (done < n) msg = `<b>Piece ${done + 1}:</b> it starts where piece ${done} ended. Click where it ends.`;
+    else msg = 'Every piece is drawn. Press <b>Check</b>, or click a piece of the story to redraw it.';
+    drawMsg.innerHTML = msg + (drawErr ? `<span class="draw-err">${esc(drawErr)}</span>` : '');
+    document.getElementById('drawUndo').disabled = drawPhase !== 'draw' || !pts.length;
+    document.getElementById('drawClear').disabled = drawPhase !== 'draw' || !pts.length;
+    checkBtn.disabled = drawPhase !== 'draw' || done < n;
+    checkBtn.classList.toggle('hidden', drawPhase !== 'draw');
+  }
+  function drawAct(action) {
+    if (drawPhase !== 'draw') return;
+    const r = SM.drawStep(drawState, action, drawPieceCount());
+    drawState = r.state;
+    drawErr = r.error ? SM.DRAW_ERRORS[r.error] : '';
+    updateDrawUI();
+  }
+  function drawPieceClicked(k) {
+    if (drawPhase !== 'draw') return;
+    const done = drawnPieces();
+    if (k > done) { drawErr = `Draw piece ${done + 1} first. Pieces go in order.`; updateDrawUI(); return; }
+    if (k === done && done < drawPieceCount()) { drawErr = ''; updateDrawUI(); return; } // already the active piece
+    drawAct({ type: 'redraw', piece: k });
+  }
+  drawTools.querySelector('#drawUndo').onclick = () => drawAct({ type: 'undo' });
+  drawTools.querySelector('#drawClear').onclick = () => drawAct({ type: 'clear' });
+  // Grid clicks while drawing (snapped to whole-number corners).
+  function snappedCorner(e) {
+    const r = chartCanvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    const a = chart.chartArea;
+    if (x < a.left - 10 || x > a.right + 10 || y < a.top - 10 || y > a.bottom + 10) return null;
+    const t = Math.max(0, Math.min(SM.MAX_HOURS, Math.round(chart.scales.x.getValueForPixel(x))));
+    const d = Math.max(0, Math.min(SM.MAX_DEPTH, Math.round(chart.scales.y.getValueForPixel(y))));
+    return { t, d };
+  }
+  chartCanvas.addEventListener('pointermove', e => {
+    if (mode !== 'draw' || drawPhase !== 'draw') return;
+    const c = snappedCorner(e);
+    if ((c && drawHover && c.t === drawHover.t && c.d === drawHover.d) || (!c && !drawHover)) return;
+    drawHover = c; updateDrawUI();
+  });
+  chartCanvas.addEventListener('pointerleave', () => { if (mode === 'draw' && drawHover) { drawHover = null; updateDrawUI(); } });
+  chartCanvas.addEventListener('click', e => {
+    if (mode !== 'draw' || drawPhase !== 'draw') return;
+    const c = snappedCorner(e);
+    if (c) drawAct({ type: 'click', point: c });
+  });
+
+  checkBtn.onclick = () => {
+    if (mode !== 'draw' || drawPhase !== 'draw' || drawnPieces() < drawPieceCount()) return;
+    drawGrade = SM.gradeDrawing(drawState.points, drawItem);
+    drawResult = SM.recordAttempt(drawGrade.correct, 'draw');
+    drawPhase = 'reveal'; drawHover = null; drawErr = '';
+    // The reveal: the student's drawing stays in ink; the TRUE graph traces
+    // in piece colors over it; the scene plays the true forecast.
+    Object.assign(chartView, { main: drawState.points, trace: drawItem, fill: drawItem, traceAll: false, hover: drawItem, markers: [], preview: null, diffSteps: null });
+    updateDrawUI();
+    setPlaybackEnabled(true);
+    setTimeline(SM.forecastTotalHours(drawItem), false);
+    playbackHour = 0;
+    seek(0);
+    showResultBtn.classList.remove('hidden');
+    scheduleAutoplay(AUTOPLAY_BEAT_MS);
+  };
+  function showDrawVerdict() {
+    if (drawPhase !== 'reveal') return;
+    drawPhase = 'verdict';
+    const g = drawGrade;
+    Object.assign(chartView, { traceAll: true, diffSteps: diffStepsFor(g.diff) });
+    renderChart(playbackHour);
+    refreshScoreDisplay();
+    updateDrawUI();
+    const stopsEarly = g.rule === 'stopsEarly' || g.rule === 'tooLong';
+    showVerdictPanel({
+      right: g.correct,
+      title: g.correct ? 'Right!' : 'Not quite.',
+      sentence: g.correct ? 'Your graph is the story, piece for piece. Each color is one part of the story.'
+        : (g.diff ? SM.differenceSentence(g.diff) : (stopsEarly ? 'The graph has to go all the way to the end of the story.' : 'Compare your graph with the colored one.')),
+      diff: g.correct ? null : g.diff,
+      who: { mine: 'Your graph', truth: 'The story' },
+      result: drawResult,
+    });
     showResultBtn.classList.add('hidden');
     nextItemBtn.classList.remove('hidden');
   }
@@ -2706,6 +2897,29 @@
       const total = SM.forecastTotalHours(ch[idx].forecast);
       if (URLP.reveal) clearAutoplay();
       if (URLP.reveal === 'mid') seek(storyDiff ? Math.min(total - 0.25, storyDiff.hour + 1.5) : total / 2);
+      else if (URLP.reveal === 'end') seek(total);
+    }
+  }
+  // Review links for Draw the Forecast: ?mode=draw&drawn=N|all|wrong[&check=1&reveal=mid|end]
+  //   drawn=N draws the first N pieces correctly; all = the whole story;
+  //   wrong = the whole story with one piece's end moved (a slope mistake).
+  if (mode === 'draw' && drawItem && URLP.drawn) {
+    const pts = SM.forecastPoints(drawItem);
+    let want = pts;
+    if (/^\d+$/.test(URLP.drawn)) want = pts.slice(0, Math.min(pts.length, +URLP.drawn + 1));
+    if (URLP.drawn === 'wrong') {
+      const k = Math.min(1, pts.length - 2) + 1; // the end of piece 2 (or 1)
+      want = pts.map(p => Object.assign({}, p));
+      const up = want[k].d + 1 <= SM.MAX_DEPTH && want.slice(k).every(p => p.d + 1 <= SM.MAX_DEPTH);
+      for (let j = k; j < want.length; j++) want[j].d += up ? 1 : -1;
+      if (want.some(p => p.d < 0)) want = pts;
+    }
+    want.forEach(p => drawAct({ type: 'click', point: { t: p.t, d: p.d } }));
+    if (URLP.check) {
+      checkBtn.onclick();
+      const total = SM.forecastTotalHours(drawItem);
+      if (URLP.reveal) clearAutoplay();
+      if (URLP.reveal === 'mid') seek(total / 2);
       else if (URLP.reveal === 'end') seek(total);
     }
   }
